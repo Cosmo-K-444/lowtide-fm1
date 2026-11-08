@@ -1051,7 +1051,7 @@ UI_SMALL static void track_select(uint32_t i)
  * never gates a learned CC, and MIDI LEARN listens on every channel while armed) is
  * set to it, and stays until something else is learned on it or HOME > SYSTEM > LEARN CLEAR. Then turn the next knob.
  * One CC sets one parameter, a parameter has one CC: learning one again replaces both. The settings keep the map */
-static struct { uint8_t on, pick, trk, id; } mlu;
+static struct { uint8_t on, pick, kind, trk, id; } mlu;   /* kind: 0 a track parameter, 1 a button, 2 a knob */
 UI_SMALL static uint32_t ml_code(uint32_t id) { return id >= P_E0 ? ML_E0 + id - P_E0 : id + 1u; }
 UI_SMALL static void ml_put(uint32_t i, uint32_t e)       /* (the ISR reads the entry: never half of one) */
 {
@@ -1066,21 +1066,63 @@ UI_SMALL static uint32_t ml_count(void)
         n += (ml_tab[i] >> 9) != 0u;
     return n;
 }
-/* cc -> parameter id of track k, in place of what either had; 0 = no room, 2 = a CC that is never learned */
-UI_SMALL static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
+/* cc -> the entry (code, track), in place of what either had; 0 = no room, 2 = a CC that is never learned */
+UI_SMALL static uint32_t ml_learn_entry(uint32_t cc, uint32_t track, uint32_t code)
 {
     uint32_t i, e;
-    if (!ml_free_cc(cc) || k >= NTRK || id >= P_COUNT)
+    if (!ml_free_cc(cc) || !ml_code_ok(code) || track >= NTRK)
         return 2;
     for (i = 0; i < ML_N; i++)
-        if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == ml_code(id) && ((e >> 7) & 3u) == k)))
+        if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == code && ((e >> 7) & 3u) == track)))
             ml_put(i, 0);
     for (i = 0; i < ML_N; i++)
         if (!(ml_tab[i] >> 9)) {
-            ml_put(i, cc | k << 7 | ml_code(id) << 9);
+            ml_put(i, cc | track << 7 | code << 9);
             return 1;
         }
     return 0;
+}
+/* cc -> parameter id of track k, in place of what either had; 0 = no room, 2 = a CC that is never learned */
+UI_SMALL static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
+{
+    if (k >= NTRK || id >= P_COUNT)
+        return 2;
+    return ml_learn_entry(cc, k, ml_code(id));
+}
+/* a function button pressed while learning: picked (ui_input.c). Its action waits: the press is eaten there */
+UI_SMALL static void ml_pick_button(uint32_t k)
+{
+    char b[16];
+    if (!mlu.on || k >= ML_NBTN)
+        return;
+    if (!mlu.pick || mlu.kind != 1u || mlu.id != k) {
+        mlu.kind = 1u;
+        mlu.trk = 0;
+        mlu.id = (uint8_t)k;
+        str_cpy(b, B_NAME[k], 9);
+        ui_say(b, ": SEND A CC");
+    }
+    mlu.pick = 1;
+    ml_heard = 0;
+    ml_arm = 1;
+}
+/* a knob turned while learning: picked (ui_input.c). Its action waits: the detents are eaten there */
+UI_SMALL static void ml_pick_knob(uint32_t code)
+{
+    static const char *const KN[4] = {"VOLUME", "SELECT", "PRESETS", "ALGORITHM"};
+    char b[16];
+    if (!mlu.on || code < ML_KNOB_VOL || code > ML_KNOB_ALGO)
+        return;
+    if (!mlu.pick || mlu.kind != 2u || mlu.id != code) {
+        mlu.kind = 2u;
+        mlu.trk = 0;
+        mlu.id = (uint8_t)code;
+        str_cpy(b, KN[code - ML_KNOB_VOL], 9);
+        ui_say(b, ": SEND A CC");
+    }
+    mlu.pick = 1;
+    ml_heard = 0;
+    ml_arm = 1;
 }
 UI_SMALL static int ml_clear_all(void)                    /* HOME > SYSTEM > LEARN CLEAR; 1 = there were */
 {
@@ -1095,6 +1137,7 @@ UI_SMALL static void ml_toggle(void)                      /* GLO + F#3 */
 {
     mlu.on = (uint8_t)!mlu.on;
     mlu.pick = 0;
+    mlu.kind = 0;
     ml_arm = 0;
     ml_heard = 0;
     ui_message(mlu.on ? "LEARN: TURN A KNOB" : "LEARN DONE");
@@ -1106,7 +1149,8 @@ UI_SMALL static void ml_knob(const track_t *t, uint32_t id)
     char b[16];
     if (!mlu.on || id >= P_COUNT)
         return;
-    if (!mlu.pick || mlu.id != id || mlu.trk != (uint8_t)trk_index(t)) {
+    if (!mlu.pick || mlu.kind != 0u || mlu.id != id || mlu.trk != (uint8_t)trk_index(t)) {
+        mlu.kind = 0;
         mlu.trk = (uint8_t)trk_index(t);
         mlu.id = (uint8_t)id;
         b[0] = 'T';
@@ -1119,7 +1163,7 @@ UI_SMALL static void ml_knob(const track_t *t, uint32_t id)
     ml_heard = 0;
     ml_arm = 1;
 }
-/* each frame: a CC heard for the picked parameter is learned */
+/* each frame: a CC heard for the picked target is learned */
 UI_SMALL static void ml_poll(void)
 {
     uint32_t cc = ml_heard, r;
@@ -1130,19 +1174,71 @@ UI_SMALL static void ml_poll(void)
     if (!mlu.on || !mlu.pick)
         return;
     cc--;
-    r = ml_learn(cc, mlu.trk, mlu.id);
-    if (r != 1u) {
-        ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
-        return;
+    if (mlu.kind == 1u) {                       /* a button */
+        r = ml_learn_entry(cc, 0, ML_BTN0 + mlu.id);
+        if (r != 1u) {
+            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            return;
+        }
+        str_cpy(a, "CC", 4);
+        fmt_int(a + 2, (int32_t)cc);
+        str_cpy(a + str_len(a), " = ", 4);
+        str_cpy(b, B_NAME[mlu.id], 9);
+    } else if (mlu.kind == 2u) {                /* a knob */
+        static const char *const KN[4] = {"VOLUME", "SELECT", "PRESETS", "ALGORITHM"};
+        r = ml_learn_entry(cc, 0, mlu.id);
+        if (r != 1u) {
+            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            return;
+        }
+        str_cpy(a, "CC", 4);
+        fmt_int(a + 2, (int32_t)cc);
+        str_cpy(a + str_len(a), " = ", 4);
+        str_cpy(b, KN[mlu.id - ML_KNOB_VOL], 9);
+    } else {                                    /* a track parameter */
+        r = ml_learn(cc, mlu.trk, mlu.id);
+        if (r != 1u) {
+            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            return;
+        }
+        str_cpy(a, "CC", 4);
+        fmt_int(a + 2, (int32_t)cc);
+        str_cpy(a + str_len(a), " = T", 5);
+        b[0] = (char)('1' + mlu.trk);
+        b[1] = ' ';
+        str_cpy(b + 2, track_desc(&trk[mlu.trk % NTRK], mlu.id)->label, 9);
     }
-    str_cpy(a, "CC", 4);
-    fmt_int(a + 2, (int32_t)cc);
-    str_cpy(a + str_len(a), " = T", 5);
-    b[0] = (char)('1' + mlu.trk);
-    b[1] = ' ';
-    str_cpy(b + 2, track_desc(&trk[mlu.trk % NTRK], mlu.id)->label, 9);
     ui_say(a, b);
     mlu.pick = 0;
     ml_arm = 0;
     settings_later = 1;                          /* (saved when quiet) */
+}
+/* MIDI LEARN (2.8-midilearn): the learned PRESETS / ALGORITHM CCs, carried out in the main loop (a flash read,
+ * a sound loaded). Only when the scaled index moves, so a knob sweep loads one sound per step, not per CC */
+UI_SMALL static void ml_knob_poll(void)
+{
+    static uint32_t preset_last = 0xFFFFu, engine_last = 0xFFFFu;
+    uint32_t v, total, idx;
+    if (ml_preset_cc) {
+        v = ml_preset_cc - 1u;
+        ml_preset_cc = 0;
+        total = 0;
+        (void)preset_pos(&total);
+        if (total) {
+            idx = (v * (total - 1u) + 63u) / 127u;
+            if (idx != preset_last) {
+                preset_last = idx;
+                preset_go(idx);
+            }
+        }
+    }
+    if (ml_engine_cc) {
+        v = ml_engine_cc - 1u;
+        ml_engine_cc = 0;
+        idx = (v * (NENGINES - 1u) + 63u) / 127u;
+        if (idx != engine_last) {
+            engine_last = idx;
+            set_engine(idx);
+        }
+    }
 }

@@ -914,7 +914,7 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
     fm1_irq_off();                                  /* (the ISR reads the map and the channels: never half of them) */
     for (k = 0; k < ML_N; k++) {
         e = (uint32_t)b[2u * k] | (uint32_t)b[2u * k + 1u] << 8;
-        ml_tab[k] = (uint16_t)((e >> 9) && ml_free_cc(e & 127u) && ml_id(e >> 9) < P_COUNT ? e : 0u);
+        ml_tab[k] = (uint16_t)((e >> 9) && ml_free_cc(e & 127u) && ml_code_ok(e >> 9) ? e : 0u);
     }
     if (n >= 2u * ML_N + 4u) {
         for (k = 0; k < 3u; k++)

@@ -1706,6 +1706,13 @@ int main(int argc, char **argv)
         key(1);                                           /* F#3 */
         release(B_GLO); frames(16);
         check(mlu.on == 1u && !mlu.pick, "GLO + F#3: MIDI LEARN on");
+        {   /* the TRACKS header shows LEARN while it is on (it never drew it) */
+            uint32_t i, amb = 0;
+            go_home(); frames(64);                       /* the message gone, TRACKS drawn */
+            for (i = 0; i < 240u * 40u; i++)
+                if (screen[i] == swap16(C_AMB)) amb++;  /* the canvas stores colours swapped */
+            check(amb > 0, "TRACKS header: LEARN in amber while learning");
+        }
         open_family(FAM_FX); frame();
         for (j = 0; j < 12u; j++) { encs[panel.enc[EN_SELECT]] = -1; frame(); }   /* the FX page: KNOB 1 = DIST */
         frames(16);
@@ -1718,6 +1725,13 @@ int main(int argc, char **argv)
         go_home(); frames(16);
         press(B_GLO); frames(10); key(1); release(B_GLO); frames(4);
         check(!mlu.on, "GLO + F#3 again: LEARN off");
+        {   /* and it is gone again once learning is off */
+            uint32_t i, amb = 0;
+            go_home(); frames(64);
+            for (i = 0; i < 240u * 40u; i++)
+                if (screen[i] == swap16(C_AMB)) amb++;  /* the canvas stores colours swapped */
+            check(amb == 0, "TRACKS header: no LEARN once learning is off");
+        }
         midi_cc(&trk[1], 74, 127);
         check(trk[0].p[P_DIST] == TP[P_DIST].max, "CC 74 (any channel): track 1's DIST to its top");
         trk[0].p[P_DIST] = 0;
@@ -1727,6 +1741,32 @@ int main(int argc, char **argv)
         tap(B_OCTUP);
         check(ui.menu_sel == MI_LCLEAR && ml_count() == 0u, "menu SYSTEM > MIDI LEARN CLEAR, OCT+: nothing learned any more");
         ui.menu = 0; ui.force = 1; go_home(); frames(16);
+        {   /* MIDI LEARN (2.8): a button pressed while learning is picked, and a knob turned is picked */
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            check(mlu.on == 1u, "LEARN: armed again for the button and knob pick");
+            tap(B_GLO); frames(4);                     /* press GLO: picked */
+            check(mlu.pick && mlu.kind == 1u && mlu.id == B_GLO, "LEARN: a button pressed picks it (GLO)");
+            midi_cc(&trk[0], 20, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 20u && (ml_tab[0] >> 9) == ML_BTN0 + B_GLO && !mlu.pick,
+                  "LEARN: a CC sent: CC 20 = GLO");
+            K(EN_SELECT, 1); frames(4);                /* turn SELECT: picked */
+            check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_SEL, "LEARN: SELECT turned picks it");
+            midi_cc(&trk[0], 21, 10); frame();
+            check(ml_count() == 2u && (ml_tab[1] & 127u) == 21u && (ml_tab[1] >> 9) == ML_KNOB_SEL && !mlu.pick,
+                  "LEARN: a CC sent: CC 21 = SELECT");
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(4);   /* learn off */
+            check(!mlu.on, "LEARN: off again");
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN (2.8): a learned ALGORITHM CC changes the engine (the main loop) */
+            set_engine_of(&trk[0], 1); trk[0].engine = trk[0].eng_req;   /* DIGITAL */
+            ml_engine_cc = 1;   /* a CC value of 0 -> engine 0 (ANALOG) */
+            frames(4);
+            check(trk[0].eng_req == 0u, "LEARN: a learned ALGORITHM CC sets the engine (ANALOG)");
+            ml_engine_cc = 0;
+            set_engine_of(&trk[0], TRK_DEF[0][0]); apply_preset_to(&trk[0], TRK_DEF[0][1]); trk[0].engine = trk[0].eng_req;
+        }
         {   /* GLO > MIDI: CH1 CH2 CH3 OTHER (2.6) */
             uint32_t hit = 0;
             WALK(FAM_GLO, "MIDI", hit);

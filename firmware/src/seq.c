@@ -2987,19 +2987,36 @@ static const uint8_t MIDI_CC_MAP[][2] = {
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
 /* MIDI LEARN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussion #170): up to ML_N CCs, each set to one
- * parameter of one track, from any channel (a learned CC is the user's: the routing never gates it, and MIDI LEARN
- * listens on every channel while armed) and whichever track that channel plays. Kept with the settings (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6
- * the CC, 7..8 the track, 9..15 the parameter's code, 0 = an empty entry: a common parameter its P_* id + 1 (their
- * ids never move, new ones go before P_E0), an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones
- * are added). A learned CC no longer reaches the standard map on any channel: the controller is the user's now. The
- * CCs with a meaning of their own (0 / 32 bank select, 1 mod wheel, 6 / 38 data entry, 11 expression, 64 sustain,
- * 96..101, 120..127 the channel modes) are never learned. The UI (ui_input.c ml_*) writes the entries with the
- * interrupts off; ml_arm / ml_heard hand it a CC heard while learning */
-#define ML_N 16u
+ * parameter of one track, a button (2.8-midilearn: the REMOTE buttons, remapped by learning) or a knob (VOLUME,
+ * SELECT, PRESETS, ALGORITHM), from any channel (a learned CC is the user's: the routing never gates it, and MIDI
+ * LEARN listens on every channel while armed) and whichever track that channel plays. Kept with the settings
+ * (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6 the CC, 7..8 the track, 9..15 the
+ * parameter's code, 0 = an empty entry: a common parameter its P_* id + 1 (their ids never move, new ones go before
+ * P_E0), an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones are added), a button ML_BTN0 + k
+ * (k the B_* label), a knob ML_KNOB_* (the track bits unused). A learned CC no longer reaches the standard map on any
+ * channel: the controller is the user's now. The CCs with a meaning of their own (0 / 32 bank select, 1 mod wheel,
+ * 6 / 38 data entry, 11 expression, 64 sustain, 96..101, 120..127 the channel modes) are never learned. The UI
+ * (ui_input.c ml_*) writes the entries with the interrupts off; ml_arm / ml_heard hand it a CC heard while learning */
+#define ML_N 32u
 #define ML_E0 120u
+#define ML_BTN0 64u       /* a button's code: ML_BTN0 + k (k the B_* label, 0..13) */
+#define ML_NBTN 14u       /* the buttons (panel.c NB) */
+#define ML_KNOB_VOL 78u   /* the knobs' codes: VOLUME, SELECT, PRESETS, ALGORITHM */
+#define ML_KNOB_SEL 79u
+#define ML_KNOB_PRESET 80u
+#define ML_KNOB_ALGO 81u
 _Static_assert(P_E0 < ML_E0 && P_COUNT - P_E0 == 8, "MIDI LEARN: a code per parameter");
+_Static_assert(ML_BTN0 > P_E0 && ML_KNOB_ALGO < ML_E0, "MIDI LEARN: button/knob codes in the free range");
 static volatile uint16_t ml_tab[ML_N];
 static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that came meanwhile + 1 (0 none) */
+static volatile uint8_t ml_preset_cc;      /* a learned PRESETS CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
+static volatile uint8_t ml_engine_cc;      /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
+static int ml_code_ok(uint32_t code)       /* a code this firmware stores (project.c) */
+{
+    return (code && code <= P_E0) || (code >= ML_E0 && code < ML_E0 + 8u) ||
+           (code >= ML_BTN0 && code < ML_BTN0 + ML_NBTN) ||
+           (code >= ML_KNOB_VOL && code <= ML_KNOB_ALGO);
+}
 static uint32_t ml_id(uint32_t code)        /* an entry's code -> P_* id, P_COUNT: none this firmware knows */
 {
     return code >= ML_E0 ? (code - ML_E0 < 8u ? P_E0 + code - ML_E0 : P_COUNT) : code && code <= P_E0 ? code - 1u : P_COUNT;
@@ -3032,6 +3049,28 @@ static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
     if (d->max > d->min)
         t->p[id % P_COUNT] = (int16_t)(d->min + ((int32_t)(value & 127u) * (d->max - d->min) + 63) / 127);
 }
+/* a learned knob CC: drive the knob (2.8-midilearn). VOLUME and SELECT (BPM) are plain assignments, safe here;
+ * PRESETS and ALGORITHM load a sound / change the engine (flash reads), so they are requests the main loop
+ * (ui.c ml_knob_poll) carries out */
+static void ml_knob_cc(uint32_t code, uint32_t value)
+{
+    uint32_t v = value & 127u;
+    switch (code) {
+    case ML_KNOB_VOL:   /* VOLUME: the master level, as the editor's LIVE page sets it (ed_master) */
+        ed_master = (uint8_t)((v * 126u / 127u) + 1u);
+        ed_master_k = 0xFFFFu;
+        break;
+    case ML_KNOB_SEL:   /* SELECT: the tempo (BPM) */
+        song.g[G_BPM] = (int16_t)(GP[G_BPM].min + (int32_t)((v * (uint32_t)(GP[G_BPM].max - GP[G_BPM].min) + 63u) / 127u));
+        break;
+    case ML_KNOB_PRESET: /* PRESETS: the selected track's preset (the main loop loads it) */
+        ml_preset_cc = (uint8_t)(v + 1u);
+        break;
+    case ML_KNOB_ALGO:  /* ALGORITHM: the selected track's engine (the main loop sets it) */
+        ml_engine_cc = (uint8_t)(v + 1u);
+        break;
+    }
+}
 /* 1: cc is learned (set here) or taken by MIDI LEARN waiting for one */
 static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
 {
@@ -3049,8 +3088,14 @@ static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
     for (i = 0; i < ML_N; i++) {
         e = ml_tab[i];
         if ((e >> 9) && (e & 127u) == cc) {
-            if ((id = ml_id(e >> 9)) < P_COUNT)
+            uint32_t code = e >> 9;
+            if (code >= ML_BTN0 && code < ML_BTN0 + ML_NBTN) {
+                remote_cc(code - ML_BTN0, value);       /* a learned button CC: press/release like REMOTE */
+            } else if (code >= ML_KNOB_VOL && code <= ML_KNOB_ALGO) {
+                ml_knob_cc(code, value);                /* a learned knob CC: drive the knob */
+            } else if ((id = ml_id(code)) < P_COUNT) {
                 midi_cc_set(&trk[(e >> 7) & 3u], id, value);
+            }
             hit = 1;
         }
     }

@@ -1102,23 +1102,23 @@ async function editorDsyn() {
   const g2 = E.parse[C.DSYN_GET](await rq(E.req.dsynGet(DSYN.USER)));
   ok(A.objects.some((x) => x.id === 9 && x.len === 1464) && g2.name === "BOOM", "dsyn: a backup holds the SYN kits (object 9); a restore puts them back");
   /* 2.6: the MIDI LEARN map, object 10, in a backup only while something is learned */
-  const ml = new Uint8Array(40);                            /* (2.6: the map, then GLO > MIDI: 2, 11, 8, drums 10, BEND) */
+  const ml = new Uint8Array(72);                            /* (2.6: the map, then GLO > MIDI: 2, 11, 8, drums 10, BEND) */
   ml[0] = 21, ml[1] = (1 << 1) | (34 << 1);                 /* CC 21 -> track 1 (bits 7..8), code 34 (bits 9..15) */
-  ml[32] = 2, ml[33] = 11, ml[34] = 8, ml[35] = 10, ml[36] = 2;
+  ml[64] = 2, ml[65] = 11, ml[66] = 8, ml[67] = 10, ml[68] = 2;
   m.state.ml = ml.slice();
   const M = await E.backupCapture(rq, info);
-  m.state.ml = new Uint8Array(32);
+  m.state.ml = new Uint8Array(64);
   const N = await E.backupCapture(rq, info);
-  m.state.ml = new Uint8Array(40);
+  m.state.ml = new Uint8Array(72);
   await E.backupRestore(rq, JSON.parse(JSON.stringify(M)));
-  ok(M.objects.some((x) => x.id === 10 && x.len === 40) && !N.objects.some((x) => x.id === 10) && m.state.ml[0] === 21 && m.state.ml[1] === ml[1]
-    && m.state.ml[33] === 11, "midi learn: a backup holds the learned CCs and GLO > MIDI (object 10, only when not the default); a restore puts them back");
+  ok(M.objects.some((x) => x.id === 10 && x.len === 72) && !N.objects.some((x) => x.id === 10) && m.state.ml[0] === 21 && m.state.ml[1] === ml[1]
+    && m.state.ml[65] === 11, "midi learn: a backup holds the learned CCs and GLO > MIDI (object 10, only when not the default); a restore puts them back");
   {   /* 2.6: a 2.6 backup without object 10 (the defaults then): restored as the defaults, not left as they are now */
     const N1 = JSON.parse(JSON.stringify(N));
     N1.firmware = "SLOOP 2.6";
     await E.backupRestore(rq, N1);
-    ok(m.state.ml.length === 40 && m.state.ml.slice(0, 32).every((x) => x === 0) && m.state.ml[32] === 1 && m.state.ml[33] === 2
-      && m.state.ml[34] === 3 && m.state.ml[35] === 10 && m.state.ml[36] === 2,
+    ok(m.state.ml.length === 72 && m.state.ml.slice(0, 64).every((x) => x === 0) && m.state.ml[64] === 1 && m.state.ml[65] === 2
+      && m.state.ml[66] === 3 && m.state.ml[67] === 10 && m.state.ml[68] === 2,
       "backup: a 2.6 one without object 10 resets MIDI LEARN and GLO > MIDI to the defaults (they were then)");
   }
   {   /* 2.6: a backup with projects newer than the device reads: refused before anything is written */

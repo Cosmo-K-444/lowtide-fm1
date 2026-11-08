@@ -184,7 +184,8 @@ UI_SMALL static void te_header(const char *title, uint16_t tc, uint32_t *cache, 
     uint32_t beat = clk_beat, k, playing = song.playing;
     uint32_t sig = studio_hash((uint32_t)song.g[G_BPM] * 7u + playing * 3u + (song.rec != 0) * 1999u +
                                (playing ? beat * 131u + TSEL->seq_idx * 7919u : 0u) + (uint32_t)song.g[G_CLOCK] * 77u +
-                               arrangement_enabled * 5u + (ui.bpm_t != 0) * 104729u + song.solo * 37u, title);
+                               arrangement_enabled * 5u + (ui.bpm_t != 0) * 104729u + song.solo * 37u +
+                               (uint32_t)mlu.on * 7919u, title);   /* MIDI LEARN on: the header shows it */
     sig = sig * 31u + tc;
     sig = sig * 31u + (uint32_t)(sect + 1) * 211u;    /* (2.7.2) the section A..D badge */
     if (!ui.force && sig == *cache)
@@ -208,6 +209,8 @@ UI_SMALL static void te_header(const char *title, uint16_t tc, uint32_t *cache, 
         cv_text(176, 4, &FONT_S, "rec", TE_RED);
         if (song.g[G_CLOCK] != 0)                       /* the click is on */
             cv_text(168, 22, &FONT_S, "click", TE_G3);
+        if (mlu.on)                                     /* MIDI LEARN on: it stays visible while recording too */
+            cv_text(236 - text_w(&FONT_S, "LEARN"), 22, &FONT_S, "LEARN", C_AMB);
     } else {
         int32_t tx = 240 - text_w(&FONT_S, title) - 4;
         cv_text(tx, 5, &FONT_S, title, tc);
@@ -217,8 +220,13 @@ UI_SMALL static void te_header(const char *title, uint16_t tc, uint32_t *cache, 
             cv_rect(bx, 3, bw, 14, playing ? TE_COL[sect & 3] : TE_DIM[sect & 3]);
             cv_text(bx + 4, 5, &FONT_S, sb, C_BLACK);
         }
-        if (song.solo)
+        if (mlu.on) {                                  /* MIDI LEARN on (2.6): the live screens never drew it */
+            cv_text(236 - text_w(&FONT_S, "LEARN"), 22, &FONT_S, "LEARN", C_AMB);
+            if (song.solo)                             /* solo sits to its left rather than under it */
+                cv_text(236 - text_w(&FONT_S, "LEARN") - 4 - text_w(&FONT_S, "solo"), 22, &FONT_S, "solo", C_WHITE);
+        } else if (song.solo) {
             cv_text(236 - text_w(&FONT_S, "solo"), 22, &FONT_S, "solo", C_WHITE);
+        }
     }
     cv_rect(0, 39, 240, 1, TE_G1);
     cv_blit(0, 0);

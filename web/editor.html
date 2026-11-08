@@ -2476,8 +2476,9 @@ async function backupRestore(rq, file, progress = () => {}) {
   /* (2.6) a backup of a 2.6 FM-1 without object 10 had the MIDI settings at their defaults (nothing learned, channels
      1 2 3, drums 10, OTHER SEL, BEND 2): restored as such, not left as the device has them now */
   if (!m.has(10) && bkFwAtLeast(file.firmware, [2, 5, 1])) {
-    const d = new Uint8Array(40);
-    d.set([1, 2, 3, 10, 2], 32);
+    const d = new Uint8Array(72);                  /* the MIDI part is 2 * 32 + 8 (ML_N 32): the map, then the
+                                                      settings at 64 (channels 1 2 3, drums 10, BEND 2) */
+    d.set([1, 2, 3, 10, 2], 64);
     m.set(10, d);
   }
   const total = [...m.values()].reduce((s, d) => s + d.length, 0) || 1;
@@ -2912,9 +2913,9 @@ function mockSettings() {
   b.set([0x33, 0x52, 0x45, 0x50]);
   return ARR.encode(b, { loop: false, entries: [0, 1, 2, 3].map((scene) => ({ scene, bars: 4 })) });
 }
-/* backup object 10 at its default: nothing learned, CH1-3 = 1 2 3, drums 10, OTHER SEL, BEND 2 (a 32 / 36-byte one: the
+/* backup object 10 at its default: nothing learned, CH1-3 = 1 2 3, drums 10, OTHER SEL, BEND 2 (a 64 / 68-byte one: the
    map, the map and the channels) */
-const mlDefault = (b) => b.every((x, i) => i < 32 ? !x : i === 32 ? x === 1 : i === 33 ? x === 2 : i === 34 ? x === 3 : i === 35 ? x === 10 : i === 36 ? x === 2 : !x);
+const mlDefault = (b) => b.every((x, i) => i < 64 ? !x : i === 64 ? x === 1 : i === 65 ? x === 2 : i === 66 ? x === 3 : i === 67 ? x === 10 : i === 68 ? x === 2 : !x);
 function makeMockDevice(opt = {}) {
   const NONOFF = ["OFF", "ON"], NDIV = ["1/4", "1/8", "1/16", "1/32", "8T", "16T"], NGO = ["--", "GO"], NDASH = ["--"];
   const NSDIV = [...NDIV, "1/2", "1BAR", "2BAR"], NDLY = [...NDIV, "1/8D", "1/16D", "1/4D"];   /* SLOOP 2.4: long steps, dotted delays */
@@ -3155,7 +3156,7 @@ function makeMockDevice(opt = {}) {
     fm6bank: new Array(FM6_BANK).fill(null),         /* the FM6 patch bank (fm6_bank.c): packed records */
     settings: mockSettings(),                       /* v6: the settings object (2.5: a PER3 with a song order) */
     dsyn: null, dsynStored: null, dsynPlayed: [],  /* v10: the SYN kits (RAM, flash), the auditions heard */
-    ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 16 x 2 bytes), null: none */
+    ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 32 x 2 bytes), null: none */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
     /* v12 (LIVE): the transport's start, the sections (A..D: playing, asked for at a time), song mode, SONG REC, fills,
@@ -3594,8 +3595,8 @@ function makeMockDevice(opt = {}) {
               else st.theme = P.len ? THEME.encode(th) : null;   /* (kept as gfx.c keeps it: a THM1 as THM2) */
             }
             else if (id === 10) {                           /* the MIDI part (2.6; editor.c: stopped only): the LEARN
-                                                               map (16 x 2 bytes), then GLO > MIDI's channels (4 bytes) */
-              if (P.len !== 32 && P.len !== 36 && P.len !== 40) throw 0;
+                                                               map (32 x 2 bytes), then GLO > MIDI's 8 settings bytes */
+              if (P.len !== 64 && P.len !== 68 && P.len !== 72) throw 0;
               if (st.playing) rc = 3;
               else st.ml = P.buf.slice();
             }

@@ -1112,9 +1112,29 @@ UI_SMALL static void ui_input(void)
         ui_input_ms = fm1_ms;
     remote_poll();                                      /* (2.7) the buttons over MIDI */
     pc_poll();                                          /* MIDI Program Change: a sound (2.6, ui.c) */
+    ml_knob_poll();                                     /* MIDI LEARN: a learned PRESETS / ALGORITHM CC (2.8) */
     midi_chan_fix();                                    /* GLO > MIDI: no channel on two tracks (2.6, ui.c) */
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
     ml_poll();                                          /* MIDI LEARN: a CC came for the picked parameter (2.6) */
+    {   /* MIDI LEARN armed: a button pressed picks it (2.8-midilearn); the press is eaten from `pressed`, so the
+       * hold and transport actions on it wait (the layer may still show: it reads the button itself). The knobs
+       * pick where they are read (below): their turn still does its job (SELECT navigates), as a parameter knob's
+       * turn edits it and picks it. VOLUME is the master level (main.c) */
+        static uint32_t vol_last = 0xFFFFu;
+        uint32_t m = (uint32_t)song.master_q12;
+        if (vol_last == 0xFFFFu)
+            vol_last = m;
+        else if (mlu.on && (m + 64u < vol_last || m > vol_last + 64u))
+            ml_pick_knob(ML_KNOB_VOL);
+        vol_last = m;
+        if (mlu.on) {
+            for (k = 0; k < NB; k++)
+                if (pressed & (1u << panel.btn[k])) {
+                    ml_pick_button(k);
+                    pressed &= ~(1u << panel.btn[k]);
+                }
+        }
+    }
     page_fix();                                         /* (a page the track does not have: its neighbour, 2.6) */
     midi_entry();                                       /* (the STEP page's MIDI notes: read every frame, 2.6) */
     if (home == BT_HOLD) {                              /* HOME held: open the menu, or leave it */
@@ -1154,6 +1174,7 @@ UI_SMALL static void ui_input(void)
                                                          * or locked: SELECT is its fade only, 2.8.1. Not read again
                                                          * here: a detent the scan ISR counts after the fade's read
                                                          * waits for the fade's next read, it is never the tempo) */
+            if (mlu.on) ml_pick_knob(ML_KNOB_SEL);   /* MIDI LEARN (2.8): the turn picks it, and still does its job */
             song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel(EN_SELECT, s, 200), GP[G_BPM].min, GP[G_BPM].max);
             ui.bpm_t = 40;
         }
@@ -1263,21 +1284,28 @@ UI_SMALL static void ui_input(void)
         seq_entry(notes);                                 /* (and the MIDI keyboard's: midi_entry) */
 
     if (on_notes_page() && (s = panel_enc(EN_PRESET)) != 0) {   /* (2.7.2) NOTES: PRESETS zooms, 8 .. 64 steps */
+        if (mlu.on) ml_pick_knob(ML_KNOB_PRESET);   /* MIDI LEARN (2.8): the turn picks it, and still does its job */
         ui.zoom = (uint8_t)(clamp((int32_t)(int8_t)ui.zoom + (s > 0 ? 1 : -1), -1, 2));
         ui.force = 1;
     }
-    if ((s = panel_enc(EN_PRESET)) != 0 && (ui.home || cur_page()->graph == GR_BROWSE || cur_fam() == FAM_TRK)) {
-        /* PRESETS browses the selected part's presets (all engines, then user presets) on HOME, the PRESETS
-         * page and TRACKS only (the drum track: its kits); elsewhere a stray turn would throw away the sound
-         * being edited. Every detent counts */
-        uint32_t total, cur = preset_pos(&total);
-        if (is_drum(TSEL))
-            TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
-        else if (total)
-            preset_go((uint32_t)(((int32_t)cur + s % (int32_t)total + (int32_t)total) % (int32_t)total));
+    if ((s = panel_enc(EN_PRESET)) != 0) {
+        if (mlu.on) ml_pick_knob(ML_KNOB_PRESET);   /* MIDI LEARN (2.8): the turn picks it, and still does its job */
+        if (ui.home || cur_page()->graph == GR_BROWSE || cur_fam() == FAM_TRK) {
+            /* PRESETS browses the selected part's presets (all engines, then user presets) on HOME, the PRESETS
+             * page and TRACKS only (the drum track: its kits); elsewhere a stray turn would throw away the sound
+             * being edited. Every detent counts */
+            uint32_t total, cur = preset_pos(&total);
+            if (is_drum(TSEL))
+                TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
+            else if (total)
+                preset_go((uint32_t)(((int32_t)cur + s % (int32_t)total + (int32_t)total) % (int32_t)total));
+        }
     }
-    if ((s = panel_enc(EN_ALGO)) != 0 && !ft_on)     /* ALGORITHM: the selected track, on every page (not in a take) */
-        track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, NTRK - 1));
+    if ((s = panel_enc(EN_ALGO)) != 0) {     /* ALGORITHM: the selected track, on every page (not in a take) */
+        if (mlu.on) ml_pick_knob(ML_KNOB_ALGO);   /* MIDI LEARN (2.8): the turn picks it, and still does its job */
+        if (!ft_on)
+            track_select((uint32_t)clamp((int32_t)song.sel + (s > 0 ? 1 : -1), 0, NTRK - 1));
+    }
     if (vis_shown() && !rec_wait && !ft_on) {           /* the visualiser: SELECT its style; KNOB 1..4 (the TRACKS
                                                          * screen's, out of sight) do nothing */
         if ((s = panel_enc(EN_SELECT)) != 0)
@@ -1285,10 +1313,13 @@ UI_SMALL static void ui_input(void)
         for (k = 0; k < 4u; k++)
             panel_enc(EN_K1 + k);
     }
-    if ((s = panel_enc(EN_SELECT)) != 0 && (rec_wait || ft_on || !page_walk(s))) {   /* SELECT: the pages of the
-                                                     * family shown, else (and on the REC screen) the tempo */
-        song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel(EN_SELECT, s, 200), GP[G_BPM].min, GP[G_BPM].max);
-        ui.bpm_t = 40;                              /* the header's BPM lights up; no message over the header */
+    if ((s = panel_enc(EN_SELECT)) != 0) {   /* SELECT: the pages of the family shown, else (and on the REC
+                                              * screen) the tempo */
+        if (mlu.on) ml_pick_knob(ML_KNOB_SEL);   /* MIDI LEARN (2.8): the turn picks it, and still does its job */
+        if (rec_wait || ft_on || !page_walk(s)) {
+            song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel(EN_SELECT, s, 200), GP[G_BPM].min, GP[G_BPM].max);
+            ui.bpm_t = 40;                              /* the header's BPM lights up; no message over the header */
+        }
     }
     for (k = 0; k < 4u; k++) {
         const page_t *pg = cur_page();

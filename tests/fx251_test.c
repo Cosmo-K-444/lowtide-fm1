@@ -347,6 +347,31 @@ static void t_learn(void)
     check(ml_heard == 22u, "MIDI LEARN: IN = CLOCK, a CC is heard while learning");
     ml_arm = 0, ml_heard = 0;
     song.g[G_ROUTE] = 0;
+    /* (2.8-midilearn) a learned CC for a button presses it, and for a knob drives it */
+    ml_tab[0] = (uint16_t)(20u | 0u << 7 | (ML_BTN0 + 10u) << 9);   /* CC 20 -> the PLAY button (panel.c B_PLAY = 10) */
+    ml_tab[1] = (uint16_t)(21u | 0u << 7 | ML_KNOB_VOL << 9);          /* CC 21 -> VOLUME */
+    ml_tab[2] = (uint16_t)(22u | 0u << 7 | ML_KNOB_SEL << 9);          /* CC 22 -> SELECT (BPM) */
+    ml_tab[3] = (uint16_t)(23u | 0u << 7 | ML_KNOB_PRESET << 9);       /* CC 23 -> PRESETS */
+    ml_tab[4] = (uint16_t)(24u | 0u << 7 | ML_KNOB_ALGO << 9);         /* CC 24 -> ALGORITHM */
+    remote_lbl = 0, remote_up = 0;
+    cc_in(5, 20, 127);                                /* channel 6: PLAY down */
+    check((remote_lbl >> 10u) & 1u, "MIDI LEARN: CC 20 (learned) holds the PLAY button");
+    cc_in(5, 20, 0);                                  /* PLAY up */
+    check((remote_up >> 10u) & 1u, "MIDI LEARN: CC 20 to 0 lets the PLAY button go");
+    ed_master = 0;
+    cc_in(5, 21, 64);                                 /* VOLUME to mid */
+    check(ed_master == (uint8_t)((64u * 126u / 127u) + 1u), "MIDI LEARN: CC 21 (learned) sets the master level");
+    song.g[G_BPM] = 90;
+    cc_in(5, 22, 127);                                /* SELECT to the top: BPM 240 */
+    check(song.g[G_BPM] == 240, "MIDI LEARN: CC 22 (learned) sets the tempo to 240");
+    ml_preset_cc = 0, ml_engine_cc = 0;
+    cc_in(5, 23, 100);                                /* PRESETS: a request for the main loop */
+    check(ml_preset_cc == 101u, "MIDI LEARN: CC 23 (learned) asks the main loop for a preset");
+    cc_in(5, 24, 100);                                /* ALGORITHM: a request for the main loop */
+    check(ml_engine_cc == 101u, "MIDI LEARN: CC 24 (learned) asks the main loop for an engine");
+    check(ml_code_ok(ML_BTN0 + 5u) && ml_code_ok(ML_KNOB_VOL) && ml_code_ok(ML_KNOB_ALGO) &&
+          ml_code_ok(P_DIST + 1u) && ml_code_ok(ML_E0 + 7u) && !ml_code_ok(0) && !ml_code_ok(82u) && !ml_code_ok(119u),
+          "MIDI LEARN: a code this firmware stores (a button, a knob, a parameter; not 0, 82, 119)");
     memset((void *)ml_tab, 0, sizeof ml_tab);
     mi_r = mi_w;
 }
