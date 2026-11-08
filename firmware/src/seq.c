@@ -1811,6 +1811,20 @@ static void remote_cc(uint32_t k, uint32_t value)
         remote_up |= bit;
     }
 }
+static volatile uint32_t learn_btn_lbl, learn_btn_up;   /* buttons held by a LEARNED CC: not the REMOTE channel,
+                                                         * so they work whether REMOTE is OFF or on (a learned
+                                                         * button CC was dropped by remote_poll while REMOTE was
+                                                         * OFF, because it shared remote_lbl) */
+static void learn_btn_cc(uint32_t k, uint32_t value)   /* a learned button CC: press/release, like REMOTE */
+{
+    uint32_t bit = 1u << k;
+    if (value >= 64u) {
+        learn_btn_lbl |= bit;
+        learn_btn_up &= ~bit;
+    } else if (learn_btn_lbl & bit) {
+        learn_btn_up |= bit;
+    }
+}
 static uint32_t midi_drum_lane(uint32_t note)
 {
     return song.g[G_DRMAP] ? (note + 128u - 36u) % 16u : lane_of_note(note);
@@ -2993,7 +3007,8 @@ static const uint8_t MIDI_CC_MAP[][2] = {
  * (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6 the CC, 7..8 the track, 9..15 the
  * parameter's code, 0 = an empty entry: a common parameter its P_* id + 1 (their ids never move, new ones go before
  * P_E0), an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones are added), a button ML_BTN0 + k
- * (k the B_* label), a knob ML_KNOB_* (the track bits unused). A learned CC no longer reaches the standard map on any
+ * (k the B_* label), a knob ML_KNOB_* (the track bits unused), a knob follower ML_KNOB_FOLLOW + k (2.8-learnfix6:
+ * knob K1+k on the current page, whatever it controls there). A learned CC no longer reaches the standard map on any
  * channel: the controller is the user's now. The CCs with a meaning of their own (0 / 32 bank select, 1 mod wheel,
  * 6 / 38 data entry, 11 expression, 64 sustain, 96..101, 120..127 the channel modes) are never learned. The UI
  * (ui_input.c ml_*) writes the entries with the interrupts off; ml_arm / ml_heard hand it a CC heard while learning */
@@ -3005,17 +3020,20 @@ static const uint8_t MIDI_CC_MAP[][2] = {
 #define ML_KNOB_SEL 79u
 #define ML_KNOB_PRESET 80u
 #define ML_KNOB_ALGO 81u
+#define ML_KNOB_FOLLOW 82u   /* the knob followers: ML_KNOB_FOLLOW + k follows knob K1+k on the current page (2.8-learnfix6) */
 _Static_assert(P_E0 < ML_E0 && P_COUNT - P_E0 == 8, "MIDI LEARN: a code per parameter");
-_Static_assert(ML_BTN0 > P_E0 && ML_KNOB_ALGO < ML_E0, "MIDI LEARN: button/knob codes in the free range");
+_Static_assert(ML_BTN0 > P_E0 && ML_KNOB_ALGO < ML_E0 && ML_KNOB_FOLLOW + 3u < ML_E0, "MIDI LEARN: button/knob codes in the free range");
 static volatile uint16_t ml_tab[ML_N];
 static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that came meanwhile + 1 (0 none) */
 static volatile uint8_t ml_preset_cc;      /* a learned PRESETS CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
-static volatile uint8_t ml_engine_cc;      /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
+static volatile uint8_t ml_track_cc;       /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
+static volatile uint8_t ml_follow_cc[4];   /* a learned knob-follower CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static int ml_code_ok(uint32_t code)       /* a code this firmware stores (project.c) */
 {
     return (code && code <= P_E0) || (code >= ML_E0 && code < ML_E0 + 8u) ||
            (code >= ML_BTN0 && code < ML_BTN0 + ML_NBTN) ||
-           (code >= ML_KNOB_VOL && code <= ML_KNOB_ALGO);
+           (code >= ML_KNOB_VOL && code <= ML_KNOB_ALGO) ||
+           (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u);
 }
 static uint32_t ml_id(uint32_t code)        /* an entry's code -> P_* id, P_COUNT: none this firmware knows */
 {
@@ -3066,8 +3084,8 @@ static void ml_knob_cc(uint32_t code, uint32_t value)
     case ML_KNOB_PRESET: /* PRESETS: the selected track's preset (the main loop loads it) */
         ml_preset_cc = (uint8_t)(v + 1u);
         break;
-    case ML_KNOB_ALGO:  /* ALGORITHM: the selected track's engine (the main loop sets it) */
-        ml_engine_cc = (uint8_t)(v + 1u);
+    case ML_KNOB_ALGO:  /* ALGORITHM: the selected track, as the knob does (the main loop selects it) */
+        ml_track_cc = (uint8_t)(v + 1u);
         break;
     }
 }
@@ -3090,7 +3108,9 @@ static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
         if ((e >> 9) && (e & 127u) == cc) {
             uint32_t code = e >> 9;
             if (code >= ML_BTN0 && code < ML_BTN0 + ML_NBTN) {
-                remote_cc(code - ML_BTN0, value);       /* a learned button CC: press/release like REMOTE */
+                learn_btn_cc(code - ML_BTN0, value);     /* a learned button CC: press/release, REMOTE OFF or on */
+            } else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u) {
+                ml_follow_cc[code - ML_KNOB_FOLLOW] = (uint8_t)(value + 1u);   /* a follower CC: the main loop turns the knob */
             } else if (code >= ML_KNOB_VOL && code <= ML_KNOB_ALGO) {
                 ml_knob_cc(code, value);                /* a learned knob CC: drive the knob */
             } else if ((id = ml_id(code)) < P_COUNT) {

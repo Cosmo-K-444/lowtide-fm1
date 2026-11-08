@@ -1718,13 +1718,12 @@ int main(int argc, char **argv)
         frames(16);
         ui.force = 1; frame(); ppm("header-learn");
         K(EN_K1, 1);
-        check(mlu.pick && mlu.id == P_DIST && mlu.trk == 0u && ml_arm, "LEARN: a knob turned picks its parameter (DIST)");
+        check(mlu.pick && mlu.kind == 3u && mlu.id == 0u && ml_arm, "LEARN: a knob turned picks its follower (KNOB 1)");
         midi_cc(&trk[0], 74, 10); frame();
-        check(ml_count() == 1u && (ml_tab[0] & 127u) == 74u && (ml_tab[0] >> 9) == ml_code(P_DIST) && !mlu.pick,
-              "LEARN: a CC sent: CC 74 = track 1 DIST");
+        check(ml_count() == 1u && (ml_tab[0] & 127u) == 74u && (ml_tab[0] >> 9) == ML_KNOB_FOLLOW && !mlu.pick,
+              "LEARN: a CC sent: CC 74 = KNOB 1 follower");
         go_home(); frames(16);
-        press(B_GLO); frames(10); key(1); release(B_GLO); frames(4);
-        check(!mlu.on, "GLO + F#3 again: LEARN off");
+        check(!mlu.on, "LEARN: one-shot: off after the CC is learned");
         {   /* and it is gone again once learning is off */
             uint32_t i, amb = 0;
             go_home(); frames(64);
@@ -1732,8 +1731,11 @@ int main(int argc, char **argv)
                 if (screen[i] == swap16(C_AMB)) amb++;  /* the canvas stores colours swapped */
             check(amb == 0, "TRACKS header: no LEARN once learning is off");
         }
-        midi_cc(&trk[1], 74, 127);
-        check(trk[0].p[P_DIST] == TP[P_DIST].max, "CC 74 (any channel): track 1's DIST to its top");
+        open_family(FAM_FX); frame();   /* back on FX: KNOB 1 is DIST, so the follower drives it */
+        trk[0].p[P_DIST] = 0;
+        midi_cc(&trk[1], 74, 0); frames(2);   /* the baseline: no move */
+        midi_cc(&trk[1], 74, 127); frames(16);   /* +127, at 8 detents a frame */
+        check(trk[0].p[P_DIST] > 0, "CC 74 (any channel): the KNOB 1 follower drives DIST up on FX");
         trk[0].p[P_DIST] = 0;
         ui.menu = 1; ui.menu_sel = 0; ui.force = 1; frame();
         for (j = 0; j < 6u; j++) { encs[panel.enc[EN_SELECT]] = 1; frame(); }
@@ -1750,22 +1752,277 @@ int main(int argc, char **argv)
             midi_cc(&trk[0], 20, 10); frame();
             check(ml_count() == 1u && (ml_tab[0] & 127u) == 20u && (ml_tab[0] >> 9) == ML_BTN0 + B_GLO && !mlu.pick,
                   "LEARN: a CC sent: CC 20 = GLO");
+            check(!mlu.on, "LEARN: one-shot: off after one CC is learned");
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn again */
             K(EN_SELECT, 1); frames(4);                /* turn SELECT: picked */
             check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_SEL, "LEARN: SELECT turned picks it");
             midi_cc(&trk[0], 21, 10); frame();
             check(ml_count() == 2u && (ml_tab[1] & 127u) == 21u && (ml_tab[1] >> 9) == ML_KNOB_SEL && !mlu.pick,
                   "LEARN: a CC sent: CC 21 = SELECT");
-            press(B_GLO); frames(10); key(1); release(B_GLO); frames(4);   /* learn off */
             check(!mlu.on, "LEARN: off again");
             for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
         }
-        {   /* MIDI LEARN (2.8): a learned ALGORITHM CC changes the engine (the main loop) */
-            set_engine_of(&trk[0], 1); trk[0].engine = trk[0].eng_req;   /* DIGITAL */
-            ml_engine_cc = 1;   /* a CC value of 0 -> engine 0 (ANALOG) */
-            frames(4);
-            check(trk[0].eng_req == 0u, "LEARN: a learned ALGORITHM CC sets the engine (ANALOG)");
-            ml_engine_cc = 0;
-            set_engine_of(&trk[0], TRK_DEF[0][0]); apply_preset_to(&trk[0], TRK_DEF[0][1]); trk[0].engine = trk[0].eng_req;
+        {   /* MIDI LEARN (2.8-learnfix): VOLUME is picked by a slow turn too — the move adds up while learning */
+            uint32_t m0 = song.master_q12;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.master_q12 = 2000; frames(4);          /* the baseline, learned while off */
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            check(mlu.on == 1u, "LEARN: armed for the VOLUME pick");
+            check(!mlu.pick, "LEARN: VOLUME not picked at the baseline");
+            song.master_q12 = 2030; frames(4);          /* a small move: under the threshold */
+            check(!mlu.pick, "LEARN: VOLUME not picked by a small move");
+            song.master_q12 = 2070; frames(4);          /* a further move: over the threshold in total */
+            check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_VOL, "LEARN: VOLUME picked by a slow turn (cumulative)");
+            midi_cc(&trk[0], 22, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 22u && (ml_tab[0] >> 9) == ML_KNOB_VOL && !mlu.pick,
+                  "LEARN: a CC sent: CC 22 = VOLUME");
+            check(!mlu.on, "LEARN: off again");
+            song.master_q12 = m0; frames(4);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN (2.8-learnfix): ALGORITHM turned picks it (not PRESETS), and its CC selects the track */
+            uint32_t sel0 = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            check(mlu.on == 1u, "LEARN: armed for the ALGORITHM pick");
+            K(EN_ALGO, 1); frames(4);                   /* turn ALGORITHM: picked (and it selects a track) */
+            check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_ALGO, "LEARN: ALGORITHM turned picks it");
+            midi_cc(&trk[0], 24, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 24u && (ml_tab[0] >> 9) == ML_KNOB_ALGO && !mlu.pick,
+                  "LEARN: a CC sent: CC 24 = ALGORITHM");
+            ml_preset_cc = 0; ml_track_cc = 0;
+            midi_cc(&trk[0], 24, 100);          /* send the learned CC (no frame yet) */
+            check(ml_track_cc == 101u && ml_preset_cc == 0u, "LEARN: CC 24 drives the track, not a preset");
+            frame();                              /* ml_knob_poll carries it out */
+            check(!mlu.on, "LEARN: off again");
+            song.sel = (uint8_t)sel0; frames(4);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: PRESETS learned on a CC, then that CC steps the preset (the user's CC 31 case) */
+            uint32_t sel0 = song.sel, total = 0, cur0, cur1;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.sel = 0; frames(4);                    /* a synth track, not the drums */
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            check(mlu.on == 1u, "LEARN: armed for the PRESETS pick");
+            K(EN_PRESET, 1); frames(4);                 /* turn PRESETS: picked */
+            check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_PRESET, "LEARN: PRESETS turned picks it");
+            midi_cc(&trk[0], 31, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 31u && (ml_tab[0] >> 9) == ML_KNOB_PRESET && !mlu.pick,
+                  "LEARN: a CC sent: CC 31 = PRESETS");
+            check(!mlu.on, "LEARN: off again");
+            (void)preset_pos(&total);
+            check(total > 20u, "LEARN: enough presets to step through");
+            preset_go(50); frames(4);                   /* a known middle preset */
+            cur0 = preset_pos(&total);
+            check(cur0 == 50u, "LEARN: starting from preset 50");
+            /* PRESETS steps by the knob's move (relative), so a value that maps to the last preset no longer
+             * lands on a preset the table cannot reach. First send sets the baseline; then the deltas step. */
+            midi_cc(&trk[0], 31, 50); frames(4);        /* baseline send (preset may move once) */
+            cur0 = preset_pos(&total);
+            midi_cc(&trk[0], 31, 60); frames(4);        /* +10: the preset steps up by 10 */
+            cur1 = preset_pos(&total);
+            check(cur1 == cur0 + 10u, "LEARN: CC 31 up 10 steps the preset up 10");
+            midi_cc(&trk[0], 31, 45); frames(4);        /* -15: the preset steps down by 15 */
+            cur1 = preset_pos(&total);
+            check(cur1 == cur0 + 10u - 15u, "LEARN: CC 31 down 15 steps the preset down 15");
+            midi_cc(&trk[0], 31, 127); frames(4);       /* a big upward move: the preset moves, not stuck */
+            cur1 = preset_pos(&total);
+            check(cur1 > cur0 + 10u - 15u, "LEARN: CC 31 to 127 moves the preset up (not stuck)");
+            song.sel = (uint8_t)sel0; frames(4);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a learned ALGORITHM CC steps the track by its move (relative, faster) */
+            uint32_t sel = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_tab[0] = (uint16_t)(24u | 0u << 7 | ML_KNOB_ALGO << 9);   /* CC 24 -> ALGORITHM */
+            song.sel = 0; frames(2);
+            midi_cc(&trk[0], 24, 0); frames(4);   /* baseline: the track stays, the last value is set */
+            midi_cc(&trk[0], 24, 1); frames(4);   /* +1: one track up */
+            check(song.sel == 1u, "LEARN: ALGORITHM CC +1 selects track 2");
+            midi_cc(&trk[0], 24, 3); frames(4);   /* +2: two tracks up */
+            check(song.sel == 3u, "LEARN: ALGORITHM CC +2 selects track 4");
+            midi_cc(&trk[0], 24, 0); frames(4);   /* -3: three tracks down */
+            check(song.sel == 0u, "LEARN: ALGORITHM CC -3 selects track 1");
+            song.sel = (uint8_t)sel; frames(2);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN (2.8-learnfix3): a reserved CC turns learn off, and a learned CC still works */
+            uint32_t sel = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            K(EN_PRESET, 1); frames(4);                /* turn PRESETS: picked */
+            midi_cc(&trk[0], 30, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 30u && (ml_tab[0] >> 9) == ML_KNOB_PRESET,
+                  "LEARN: CC 30 = PRESETS");
+            check(!mlu.on, "LEARN: off after learning CC 30");
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn again */
+            K(EN_ALGO, 1); frames(4);                 /* turn ALGORITHM: picked */
+            check(mlu.pick && mlu.kind == 2u && mlu.id == ML_KNOB_ALGO, "LEARN: ALGORITHM picked");
+            midi_cc(&trk[0], 32, 10); frame();         /* CC 32 is reserved: not learnable */
+            check(!mlu.on && !ml_arm && !mlu.pick, "LEARN: a reserved CC turns learn off");
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 30u && (ml_tab[0] >> 9) == ML_KNOB_PRESET,
+                  "LEARN: the CC 30 = PRESETS binding survives the rejection");
+            ml_preset_cc = 0; ml_track_cc = 0;
+            midi_cc(&trk[0], 30, 100);                 /* the learned CC, now that learn is off */
+            check(ml_preset_cc == 101u && ml_track_cc == 0u, "LEARN: CC 30 still drives PRESETS after the rejection");
+            song.sel = (uint8_t)sel; frames(2);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: after one CC is learned, "Exiting Learn Mode" follows the mapping message */
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */
+            tap(B_GLO); frames(4);                     /* press GLO: picked */
+            midi_cc(&trk[0], 20, 10); frame();
+            check(!strcmp(ui.msg, "CC20 = GLO"), "LEARN: the mapping message shows");
+            frames(160);                                /* the mapping message expires (150 frames) */
+            check(!strcmp(ui.msg, "Exiting Learn Mode") && ui.msg_t > 0, "LEARN: \"Exiting Learn Mode\" follows it");
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: KNOB 2..4 pick their follower on TRACKS, on the first turn (2.8-learnfix8) */
+            uint32_t sel = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.sel = 0; go_home(); frames(16);
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(32);   /* arm learn, past the 250 ms layer quiet */
+            check(mlu.on == 1u, "LEARN: armed for the KNOB pick");
+            K(EN_K2, 1); frames(4);                     /* KNOB 2: the follower is picked */
+            check(mlu.pick && mlu.kind == 3u && mlu.id == 1u, "LEARN: KNOB 2 turned picks the KNOB 2 follower");
+            K(EN_K3, 1); frames(4);                     /* KNOB 3: the follower is picked (learn stays on after a pick) */
+            check(mlu.pick && mlu.kind == 3u && mlu.id == 2u, "LEARN: KNOB 3 turned picks the KNOB 3 follower");
+            K(EN_K4, 1); frames(4);                     /* KNOB 4: the follower is picked */
+            check(mlu.pick && mlu.kind == 3u && mlu.id == 3u, "LEARN: KNOB 4 turned picks the KNOB 4 follower");
+            midi_cc(&trk[0], 25, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 25u && (ml_tab[0] >> 9) == ML_KNOB_FOLLOW + 3u,
+                  "LEARN: a CC sent: CC 25 = KNOB 4 follower");
+            if (mlu.on) { press(B_GLO); frames(10); key(1); release(B_GLO); frames(4); }   /* learn off */
+            song.sel = (uint8_t)sel; frames(2);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: KNOB 1 on TRACKS is SWING (no parameter to learn) but picks the follower (2.8-learnfix7) */
+            uint32_t sel = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.sel = 0; go_home(); frames(16);
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(32);   /* arm learn, past the 250 ms layer quiet */
+            check(mlu.on == 1u, "LEARN: armed for the KNOB 1 pick");
+            K(EN_K1, 1); frames(4);                     /* KNOB 1 = SWING: the follower is picked */
+            check(mlu.pick && mlu.kind == 3u && mlu.id == 0u, "LEARN: KNOB 1 turned picks the KNOB 1 follower");
+            check(!strcmp(ui.msg, "K1 FOLLOW: SEND A CC"), "LEARN: KNOB 1 follower message shows");
+            midi_cc(&trk[0], 50, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 50u && (ml_tab[0] >> 9) == ML_KNOB_FOLLOW,
+                  "LEARN: a CC sent: CC 50 = KNOB 1 follower");
+            if (mlu.on) { press(B_GLO); frames(10); key(1); release(B_GLO); frames(4); }   /* learn off */
+            song.sel = (uint8_t)sel; frames(2);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a single turn of KNOB 2 on TRACKS picks the follower at once (2.8-learnfix8) */
+            uint32_t sel = song.sel;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.sel = 0; go_home(); frames(16);
+            press(B_GLO); frames(10); key(1); release(B_GLO); frames(32);   /* arm learn, past the 250 ms layer quiet */
+            K(EN_K2, 1); frames(4);                     /* one turn: the follower, no second turn needed */
+            check(mlu.pick && mlu.kind == 3u && mlu.id == 1u, "LEARN: KNOB 2 one turn picks the KNOB 2 follower");
+            check(!strcmp(ui.msg, "K2 FOLLOW: SEND A CC"), "LEARN: KNOB 2 follower message shows");
+            midi_cc(&trk[0], 51, 10); frame();
+            check(ml_count() == 1u && (ml_tab[0] & 127u) == 51u && (ml_tab[0] >> 9) == ML_KNOB_FOLLOW + 1u,
+                  "LEARN: a CC sent: CC 51 = KNOB 2 follower");
+            if (mlu.on) { press(B_GLO); frames(10); key(1); release(B_GLO); frames(4); }   /* learn off */
+            song.sel = (uint8_t)sel; frames(2);
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a learned button CC works when REMOTE is OFF (the user's CC37/FX report) */
+            uint32_t rmch = song.g[G_RMCH];
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.g[G_RMCH] = 0;   /* REMOTE OFF: the fixed CC 102..115 do nothing, a learned button must still work */
+            ml_tab[0] = (uint16_t)(37u | 0u << 7 | (ML_BTN0 + B_FX) << 9);   /* CC 37 -> FX */
+            learn_btn_lbl = 0; learn_btn_up = 0; fm1_remote_btn = 0;
+            midi_cc(&trk[0], 37, 127); frames(4);   /* FX down: the debounce must see it held first */
+            check((fm1_remote_btn >> panel.btn[B_FX]) & 1u, "LEARN: CC 37 (learned) presses FX with REMOTE OFF");
+            fm1_in.buttons |= BT(B_FX);   /* the debounce, on hardware, has now seen the MIDI press held */
+            midi_cc(&trk[0], 37, 0); frame();     /* FX up */
+            check(!((fm1_remote_btn >> panel.btn[B_FX]) & 1u), "LEARN: CC 37 to 0 lets FX go with REMOTE OFF");
+            fm1_in.buttons &= ~BT(B_FX);
+            song.g[G_RMCH] = (int16_t)rmch;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a learned button CC taps like the hardware button (the user's CC45/CC47 report) */
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            song.g[G_RMCH] = 0;   /* REMOTE OFF */
+            ml_tab[0] = (uint16_t)(45u | 0u << 7 | (ML_BTN0 + B_FX) << 9);   /* CC 45 -> FX */
+            ml_tab[1] = (uint16_t)(47u | 0u << 7 | (ML_BTN0 + B_SCL) << 9);  /* CC 47 -> SCL */
+            go_home(); frames(4);
+            /* (the test host drives fm1_in.buttons directly: the debounce that turns fm1_remote_btn into
+             * fm1_in.buttons runs on the hardware scan, so set and clear the button bit here to stand for it) */
+            midi_cc(&trk[0], 47, 127); fm1_in.buttons |= BT(B_SCL); frames(2);   /* SCL down, a quick tap */
+            midi_cc(&trk[0], 47, 0); fm1_in.buttons &= ~BT(B_SCL); frames(4);    /* SCL up */
+            check(cur_fam() == FAM_SCL, "LEARN: CC 47 tap opens the SCL pages (alone)");
+            go_home(); frames(4);
+            midi_cc(&trk[0], 45, 127); fm1_in.buttons |= BT(B_FX); frames(2);    /* FX down, a quick tap */
+            midi_cc(&trk[0], 45, 0); fm1_in.buttons &= ~BT(B_FX); frames(4);     /* FX up */
+            check(cur_fam() == FAM_FX, "LEARN: CC 45 tap opens the FX pages");
+            go_home(); frames(4);
+            midi_cc(&trk[0], 47, 127); fm1_in.buttons |= BT(B_SCL); frames(2);   /* SCL down, after FX */
+            midi_cc(&trk[0], 47, 0); fm1_in.buttons &= ~BT(B_SCL); frames(4);    /* SCL up */
+            check(cur_fam() == FAM_SCL, "LEARN: CC 47 tap opens the SCL pages (after FX)");
+            go_home(); frames(4);
+            /* (the user's Bug 2: releasing FX while SCL is still held must still open the FX pages) */
+            midi_cc(&trk[0], 47, 127); fm1_in.buttons |= BT(B_SCL); frames(2);   /* SCL held */
+            midi_cc(&trk[0], 45, 127); fm1_in.buttons |= BT(B_FX); frames(2);    /* FX down while SCL held */
+            midi_cc(&trk[0], 45, 0); fm1_in.buttons &= ~BT(B_FX); frames(4);     /* FX up, SCL still held */
+            check(cur_fam() == FAM_FX, "LEARN: CC 45 tap opens FX pages even while SCL is held");
+            midi_cc(&trk[0], 47, 0); fm1_in.buttons &= ~BT(B_SCL); frames(4);    /* SCL up */
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a knob follower turns the knob slot on the current page (2.8-learnfix6) */
+            int32_t lv0, lv1, lv2;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_tab[0] = (uint16_t)(50u | 0u << 7 | (ML_KNOB_FOLLOW + 1u) << 9);   /* CC 50 -> KNOB 2 follower */
+            go_home(); frames(4);   /* TRACKS: KNOB 2 is LEVEL */
+            TSEL->p[P_LEVEL] = 64;
+            lv0 = TSEL->p[P_LEVEL];
+            midi_cc(&trk[0], 50, 64); frames(2);   /* the baseline: no move */
+            check(TSEL->p[P_LEVEL] == lv0, "LEARN: KNOB 2 follower baseline sets no move");
+            midi_cc(&trk[0], 50, 70); frames(2);   /* up 6: LEVEL rises */
+            lv1 = TSEL->p[P_LEVEL];
+            check(lv1 > lv0, "LEARN: KNOB 2 follower up turns LEVEL up");
+            midi_cc(&trk[0], 50, 64); frames(2);   /* down 6: LEVEL falls back */
+            lv2 = TSEL->p[P_LEVEL];
+            check(lv2 < lv1, "LEARN: KNOB 2 follower down turns LEVEL down");
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: a knob follower turns the knob slot on the FX page too (the user's K2-K4 report) */
+            int32_t c0, c1;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_tab[0] = (uint16_t)(50u | 0u << 7 | (ML_KNOB_FOLLOW + 1u) << 9);   /* CC 50 -> KNOB 2 follower */
+            song.sel = 0; go_home(); frames(4);
+            open_family(FAM_FX); frames(4);   /* FX page: KNOB 2 is CHORUS (P_CHOR) */
+            TSEL->p[P_CHOR] = 0;
+            c0 = TSEL->p[P_CHOR];
+            midi_cc(&trk[0], 50, 64); frames(2);   /* the baseline: no move */
+            check(TSEL->p[P_CHOR] == c0, "LEARN: KNOB 2 follower baseline on FX sets no move");
+            midi_cc(&trk[0], 50, 70); frames(2);   /* up 6: CHORUS rises */
+            c1 = TSEL->p[P_CHOR];
+            check(c1 > c0, "LEARN: KNOB 2 follower up turns CHORUS up on FX");
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+        }
+        {   /* MIDI LEARN: re-learning PRESETS resets its step baseline (the user's "mapping lost" report) */
+            uint32_t total, cur0, cur1;
+            int32_t base, exp;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_learn_entry(30, 0, ML_KNOB_PRESET);   /* PRESETS -> CC 30 first */
+            cur0 = preset_pos(&total);
+            midi_cc(&trk[0], 30, 100); frames(4);   /* use it: the baseline is now the CC 30 value */
+            check(preset_cc_last == 100, "LEARN: CC 30 heard sets the PRESETS baseline");
+            ml_learn_entry(31, 0, ML_KNOB_PRESET);   /* re-learn PRESETS -> CC 31: the baseline must reset */
+            check(preset_cc_last == -1, "LEARN: re-learning PRESETS resets its baseline");
+            cur1 = preset_pos(&total);
+            base = (int32_t)((cur1 * 127u) / (total > 1u ? total - 1u : 1u));   /* the fresh baseline for CC 31 */
+            exp = (int32_t)cur1 + (10 - base);
+            if (exp < 0) exp = 0;
+            if (exp >= (int32_t)total) exp = (int32_t)total - 1;
+            midi_cc(&trk[0], 31, 10); frames(4);    /* the new CC steps from the current preset, not the stale one */
+            check((int32_t)preset_pos(&total) == exp, "LEARN: CC 31 steps PRESETS after the re-learn");
+            (void)cur0;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_preset_cc = 0;
         }
         {   /* GLO > MIDI: CH1 CH2 CH3 OTHER (2.6) */
             uint32_t hit = 0;

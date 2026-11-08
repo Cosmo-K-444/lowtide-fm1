@@ -316,8 +316,7 @@ UI_SMALL static void tracks_edit(uint32_t slot, int32_t steps)
         break;
     }
     *vp = (int16_t)clamp(*vp + accel(EN_K1 + slot, steps, d->names ? 0 : d->max - d->min), d->min, d->max);
-    if (!is_drum(t) && (vp == &t->p[P_LEVEL] || vp == &t->p[P_PAN]))
-        ml_knob(t, vp == &t->p[P_LEVEL] ? P_LEVEL : P_PAN);   /* MIDI LEARN: LEVEL, PAN (2.6) */
+    ml_pick_follower(slot);   /* MIDI LEARN: a knob turn always maps its slot as a follower (2.8-learnfix8) */
 }
 
 /* (2.7.2) NOTES: one undo per note edited (its pitch, length, force: EDIT + OCT- brings them back) */
@@ -561,8 +560,7 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
     *vp = (int16_t)v;
     if (pg->scope != SC_GLOBAL && p_lockable(id))
         ui.lock_par = (uint8_t)id;                        /* the SEQ layer's lock parameter: the last one touched */
-    if (pg->scope != SC_GLOBAL)
-        ml_knob(TSEL, id);                                /* MIDI LEARN: this parameter (2.6) */
+    ml_pick_follower(slot);   /* MIDI LEARN: a knob turn always maps its slot as a follower (2.8-learnfix8) */
     if (!v)
         return;
     if (pg->scope == SC_GLOBAL && (id == G_LOAD || id == G_SAVE || id == G_CLRSEQ || id == G_INITSND || id == G_NEWPRJ) &&
@@ -1081,11 +1079,11 @@ UI_SMALL static void remote_poll(void)
     usb_was = (uint8_t)(usb.config != 0);
     if (drop) {
         fm1_irq_off();                              /* REMOTE OFF, another channel, or the USB link gone (a let-go
-                                                     * never coming: REC would clear a track): every button up */
+                                                     * never coming: REC would clear a track): the fixed REMOTE
+                                                     * buttons up. A LEARNED button CC is not the REMOTE channel,
+                                                     * so it still works: no return here, it is merged below */
         remote_lbl = remote_up = 0;
         fm1_irq_on();
-        fm1_remote_btn = 0;
-        return;
     }
     for (l = 0; l < NB; l++) {
         uint32_t b = 1u << panel.btn[l], lb = 1u << l;
@@ -1095,7 +1093,13 @@ UI_SMALL static void remote_poll(void)
             remote_up &= ~lb;
             fm1_irq_on();
         }
-        if (remote_lbl & lb)
+        if ((learn_btn_up & lb) && (fm1_in.buttons & b)) {
+            fm1_irq_off();
+            learn_btn_lbl &= ~lb;
+            learn_btn_up &= ~lb;
+            fm1_irq_on();
+        }
+        if ((remote_lbl & lb) || (learn_btn_lbl & lb))
             m |= b;
     }
     fm1_remote_btn = m;
@@ -1124,9 +1128,13 @@ UI_SMALL static void ui_input(void)
         uint32_t m = (uint32_t)song.master_q12;
         if (vol_last == 0xFFFFu)
             vol_last = m;
-        else if (mlu.on && (m + 64u < vol_last || m > vol_last + 64u))
+        else if (mlu.on && (m + 64u < vol_last || m > vol_last + 64u)) {
             ml_pick_knob(ML_KNOB_VOL);
-        vol_last = m;
+            vol_last = m;   /* new baseline: a further move picks again */
+        } else if (!mlu.on) {
+            vol_last = m;   /* track the level while learn is off, so a slow
+                               turn still adds up while it is on (2.8-learnfix) */
+        }
         if (mlu.on) {
             for (k = 0; k < NB; k++)
                 if (pressed & (1u << panel.btn[k])) {
@@ -1337,8 +1345,7 @@ UI_SMALL static void ui_input(void)
             *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, d->names ? 0 : d->max - d->min), d->min, d->max);   /* (a list: no jumps) */
             if (!is_drum(TSEL) && p_lockable(ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u]))
                 ui.lock_par = ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u];
-            if (!is_drum(TSEL))
-                ml_knob(TSEL, ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u]);   /* MIDI LEARN (2.6) */
+            ml_pick_follower(k);   /* MIDI LEARN: a knob turn always maps its slot as a follower (2.8-learnfix8) */
         } else {
             edit_param(k, s);
         }

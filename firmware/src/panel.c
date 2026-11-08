@@ -57,12 +57,22 @@ static uint32_t ui_input_ms;                    /* the last button, key or knob 
 /* the knobs (roles, bit per EN_*) not to be read again in this UI pass (ui_input: a layer took them, #102 of
  * Felucca): panel_enc returns 0 and leaves their detents for the next pass */
 static uint32_t enc_hold;
+static int32_t enc_inject[NE];   /* synthetic detents for a role, set by a learned knob follower (ui.c ml_knob_poll) */
+UI_SMALL static void panel_enc_inject(uint32_t role, int32_t delta)
+{
+    if (role < NE)
+        enc_inject[role] += delta;
+}
 UI_SMALL static int32_t panel_enc(uint32_t role)
 {
     int32_t s;
     if ((enc_hold >> role) & 1u)
         return 0;
     s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
+    if (role < NE && enc_inject[role]) {   /* a follower's detents ride with the knob's own (held: left for the next pass) */
+        s += enc_inject[role];
+        enc_inject[role] = 0;
+    }
     if (s)
         ui_input_ms = fm1_ms;                      /* a knob turning is not idle either: autosave waits */
     return s;

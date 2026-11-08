@@ -353,25 +353,30 @@ static void t_learn(void)
     ml_tab[2] = (uint16_t)(22u | 0u << 7 | ML_KNOB_SEL << 9);          /* CC 22 -> SELECT (BPM) */
     ml_tab[3] = (uint16_t)(23u | 0u << 7 | ML_KNOB_PRESET << 9);       /* CC 23 -> PRESETS */
     ml_tab[4] = (uint16_t)(24u | 0u << 7 | ML_KNOB_ALGO << 9);         /* CC 24 -> ALGORITHM */
-    remote_lbl = 0, remote_up = 0;
+    learn_btn_lbl = 0, learn_btn_up = 0;
     cc_in(5, 20, 127);                                /* channel 6: PLAY down */
-    check((remote_lbl >> 10u) & 1u, "MIDI LEARN: CC 20 (learned) holds the PLAY button");
+    check((learn_btn_lbl >> 10u) & 1u, "MIDI LEARN: CC 20 (learned) holds the PLAY button");
     cc_in(5, 20, 0);                                  /* PLAY up */
-    check((remote_up >> 10u) & 1u, "MIDI LEARN: CC 20 to 0 lets the PLAY button go");
+    check((learn_btn_up >> 10u) & 1u, "MIDI LEARN: CC 20 to 0 lets the PLAY button go");
     ed_master = 0;
     cc_in(5, 21, 64);                                 /* VOLUME to mid */
     check(ed_master == (uint8_t)((64u * 126u / 127u) + 1u), "MIDI LEARN: CC 21 (learned) sets the master level");
     song.g[G_BPM] = 90;
     cc_in(5, 22, 127);                                /* SELECT to the top: BPM 240 */
     check(song.g[G_BPM] == 240, "MIDI LEARN: CC 22 (learned) sets the tempo to 240");
-    ml_preset_cc = 0, ml_engine_cc = 0;
+    ml_preset_cc = 0, ml_track_cc = 0;
     cc_in(5, 23, 100);                                /* PRESETS: a request for the main loop */
     check(ml_preset_cc == 101u, "MIDI LEARN: CC 23 (learned) asks the main loop for a preset");
     cc_in(5, 24, 100);                                /* ALGORITHM: a request for the main loop */
-    check(ml_engine_cc == 101u, "MIDI LEARN: CC 24 (learned) asks the main loop for an engine");
+    check(ml_track_cc == 101u, "MIDI LEARN: CC 24 (learned) asks the main loop for a track");
+    ml_tab[5] = (uint16_t)(25u | 0u << 7 | (ML_KNOB_FOLLOW + 1u) << 9);   /* CC 25 -> KNOB 2 follower */
+    ml_follow_cc[1] = 0;
+    cc_in(5, 25, 100);                                /* KNOB 2 follower: a request for the main loop */
+    check(ml_follow_cc[1] == 101u, "MIDI LEARN: CC 25 (learned) asks the main loop to turn KNOB 2");
     check(ml_code_ok(ML_BTN0 + 5u) && ml_code_ok(ML_KNOB_VOL) && ml_code_ok(ML_KNOB_ALGO) &&
-          ml_code_ok(P_DIST + 1u) && ml_code_ok(ML_E0 + 7u) && !ml_code_ok(0) && !ml_code_ok(82u) && !ml_code_ok(119u),
-          "MIDI LEARN: a code this firmware stores (a button, a knob, a parameter; not 0, 82, 119)");
+          ml_code_ok(ML_KNOB_FOLLOW) && ml_code_ok(ML_KNOB_FOLLOW + 3u) &&
+          ml_code_ok(P_DIST + 1u) && ml_code_ok(ML_E0 + 7u) && !ml_code_ok(0) && !ml_code_ok(86u) && !ml_code_ok(119u),
+          "MIDI LEARN: a code this firmware stores (a button, a knob, a follower; not 0, 86, 119)");
     memset((void *)ml_tab, 0, sizeof ml_tab);
     mi_r = mi_w;
 }

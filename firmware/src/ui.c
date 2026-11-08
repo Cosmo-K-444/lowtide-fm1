@@ -121,6 +121,10 @@ UI_SMALL static void ui_say(const char *a, const char *b)
 
 UI_SMALL static void ui_message(const char *s) { ui_say(s, ""); }
 
+/* MIDI LEARN messages stay up for 5 seconds (150 frames at ~30 fps), so they can be read */
+UI_SMALL static void ml_say(const char *a, const char *b) { ui_say(a, b); ui.msg_t = 150; }
+UI_SMALL static void ml_message(const char *s) { ui_message(s); ui.msg_t = 150; }
+
 UI_SMALL static void page_entered(void)
 {
     const page_t *pg = cur_page();
@@ -1051,7 +1055,11 @@ UI_SMALL static void track_select(uint32_t i)
  * never gates a learned CC, and MIDI LEARN listens on every channel while armed) is
  * set to it, and stays until something else is learned on it or HOME > SYSTEM > LEARN CLEAR. Then turn the next knob.
  * One CC sets one parameter, a parameter has one CC: learning one again replaces both. The settings keep the map */
-static struct { uint8_t on, pick, kind, trk, id; } mlu;   /* kind: 0 a track parameter, 1 a button, 2 a knob */
+static struct { uint8_t on, pick, kind, trk, id; } mlu;   /* kind: 0 a track parameter, 1 a button, 2 a knob, 3 a knob follower */
+static uint8_t ml_exit_pending;   /* learn just exited: say so once the mapping message is gone */
+static int32_t preset_cc_last = -1;   /* PRESETS CC: the last value heard, so the knob steps by its move */
+static int32_t track_cc_last = -1;    /* ALGORITHM CC: the last value heard, so the knob steps by its move */
+static int32_t follow_cc_last[4] = {-1, -1, -1, -1};   /* a follower CC: the last value heard per knob slot */
 UI_SMALL static uint32_t ml_code(uint32_t id) { return id >= P_E0 ? ML_E0 + id - P_E0 : id + 1u; }
 UI_SMALL static void ml_put(uint32_t i, uint32_t e)       /* (the ISR reads the entry: never half of one) */
 {
@@ -1078,6 +1086,14 @@ UI_SMALL static uint32_t ml_learn_entry(uint32_t cc, uint32_t track, uint32_t co
     for (i = 0; i < ML_N; i++)
         if (!(ml_tab[i] >> 9)) {
             ml_put(i, cc | track << 7 | code << 9);
+            /* a (re-)learned PRESETS / ALGORITHM knob starts from the value it is sent next: the last value
+             * heard for the old CC would step from a stale baseline, so the new CC looked dead */
+            if (code == ML_KNOB_PRESET)
+                preset_cc_last = -1;
+            else if (code == ML_KNOB_ALGO)
+                track_cc_last = -1;
+            else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u)
+                follow_cc_last[code - ML_KNOB_FOLLOW] = -1;
             return 1;
         }
     return 0;
@@ -1100,7 +1116,7 @@ UI_SMALL static void ml_pick_button(uint32_t k)
         mlu.trk = 0;
         mlu.id = (uint8_t)k;
         str_cpy(b, B_NAME[k], 9);
-        ui_say(b, ": SEND A CC");
+        ml_say(b, ": SEND A CC");
     }
     mlu.pick = 1;
     ml_heard = 0;
@@ -1118,7 +1134,7 @@ UI_SMALL static void ml_pick_knob(uint32_t code)
         mlu.trk = 0;
         mlu.id = (uint8_t)code;
         str_cpy(b, KN[code - ML_KNOB_VOL], 9);
-        ui_say(b, ": SEND A CC");
+        ml_say(b, ": SEND A CC");
     }
     mlu.pick = 1;
     ml_heard = 0;
@@ -1140,24 +1156,41 @@ UI_SMALL static void ml_toggle(void)                      /* GLO + F#3 */
     mlu.kind = 0;
     ml_arm = 0;
     ml_heard = 0;
-    ui_message(mlu.on ? "LEARN: TURN A KNOB" : "LEARN DONE");
+    ml_exit_pending = 0;
+    ml_message(mlu.on ? "LEARN: KNOB OR BUTTON" : "LEARN DONE");   /* (the 24-char message line cannot hold the full
+                                                            * "Turn a knob or press a button": this says the same) */
+    ui.force = 1;
+}
+UI_SMALL static void ml_disarm(void)                       /* (2.8-learnfix3) a rejected CC turns learn off, so a CC
+                                                            * sent next drives its learned target instead of being
+                                                            * captured for a re-learn the user did not ask for */
+{
+    mlu.on = 0;
+    mlu.pick = 0;
+    mlu.kind = 0;
+    ml_arm = 0;
     ui.force = 1;
 }
 /* a knob turned parameter id of track t: picked while learning (ui_input.c) */
-UI_SMALL static void ml_knob(const track_t *t, uint32_t id)
+/* a knob turned while learning: picked (ui_input.c). Its action waits: the detents are eaten there. Turn the
+ * same knob once and it picks its parameter on this page; turn it again after a pause (0.5 s) and it picks the
+ * knob slot itself, so the learned CC follows the knob to whatever it controls on the current page (2.8-learnfix6:
+ * the universal K1..K4 mapping). A third turn, after a pause, goes back to the parameter. */
+/* a knob turned while learning always maps its slot as a follower (2.8-learnfix8): no parameter is assumed */
+UI_SMALL static void ml_pick_follower(uint32_t slot)
 {
     char b[16];
-    if (!mlu.on || id >= P_COUNT)
+    if (!mlu.on || slot >= 4u)
         return;
-    if (!mlu.pick || mlu.kind != 0u || mlu.id != id || mlu.trk != (uint8_t)trk_index(t)) {
-        mlu.kind = 0;
-        mlu.trk = (uint8_t)trk_index(t);
-        mlu.id = (uint8_t)id;
-        b[0] = 'T';
-        b[1] = (char)('1' + mlu.trk);
+    if (!mlu.pick || mlu.kind != 3u || mlu.id != slot) {
+        mlu.kind = 3u;
+        mlu.trk = 0;
+        mlu.id = (uint8_t)slot;
+        b[0] = 'K';
+        b[1] = (char)('1' + slot);
         b[2] = ' ';
-        str_cpy(b + 3, track_desc(t, id)->label, 9);
-        ui_say(b, ": SEND A CC");
+        str_cpy(b + 3, "FOLLOW", 9);
+        ml_say(b, ": SEND A CC");
     }
     mlu.pick = 1;
     ml_heard = 0;
@@ -1168,6 +1201,10 @@ UI_SMALL static void ml_poll(void)
 {
     uint32_t cc = ml_heard, r;
     char a[16], b[16];
+    if (ml_exit_pending && !ui.msg_t) {   /* the exit follows the mapping message, once it is gone */
+        ml_exit_pending = 0;
+        ml_message("Exiting Learn Mode");
+    }
     if (!cc)
         return;
     ml_heard = 0;
@@ -1177,7 +1214,15 @@ UI_SMALL static void ml_poll(void)
     if (mlu.kind == 1u) {                       /* a button */
         r = ml_learn_entry(cc, 0, ML_BTN0 + mlu.id);
         if (r != 1u) {
-            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            if (r) {    /* rejected: name the CC, so the user sees which one is reserved */
+                str_cpy(a, "CC", 4);
+                fmt_int(a + 2, (int32_t)cc);
+                ml_say(a, " NOT LEARNABLE");
+                ml_disarm();   /* (2.8-learnfix3) learn off, so the next CC drives its target */
+                ml_exit_pending = 1;
+            } else {
+                ml_message("LEARN FULL");
+            }
             return;
         }
         str_cpy(a, "CC", 4);
@@ -1188,17 +1233,52 @@ UI_SMALL static void ml_poll(void)
         static const char *const KN[4] = {"VOLUME", "SELECT", "PRESETS", "ALGORITHM"};
         r = ml_learn_entry(cc, 0, mlu.id);
         if (r != 1u) {
-            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            if (r) {    /* rejected: name the CC, so the user sees which one is reserved */
+                str_cpy(a, "CC", 4);
+                fmt_int(a + 2, (int32_t)cc);
+                ml_say(a, " NOT LEARNABLE");
+                ml_disarm();   /* (2.8-learnfix3) learn off, so the next CC drives its target */
+                ml_exit_pending = 1;
+            } else {
+                ml_message("LEARN FULL");
+            }
             return;
         }
         str_cpy(a, "CC", 4);
         fmt_int(a + 2, (int32_t)cc);
         str_cpy(a + str_len(a), " = ", 4);
         str_cpy(b, KN[mlu.id - ML_KNOB_VOL], 9);
+    } else if (mlu.kind == 3u) {                /* a knob follower: KNOB n, any page */
+        static const char *const KN[4] = {"KNOB 1", "KNOB 2", "KNOB 3", "KNOB 4"};
+        r = ml_learn_entry(cc, 0, ML_KNOB_FOLLOW + mlu.id);
+        if (r != 1u) {
+            if (r) {    /* rejected: name the CC, so the user sees which one is reserved */
+                str_cpy(a, "CC", 4);
+                fmt_int(a + 2, (int32_t)cc);
+                ml_say(a, " NOT LEARNABLE");
+                ml_disarm();   /* (2.8-learnfix3) learn off, so the next CC drives its target */
+                ml_exit_pending = 1;
+            } else {
+                ml_message("LEARN FULL");
+            }
+            return;
+        }
+        str_cpy(a, "CC", 4);
+        fmt_int(a + 2, (int32_t)cc);
+        str_cpy(a + str_len(a), " = ", 4);
+        str_cpy(b, KN[mlu.id], 9);
     } else {                                    /* a track parameter */
         r = ml_learn(cc, mlu.trk, mlu.id);
         if (r != 1u) {
-            ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+            if (r) {    /* rejected: name the CC, so the user sees which one is reserved */
+                str_cpy(a, "CC", 4);
+                fmt_int(a + 2, (int32_t)cc);
+                ml_say(a, " NOT LEARNABLE");
+                ml_disarm();   /* (2.8-learnfix3) learn off, so the next CC drives its target */
+                ml_exit_pending = 1;
+            } else {
+                ml_message("LEARN FULL");
+            }
             return;
         }
         str_cpy(a, "CC", 4);
@@ -1208,37 +1288,78 @@ UI_SMALL static void ml_poll(void)
         b[1] = ' ';
         str_cpy(b + 2, track_desc(&trk[mlu.trk % NTRK], mlu.id)->label, 9);
     }
-    ui_say(a, b);
-    mlu.pick = 0;
-    ml_arm = 0;
+    ml_say(a, b);
+    ml_disarm();                                 /* (one-shot) learn off after one CC is learned */
+    ml_exit_pending = 1;
     settings_later = 1;                          /* (saved when quiet) */
 }
 /* MIDI LEARN (2.8-midilearn): the learned PRESETS / ALGORITHM CCs, carried out in the main loop (a flash read,
  * a sound loaded). Only when the scaled index moves, so a knob sweep loads one sound per step, not per CC */
 UI_SMALL static void ml_knob_poll(void)
 {
-    static uint32_t preset_last = 0xFFFFu, engine_last = 0xFFFFu;
-    uint32_t v, total, idx;
+    static uint32_t preset_last = 0xFFFFu;
+    uint32_t v, total, cur, k;
+    int32_t d;
     if (ml_preset_cc) {
         v = ml_preset_cc - 1u;
         ml_preset_cc = 0;
         total = 0;
-        (void)preset_pos(&total);
+        cur = preset_pos(&total);
         if (total) {
-            idx = (v * (total - 1u) + 63u) / 127u;
-            if (idx != preset_last) {
-                preset_last = idx;
-                preset_go(idx);
+            /* PRESETS steps by the knob's move, like the physical knob: an absolute jump lands on preset
+             * indices the preset table cannot reach (a dangling BANK entry loads preset 0 of its engine
+             * instead), so a value that maps to the last preset did nothing at all. Stepping by the delta
+             * from the last value heard follows the same path as the knob and always moves. */
+            if (preset_cc_last < 0)
+                preset_cc_last = (int32_t)((cur * 127u) / (total > 1u ? total - 1u : 1u));
+            d = (int32_t)v - preset_cc_last;
+            if (d) {
+                int32_t ni = (int32_t)cur + d;
+                if (ni < 0) ni = 0;
+                if (ni >= (int32_t)total) ni = (int32_t)total - 1;
+                if ((uint32_t)ni != cur) {
+                    preset_last = (uint32_t)ni;
+                    preset_go((uint32_t)ni);
+                }
+                preset_cc_last = (int32_t)v;
             }
         }
     }
-    if (ml_engine_cc) {
-        v = ml_engine_cc - 1u;
-        ml_engine_cc = 0;
-        idx = (v * (NENGINES - 1u) + 63u) / 127u;
-        if (idx != engine_last) {
-            engine_last = idx;
-            set_engine(idx);
+    if (ml_track_cc) {
+        v = ml_track_cc - 1u;
+        ml_track_cc = 0;
+        /* ALGORITHM steps by the knob's move, like the physical knob: an absolute value needs the whole
+         * CC range to cross four tracks, so it felt slow. Stepping by the delta follows the knob. */
+        if (track_cc_last < 0)
+            track_cc_last = (int32_t)((song.sel * 127u) / (NTRK - 1u));
+        d = (int32_t)v - track_cc_last;
+        if (d) {
+            int32_t ni = (int32_t)song.sel + d;
+            if (ni < 0) ni = 0;
+            if (ni >= (int32_t)NTRK) ni = (int32_t)NTRK - 1;
+            if ((uint32_t)ni != song.sel)
+                track_select((uint32_t)ni);
+            track_cc_last = (int32_t)v;
+        }
+    }
+    /* a knob follower (2.8-learnfix6): the CC's move turns the knob slot on the current page, as if the
+     * physical knob was turned. At most 8 detents a frame, the rest carried to the next frame, so a fast
+     * sweep does not jump the parameter in one go. */
+    for (k = 0; k < 4u; k++) {
+        if (!ml_follow_cc[k])
+            continue;
+        v = ml_follow_cc[k] - 1u;
+        ml_follow_cc[k] = 0;
+        if (follow_cc_last[k] < 0) {
+            follow_cc_last[k] = (int32_t)v;
+            continue;
+        }
+        d = (int32_t)v - follow_cc_last[k];
+        if (d > 8) d = 8;
+        else if (d < -8) d = -8;
+        if (d) {
+            panel_enc_inject(EN_K1 + k, d);
+            follow_cc_last[k] += d;
         }
     }
 }
