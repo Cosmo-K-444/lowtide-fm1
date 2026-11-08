@@ -1150,6 +1150,19 @@
 
     <section class="panel" id="p-settings" data-tab="settings" data-dev hidden>
       <div class="groups" id="setgroups"></div>
+      <div class="card" id="learncard">
+        <h2>MIDI Learn</h2>
+        <p class="dim" id="learnstatus">Connect the FM-1, then Refresh to read the learn map.</p>
+        <p><button type="button" id="learnrefresh">Refresh</button>
+        <button type="button" id="learnwrite" class="pri">Write map to FM-1</button>
+        <button type="button" id="learnclearall">Clear all</button>
+        <button type="button" id="learnexport">Export JSON</button>
+        <button type="button" id="learnimport">Import JSON</button>
+        <input id="learnfile" type="file" accept=".json,application/json" hidden></p>
+        <table id="learntable"></table>
+        <p class="dim" id="learnmonitor">No CC heard yet.</p>
+        <p class="dim">A knob turn in learn mode always maps its knob slot: K1–K4 follow the knob on any page. Buttons map to their button. A parameter can be picked here instead. Stop the sequencer before writing the map.</p>
+      </div>
       <div class="card">
         <h2 data-t="system" data-ic="symbol_cog"></h2>
         <table id="sysinfo"></table>
@@ -2522,6 +2535,210 @@ async function backupRestore(rq, file, progress = () => {}) {
     if (r.rc) throw new BackupError("bkWrite", `USR${k + 1} end rc ${r.rc}`);
   }
   return true;
+}
+
+/* ---- MIDI LEARN: the 32-slot learn map (backup object 10, 72 bytes) in the Settings tab ---- */
+/* A knob turn in learn mode always maps its knob slot (K1-K4 follow the knob on any page); a button maps to
+   its button; a parameter can be picked here instead. The map is backup object 10: 32 entries of 2 bytes
+   (CC bits 0-6, track bits 7-8, code bits 9-15), then 8 bytes of MIDI settings kept byte-for-byte. */
+const LEARN = { OBJ: 10, LEN: 72, N: 32, BTN0: 64, NBTN: 14, KVOL: 78, KSEL: 79, KPRESET: 80, KALGO: 81,
+  FOLLOW: 82, E0: 120, RESERVED: new Set([0, 1, 6, 11, 32, 38, 64, 96, 97, 98, 99, 100, 101, 120, 121, 122, 123, 124, 125, 126, 127]),
+  BNAME: ["FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC", "OCT-", "OCT+"],
+  KNAME: ["VOLUME", "SELECT", "PRESETS", "ALGORITHM"], FNAME: ["KNOB 1", "KNOB 2", "KNOB 3", "KNOB 4"],
+  MIDISET: [1, 2, 3, 10, 2, 0, 0, 0] };   /* channels 1 2 3, drums 10, OTHER SEL, BEND 2 */
+const learn = { entries: Array.from({ length: LEARN.N }, () => ({ used: false, cc: 0, track: 0, code: 0 })),
+  midiSet: [...LEARN.MIDISET], loaded: false, listenRow: -1, lastCC: null };
+function learnKindOf(code) {
+  if (!code) return "empty";
+  if (code >= LEARN.BTN0 && code < LEARN.BTN0 + LEARN.NBTN) return "button";
+  if (code >= LEARN.KVOL && code <= LEARN.KALGO) return "knob";
+  if (code >= LEARN.FOLLOW && code < LEARN.FOLLOW + 4) return "follower";
+  return "param";
+}
+function learnCodeFor(kind, target) {
+  if (kind === "button") return LEARN.BTN0 + target;
+  if (kind === "knob") return [LEARN.KVOL, LEARN.KSEL, LEARN.KPRESET, LEARN.KALGO][target];
+  if (kind === "follower") return LEARN.FOLLOW + target;
+  const pe0 = dev && dev.info ? dev.info.pe0 : 50;   /* a parameter id: common -> id + 1, engine -> ML_E0 + (id - pe0) */
+  return target >= pe0 ? LEARN.E0 + (target - pe0) : target + 1;
+}
+function learnParamLabel(code) {
+  const pe0 = dev && dev.info ? dev.info.pe0 : 50;
+  let id;
+  if (code >= LEARN.E0) id = pe0 + (code - LEARN.E0);
+  else if (code >= 1 && code <= 63) id = code - 1;
+  else return "";
+  const d = dev && dev.pdesc && dev.pdesc[id];
+  return d && d.label ? d.label : "P" + id;
+}
+function learnTargetLabel(e) {
+  if (!e.used) return "-";
+  const k = learnKindOf(e.code);
+  if (k === "button") return LEARN.BNAME[e.code - LEARN.BTN0] + (e.code - LEARN.BTN0 === 1 ? " (SCL / scale)" : "");
+  if (k === "knob") return LEARN.KNAME[e.code - LEARN.KVOL];
+  if (k === "follower") return LEARN.FNAME[e.code - LEARN.FOLLOW] + " follower";
+  return learnParamLabel(e.code);
+}
+function learnObjBytes() {
+  const b = new Uint8Array(LEARN.LEN);
+  for (let i = 0; i < LEARN.N; i++) {
+    const e = learn.entries[i];
+    const v = e.used ? (e.cc & 127) | ((e.track & 3) << 7) | ((e.code & 127) << 9) : 0;
+    b[2 * i] = v & 0xFF; b[2 * i + 1] = (v >> 8) & 0xFF;
+  }
+  b.set(learn.midiSet, 64);
+  return b;
+}
+function learnParseObj(data) {
+  for (let i = 0; i < LEARN.N; i++) {
+    const e = data[2 * i] | (data[2 * i + 1] << 8);
+    learn.entries[i] = { used: (e >> 9) !== 0, cc: e & 127, track: (e >> 7) & 3, code: (e >> 9) & 127 };
+  }
+  learn.midiSet = [...data.slice(64, 72)];
+}
+async function learnRead() {
+  const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+  if (L.rc) throw new Error(`LIST rc ${L.rc}`);
+  const it = L.items.find((x) => x.id === LEARN.OBJ);
+  if (!it) {   /* the device lists object 10 only when non-default: an empty map, default MIDI settings */
+    learn.entries = Array.from({ length: LEARN.N }, () => ({ used: false, cc: 0, track: 0, code: 0 }));
+    learn.midiSet = [...LEARN.MIDISET];
+  } else {
+    const g = parse[CMD.BK_GET](await rq(req.bkGet(LEARN.OBJ, 0, LEARN.LEN), { timeout: 5000, retries: 2 }));
+    if (g.rc) throw new Error(`GET rc ${g.rc}`);
+    if (g.data.length !== LEARN.LEN) throw new Error(`GET: ${g.data.length} bytes, expected ${LEARN.LEN}`);
+    if (crc32(g.data) !== it.crc) throw new Error("object 10: CRC");
+    learnParseObj(g.data);
+  }
+  learn.loaded = true;
+  learnRender();
+  const n = learn.entries.filter((e) => e.used).length;
+  $("learnstatus").textContent = n ? `${n} of 32 slots used.` : "No bindings yet. Arm MIDI learn on the FM-1 (GLO + F#3) and turn a knob or press a button, then Refresh.";
+}
+async function learnWrite() {
+  const data = learnObjBytes();
+  let r = parse[CMD.BK_PUT](await rq(req.bkBegin(LEARN.OBJ, data.length, crc32(data)), { timeout: 5000, retries: 1 }));
+  if (r.rc === 5) throw new Error("this firmware has no MIDI learn map (object 10)");
+  if (r.rc) throw new Error(`begin rc ${r.rc}`);
+  r = parse[CMD.BK_PUT](await rq(req.bkData(LEARN.OBJ, 0, data), { timeout: 5000, retries: 1 }));
+  if (r.rc) throw new Error(`data rc ${r.rc}`);
+  r = parse[CMD.BK_PUT](await rq(req.bkCommit(LEARN.OBJ), { timeout: 5000, retries: 0 }));
+  if (r.rc === 3) throw new Error("stop the song first, then write again");
+  if (r.rc) throw new Error(`commit rc ${r.rc}`);
+  await learnRead();
+  $("learnstatus").textContent = "Map written to the FM-1 and re-read to confirm.";
+}
+function learnTargetsFor(kind) {
+  if (kind === "button") return LEARN.BNAME.map((n, i) => ({ v: i, label: n + (i === 1 ? " (SCL)" : "") }));
+  if (kind === "knob") return LEARN.KNAME.map((n, i) => ({ v: i, label: n }));
+  if (kind === "follower") return LEARN.FNAME.map((n, i) => ({ v: i, label: n }));
+  const out = [];
+  if (!dev || !dev.pdesc) return out;
+  for (let id = 0; id < dev.info.pcount; id++) {
+    const d = dev.pdesc[id];
+    if (!d || !d.label || d.label === "-") continue;
+    out.push({ v: id, label: d.label + (id >= dev.info.pe0 ? " (engine)" : "") });
+  }
+  return out;
+}
+function learnRender() {
+  const tb = $("learntable");
+  const head = el("tr", {}, ...["#", "CC", "Kind", "Target", "Track", ""].map((h) => el("th", { text: h })));
+  const rows = learn.entries.map((e, i) => {
+    const kind = e.used ? learnKindOf(e.code) : "param";
+    const tr = el("tr", {});
+    tr.append(el("td", { text: String(i + 1) }));
+    const cc = el("input", { type: "number", min: 0, max: 127, value: e.used ? e.cc : "", style: "width:64px" });
+    cc.addEventListener("change", () => {
+      const v = parseInt(cc.value, 10);
+      if (Number.isNaN(v) || v < 0 || v > 127) { cc.value = e.used ? e.cc : ""; return; }
+      if (LEARN.RESERVED.has(v)) { $("learnstatus").textContent = `CC ${v} is reserved and cannot be learned.`; cc.value = e.used ? e.cc : ""; return; }
+      e.used = true; e.cc = v;
+      if (learnKindOf(e.code) !== "param" && learnKindOf(e.code) !== "empty") { /* keep kind/target */ } else if (!e.code) e.code = 1;
+      learnRender();
+    });
+    tr.append(el("td", {}, cc));
+    const ks = el("select", {});
+    for (const [v, label] of [["param", "Parameter"], ["button", "Button"], ["knob", "Knob"], ["follower", "Knob follower"]])
+      ks.append(el("option", { value: v, text: label }));
+    ks.value = kind;
+    ks.addEventListener("change", () => {
+      const nk = ks.value;
+      e.used = true;
+      e.code = learnCodeFor(nk, 0);
+      if (nk !== "param") e.track = 0;
+      learnRender();
+    });
+    tr.append(el("td", {}, ks));
+    const ts = el("select", {});
+    for (const t of learnTargetsFor(kind)) ts.append(el("option", { value: t.v, text: t.label }));
+    const cur = kind === "button" ? e.code - LEARN.BTN0 : kind === "knob" ? e.code - LEARN.KVOL
+      : kind === "follower" ? e.code - LEARN.FOLLOW
+      : e.code >= LEARN.E0 ? dev.info.pe0 + (e.code - LEARN.E0) : e.code - 1;
+    ts.value = String(cur);
+    ts.addEventListener("change", () => { e.used = true; e.code = learnCodeFor(kind, parseInt(ts.value, 10)); learnRender(); });
+    tr.append(el("td", {}, ts));
+    const trk = el("select", {});
+    for (let t = 0; t < 4; t++) trk.append(el("option", { value: t, text: "T" + (t + 1) }));
+    trk.value = String(e.track);
+    trk.disabled = kind !== "param";
+    trk.addEventListener("change", () => { e.track = parseInt(trk.value, 10); });
+    tr.append(el("td", {}, trk));
+    const clr = el("button", { type: "button", text: "Clear" });
+    clr.addEventListener("click", () => { learn.entries[i] = { used: false, cc: 0, track: 0, code: 0 }; learnRender(); });
+    const lis = el("button", { type: "button", text: learn.listenRow === i ? "Listening…" : "Listen" });
+    lis.addEventListener("click", () => {
+      learn.listenRow = learn.listenRow === i ? -1 : i;
+      $("learnstatus").textContent = learn.listenRow === i ? `Listening for a CC for slot ${i + 1}… move a knob or fader on your controller.` : "Listen cancelled.";
+      learnRender();
+    });
+    tr.append(el("td", {}, lis, " ", clr));
+    if (!e.used) tr.classList.add("dim");
+    return tr;
+  });
+  tb.replaceChildren(head, ...rows);
+}
+function learnMidiIn(data) {
+  if (!data || data.length < 3 || (data[0] & 0xF0) !== 0xB0) return;   /* a CC on any channel */
+  const cc = data[1] & 0x7F, v = data[2] & 0x7F;
+  learn.lastCC = { cc, v, ch: (data[0] & 0x0F) + 1, t: Date.now() };
+  $("learnmonitor").textContent = `Last CC: ${cc} = ${v} (channel ${learn.lastCC.ch})` + (LEARN.RESERVED.has(cc) ? " — reserved, cannot be learned." : "");
+  if (learn.listenRow >= 0) {
+    const i = learn.listenRow;
+    if (LEARN.RESERVED.has(cc)) { $("learnstatus").textContent = `CC ${cc} is reserved and cannot be learned.`; return; }
+    const e = learn.entries[i];
+    e.used = true; e.cc = cc;
+    if (!e.code) e.code = 1;
+    learn.listenRow = -1;
+    $("learnstatus").textContent = `Slot ${i + 1} captured CC ${cc}. Press "Write map to FM-1" to save it.`;
+    learnRender();
+  }
+}
+function learnBind() {
+  $("learnrefresh").addEventListener("click", () => op(async () => { try { await learnRead(); } catch (e) { report(e); } }));
+  $("learnwrite").addEventListener("click", () => op(async () => { try { await learnWrite(); } catch (e) { report(e); } }));
+  $("learnclearall").addEventListener("click", () => {
+    learn.entries = Array.from({ length: LEARN.N }, () => ({ used: false, cc: 0, track: 0, code: 0 }));
+    learnRender();
+    $("learnstatus").textContent = "All 32 slots cleared on this page. Press \"Write map to FM-1\" to save it.";
+  });
+  $("learnexport").addEventListener("click", () => download("sloop-midi-learn.json",
+    { firmware: dev && dev.info ? dev.info.version : "", exported: new Date().toISOString(), entries: learn.entries }));
+  $("learnimport").addEventListener("click", () => { if (dev) $("learnfile").click(); });
+  $("learnfile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const j = JSON.parse(await f.text());
+      if (!Array.isArray(j.entries)) throw new Error("not a MIDI learn file");
+      learn.entries = j.entries.slice(0, LEARN.N).map((x) => ({
+        used: !!x.used, cc: x.cc | 0, track: x.track | 0, code: x.code | 0 }));
+      while (learn.entries.length < LEARN.N) learn.entries.push({ used: false, cc: 0, track: 0, code: 0 });
+      learnRender();
+      $("learnstatus").textContent = "Imported. Press \"Write map to FM-1\" to save it.";
+    } catch (err) { report(err); }
+    e.target.value = "";
+  });
 }
 
 /* 2.5 Store cartridge: packed patches into B1..Bn in one write. The bank (backup object 8) is read whole, slots
@@ -5328,6 +5545,7 @@ function renderPanels() {
   if (want === "song" && ready) {                      /* (2.5) read the song order once per connection */
     if (SG.dev !== dev) { Object.assign(SG, { dev, rows: null, err: "", dirty: false }); op(readSong); } else renderSong();
   }
+  if (want === "settings" && ready && !learn.loaded) op(async () => { try { await learnRead(); } catch (e) { report(e); } });
   renderPreview();
 }
 $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
@@ -5970,7 +6188,7 @@ async function connect() {
         onPush: (f) => onPush(f),
         onGap: () => { rewatch = true; },
       });
-      pr.input.onmidimessage = (e) => l.receive(e.data);
+      pr.input.onmidimessage = (e) => { learnMidiIn(e.data); l.receive(e.data); };
       if (pr.input.open) await pr.input.open().catch(() => {});
       try {
         await l.request(req.info(), { timeout: 500, retries: 3, quiet: true });   /* (the first frame can be lost) */
@@ -6009,6 +6227,7 @@ function disconnect(reasonKey = "disconnected") {
   dev = null;
   busy = 0;
   needReload = false;
+  learn.loaded = false;   /* the learn map is read again on the next connection */
   renderPanels();
   renderMixer();
   renderSysinfo();
@@ -9758,6 +9977,7 @@ $("bk-save").addEventListener("click", () => op(async () => {
   } catch (e) { bkReport(e); } finally { $("bk-prog").hidden = true; }
 }));
 $("bk-load").addEventListener("click", () => { if (dev) $("bk-file").click(); });
+learnBind();   /* MIDI LEARN: the Settings tab's learn card (backup object 10) */
 /* (2.7) a song as one file: export it; load one (also from the LIVE page's playlist: lvSongLoad) */
 async function songExport() {
   const name = prompt(t("sfName"), "SONG " + today());
