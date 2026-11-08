@@ -1047,7 +1047,8 @@ UI_SMALL static void track_select(uint32_t i)
 /* ------------------------------------------------------- MIDI LEARN --- */
 /* MIDI LEARN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussion #170; the map: seq.c ml_tab). GLO held +
  * the black key F#3 turns it on and off. On: a knob turned on a track's page (the sound's pages, HOME, TRACKS' LEVEL
- * and PAN) picks its parameter on the selected track as it edits it; the next CC that comes (any channel IN hears) is
+ * and PAN) picks its parameter on the selected track as it edits it; the next CC that comes (any channel — the routing
+ * never gates a learned CC, and MIDI LEARN listens on every channel while armed) is
  * set to it, and stays until something else is learned on it or HOME > SYSTEM > LEARN CLEAR. Then turn the next knob.
  * One CC sets one parameter, a parameter has one CC: learning one again replaces both. The settings keep the map */
 static struct { uint8_t on, pick, trk, id; } mlu;

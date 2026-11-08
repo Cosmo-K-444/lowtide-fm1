@@ -2987,8 +2987,8 @@ static const uint8_t MIDI_CC_MAP[][2] = {
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
 /* MIDI LEARN (SLOOP 2.6, after Felucca 1.5 by Leo Kuroshita, Discussion #170): up to ML_N CCs, each set to one
- * parameter of one track, whatever channel it comes on (a channel IN ignores stays ignored) and whichever track that
- * channel plays. Kept with the settings (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6
+ * parameter of one track, from any channel (a learned CC is the user's: the routing never gates it, and MIDI LEARN
+ * listens on every channel while armed) and whichever track that channel plays. Kept with the settings (project.c settings_write, after the SYN kits), an entry 16 bits: bits 0..6
  * the CC, 7..8 the track, 9..15 the parameter's code, 0 = an empty entry: a common parameter its P_* id + 1 (their
  * ids never move, new ones go before P_E0), an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones
  * are added). A learned CC no longer reaches the standard map on any channel: the controller is the user's now. The
@@ -3455,8 +3455,14 @@ static void events_block(uint32_t n)
         }
         if (song.g[G_ROUTE] >= 2) {                   /* 2.6: IN = CH n: that channel only, on the selected
                                                        * track (notes and CCs); every other channel ignored */
-            if (ch != (uint32_t)song.g[G_ROUTE] - 2u)
+            if (ch != (uint32_t)song.g[G_ROUTE] - 2u) {
+                /* MIDI LEARN listens on every channel while armed, and a learned CC is the user's: it works
+                 * from any channel. Before this, a controller on another channel could never be learned here
+                 * (the learn sat on "SEND A CC") and a CC learned from one could never drive anything. */
+                if (st == 0xB0u)
+                    (void)midi_learned(d1, d2);
                 continue;
+            }
             if (st == 0xB0u) {
                 if (d1 == 0u) {                       /* (2.7.2) Bank Select: latched for the next Program Change */
                     ch_bank[ch & 15u] = (uint8_t)d2;
@@ -3487,7 +3493,7 @@ static void events_block(uint32_t n)
                 midi_sel_set(ch, d1, 0);
             }
         } else {
-            if (st == 0xB0u) {                            /* a CC (IN = CLOCK: none) */
+            if (st == 0xB0u) {                            /* a CC (IN = CLOCK: the map's none, a learned CC's own) */
                 if (d1 == 0u) {                           /* (2.7.2) Bank Select: latched for the next Program Change */
                     ch_bank[ch & 15u] = (uint8_t)d2;
                     continue;
@@ -3497,8 +3503,10 @@ static void events_block(uint32_t n)
                         midi_pedal(ch, t, d2);
                     midi_cc(t, d1, d2);
                 }
-                else if (!song.g[G_ROUTE])
-                    (void)midi_learned(d1, d2);           /* (OTHER = OFF: a learned CC still works, on any channel) */
+                else
+                    (void)midi_learned(d1, d2);           /* (a learned CC is the user's: it works from any channel,
+                                                           * IN = CLOCK included, and MIDI LEARN listens on every
+                                                           * channel while armed; the standard map stays gated) */
                 continue;
             }
             if (st == 0xC0u) {                            /* Program Change (2.6): the sound of the track its channel

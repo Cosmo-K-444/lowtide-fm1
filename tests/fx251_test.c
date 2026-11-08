@@ -326,6 +326,27 @@ static void t_learn(void)
           "MIDI LEARN: mod wheel, sustain, bank select, the channel modes never learned");
     check(ml_id(P_DIST + 1u) == P_DIST && ml_id(ML_E0 + 7u) == P_E7 && ml_id(ML_E0 + 8u) == P_COUNT && ml_id(0) == P_COUNT,
           "MIDI LEARN: an entry's code -> its parameter (an unknown one: none)");
+    /* a learned CC, and MIDI LEARN while armed, hear every channel in every route mode (the routing never gates them) */
+    song.g[G_ROUTE] = 2;                                /* IN = CH 1: only channel 1 reaches the tracks */
+    trk[1].p[P_DIST] = 0;
+    cc_in(5, 20, 127);                                  /* channel 6: a learned CC still sets track 2's DST */
+    check(trk[1].p[P_DIST] == TP[P_DIST].max, "MIDI LEARN: IN = CH 1, a learned CC on channel 6 still sets its track");
+    ml_arm = 1, ml_heard = 0;
+    cc_in(5, 21, 99);                                   /* channel 6, a free CC: heard while learning */
+    check(ml_heard == 22u, "MIDI LEARN: IN = CH 1, a CC on channel 6 is heard while learning");
+    ml_heard = 0;
+    cc_in(5, 64, 127);                                  /* channel 6, sustain: not learnable, but not silent */
+    check(ml_heard == 65u, "MIDI LEARN: IN = CH 1, a reserved CC on channel 6 says CC NOT LEARNABLE");
+    ml_arm = 0, ml_heard = 0;
+    song.g[G_ROUTE] = 1;                                /* IN = CLOCK: no notes or map CCs at all */
+    trk[1].p[P_DIST] = 0;
+    cc_in(5, 20, 127);                                  /* channel 6: a learned CC still sets track 2's DST */
+    check(trk[1].p[P_DIST] == TP[P_DIST].max, "MIDI LEARN: IN = CLOCK, a learned CC still sets its track");
+    ml_arm = 1, ml_heard = 0;
+    cc_in(5, 21, 99);
+    check(ml_heard == 22u, "MIDI LEARN: IN = CLOCK, a CC is heard while learning");
+    ml_arm = 0, ml_heard = 0;
+    song.g[G_ROUTE] = 0;
     memset((void *)ml_tab, 0, sizeof ml_tab);
     mi_r = mi_w;
 }
