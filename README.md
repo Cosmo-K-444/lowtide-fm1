@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
-<p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>
+<p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style. Patched the MIDI Learn function to make it work as intended</b><br>
 Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
 
 <p align="center">
