@@ -875,7 +875,8 @@ UI_SMALL static int project_used(uint32_t slot) { return proj_ok(&proj_slot[slot
  * the default (nothing learned, channels 1 2 3 10, OTHER SEL, BEND 2): else the object is exactly 2.5's. 2.6 test
  * builds wrote 32 (the map) or 36 bytes (and the channels) */
 #define MIDI_PART (2u * ML_N + 8u)
-_Static_assert(sizeof(persist_t) + sizeof(dsu_bank_t) + MIDI_PART <= ST_PAYLOAD_MAX, "the settings object fits its sector");
+_Static_assert(sizeof(persist_t) + sizeof(dsu_bank_t) + MIDI_PART + DRUM_MAP_PART_N <= ST_PAYLOAD_MAX,
+              "the settings object fits its sector");
 static uint8_t midi_saved[MIDI_PART];
 static uint8_t drch_seed;                           /* a settings object as 2.5 wrote it: the drum channel was the
                                                      * project's then (autosave_resume takes it from a 2.5 autosave) */               /* the part as flash has it (settings_save: written when it differs) */
@@ -945,25 +946,62 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
     }
     fm1_irq_on();
 }
+/* the settings object's fourth part (2.8.2): the drum pad remap (seq.c drum_map, 16 bytes, index = note - 36,
+ * lane 0..15 or 0xFF unmapped) and the learned-knob speed (byte 16, in quarters: 1 0.25x, 2 0.5x, 4 1x, 8 2x,
+ * 16 4x). Written only while it is not the default (every pad unmapped, speed 1x): else the object is exactly
+ * 2.8.1's. A byte that is neither a lane nor 0xFF reads as unmapped; a speed that is not one of the five
+ * reads as 1x. (The MIDI part has no spare byte, so the speed lives here, not in object 10.) */
+static uint8_t drum_map_saved[DRUM_MAP_PART_N];
+UI_SMALL static void drum_part_fill(uint8_t *b)
+{
+    uint32_t k;
+    for (k = 0; k < DRUM_MAP_N; k++)
+        b[k] = drum_map[k];
+    b[DRUM_MAP_N] = learn_speed_q;
+}
+UI_SMALL static int drum_part_default(const uint8_t *b)
+{
+    uint32_t k;
+    for (k = 0; k < DRUM_MAP_N; k++)
+        if (b[k] != 0xFFu)
+            return 0;
+    return b[DRUM_MAP_N] == LEARN_SPEED_DEF;
+}
+/* n: DRUM_MAP_PART_N (17); every byte checked */
+UI_SMALL static void drum_part_read(const uint8_t *b, uint32_t n)
+{
+    uint32_t k;
+    if (n != DRUM_MAP_PART_N)
+        return;
+    fm1_irq_off();                                  /* (the ISR reads the map: never half of it) */
+    for (k = 0; k < DRUM_MAP_N; k++)
+        drum_map[k] = b[k] <= 15u || b[k] == 0xFFu ? b[k] : 0xFFu;
+    learn_speed_q = learn_speed_ok(b[DRUM_MAP_N]) ? b[DRUM_MAP_N] : LEARN_SPEED_DEF;
+    fm1_irq_on();
+}
 UI_SMALL static int settings_write(const persist_t *p)
 {
-    uint8_t mp[MIDI_PART];
+    uint8_t mp[MIDI_PART], dm[DRUM_MAP_PART_N];
     int rc;
     if (!dsu_valid(&dsu))
         dsu_defaults();
     midi_part_fill(mp);
+    drum_part_fill(dm);
     /* the third part only when it is not the default: without, the object is exactly 2.5's (2.5 reads it whole, SYN
-     * kits included; with it, it takes the object for one without them). 2.7: the theme in the side record */
+     * kits included; with it, it takes the object for one without them). 2.7: the theme in the side record.
+     * The fourth part likewise: without, the object is exactly 2.8.1's. */
     side_fill(&side_out);
     st_side = &side_out;
     st_side_len = sizeof side_out;
-    rc = st_save3(OBJ_SETTINGS, p, sizeof *p, &dsu, sizeof dsu, mp, midi_part_default(mp) ? 0u : sizeof mp);
+    rc = st_save4(OBJ_SETTINGS, p, sizeof *p, &dsu, sizeof dsu, mp, midi_part_default(mp) ? 0u : sizeof mp,
+                  dm, drum_part_default(dm) ? 0u : sizeof dm);
     st_side = 0;
     if (rc)
         return -1;
     dsu_dirty = 0;
     fav_dirty = 0;
     memcpy(midi_saved, mp, sizeof midi_saved);
+    memcpy(drum_map_saved, dm, sizeof drum_map_saved);
     return 0;
 }
 static void dsu_boot(void)                          /* the SYN kits (and the MIDI part) from the settings object, else */
@@ -973,17 +1011,25 @@ static void dsu_boot(void)                          /* the SYN kits (and the MID
     dsu_defaults();
     for (k = 0; k < ML_N; k++)
         ml_tab[k] = 0;
+    drum_map_clear();                               /* (the drum map and the learned-knob speed: the defaults) */
     if (st_current(OBJ_SETTINGS, &h) >= 0 &&
-        (h.len == len || h.len == len + 2u * ML_N || h.len == len + 2u * ML_N + 4u || h.len == len + MIDI_PART) &&
+        (h.len == len || h.len == len + 2u * ML_N || h.len == len + 2u * ML_N + 4u || h.len == len + MIDI_PART ||
+         h.len == len + DRUM_MAP_PART_N || h.len == len + MIDI_PART + DRUM_MAP_PART_N) &&
         dsu_valid((const dsu_bank_t *)(st_buf + sizeof(persist_t)))) {
         memcpy(&dsu, st_buf + sizeof(persist_t), sizeof dsu);
         for (k = 0; k < DSU_N; k++)
             dsu_fix_kit(&dsu.k[k]);
-        if (h.len > len)
-            midi_part_read(st_buf + len, h.len - len);
+        if (h.len == len + DRUM_MAP_PART_N) {       /* (the drum map only: no MIDI part written) */
+            drum_part_read(st_buf + len, DRUM_MAP_PART_N);
+        } else if (h.len > len) {
+            midi_part_read(st_buf + len, h.len == len + MIDI_PART + DRUM_MAP_PART_N ? MIDI_PART : h.len - len);
+            if (h.len == len + MIDI_PART + DRUM_MAP_PART_N)
+                drum_part_read(st_buf + len + MIDI_PART, DRUM_MAP_PART_N);
+        }
         drch_seed = h.len == len;
     }
     midi_part_fill(midi_saved);
+    drum_part_fill(drum_map_saved);
     dsu_dirty = 0;
 }
 #endif
@@ -1010,9 +1056,11 @@ UI_SMALL static void settings_save(void)
         return;
     persist_fill(&p);
     {
-        uint8_t mp[MIDI_PART];
+        uint8_t mp[MIDI_PART], dm[DRUM_MAP_PART_N];
         midi_part_fill(mp);
-        if (!memcmp(&p, &persist_saved, sizeof p) && !memcmp(mp, midi_saved, sizeof mp) && !fav_dirty)
+        drum_part_fill(dm);
+        if (!memcmp(&p, &persist_saved, sizeof p) && !memcmp(mp, midi_saved, sizeof mp) &&
+            !memcmp(dm, drum_map_saved, sizeof dm) && !fav_dirty)
             return;                                /* unchanged: no erase cycle */
     }
     if (settings_write(&p) == 0)

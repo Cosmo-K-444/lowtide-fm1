@@ -854,6 +854,92 @@ static void round_trip(void)
     if (!rt_cmp("autosave -> other use -> resume")) fail("the autosave resumed is not the project saved");
 }
 
+/* (2.8.2) backup object 12: the drum pad remap + the learned-knob speed, 17 bytes (byte 16 the speed),
+ * through BK_PUT / BK_LIST / BK_GET, and back from flash at boot. */
+static uint32_t bk_put_exact(uint32_t id, const uint8_t *raw, uint32_t len)
+{
+    uint8_t a[700];
+    uint32_t n = 0, pos = 0, crc = st_crc32(raw, len);
+    a[n++] = 0; a[n++] = (uint8_t)id; n += put5(a + n, len); n += put5(a + n, crc);
+    cmdv(ED_BK_PUT, a, n);
+    if (rx_n < 8 || rx_last[7] != 0) return 99;      /* begin refused */
+    while (pos < len) {
+        uint32_t k = len - pos > 200u ? 200u : len - pos;
+        n = 0;
+        a[n++] = 1; a[n++] = (uint8_t)id; n += put5(a + n, pos);
+        n += pack7(a + n, raw + pos, k);
+        cmdv(ED_BK_PUT, a, n);
+        if (rx_n < 8 || rx_last[7] != 0) return 98;
+        pos += k;
+    }
+    a[0] = 2; a[1] = (uint8_t)id;
+    cmdv(ED_BK_PUT, a, 2);
+    return rx_n >= 8 ? rx_last[7] : 99;              /* the commit's rc */
+}
+static void dm_round_trip(void)
+{
+    uint8_t b[DRUM_MAP_PART_N], c[DRUM_MAP_PART_N], a[16];
+    uint32_t i, len, n;
+    stop_all();
+    /* the part itself: 17 bytes, byte 16 the speed; validation on read */
+    for (i = 0; i < DRUM_MAP_N; i++) drum_map[i] = 0xFFu;
+    learn_speed_q = LEARN_SPEED_DEF;
+    drum_part_fill(b);
+    if (!drum_part_default(b) || b[DRUM_MAP_N] != LEARN_SPEED_DEF) fail("drum map: the default part");
+    drum_map[0] = 2; drum_map[5] = 15; learn_speed_q = 8;
+    drum_part_fill(b);
+    if (drum_part_default(b) || b[0] != 2u || b[5] != 15u || b[16] != 8u)
+        fail("drum map: the part holds the map in bytes 0..15 and the speed in byte 16");
+    memcpy(c, b, sizeof c);
+    c[1] = 99; c[16] = 7;
+    drum_part_read(c, sizeof c);
+    if (drum_map[1] != 0xFFu || drum_map[0] != 2u || learn_speed_q != LEARN_SPEED_DEF)
+        fail("drum map: on read a bad lane becomes 0xFF and a bad speed becomes 1x");
+    drum_part_read(b, sizeof b);
+    if (drum_map[0] != 2u || drum_map[5] != 15u || learn_speed_q != 8u)
+        fail("drum map: on read a good part restores the map and the speed");
+    /* object 12 through BK_PUT: the map and the speed land in RAM and in the settings object */
+    for (i = 0; i < DRUM_MAP_N; i++) drum_map[i] = 0xFFu;
+    learn_speed_q = LEARN_SPEED_DEF;
+    if (bk_put_exact(12, b, sizeof b) != 0) fail("drum map: BK_PUT of object 12 refused");
+    if (drum_map[0] != 2u || drum_map[5] != 15u || learn_speed_q != 8u)
+        fail("drum map: BK_PUT of object 12 did not set the map and the speed");
+    /* listed (17 bytes) and read back through BK_LIST / BK_GET */
+    n = 0; cmdv(ED_BK_LIST, a, 0);
+    if (!ed_bk_obj(12, &len) || len != DRUM_MAP_PART_N || memcmp(ed_bk_obj(12, &len), b, sizeof b))
+        fail("drum map: BK_LIST does not list object 12 at 17 bytes");
+    n = 0; a[n++] = 12; n += put5(a + n, 0); a[n++] = 17; a[n++] = 0;
+    cmdv(ED_BK_GET, a, n);
+    if (rx_n < 14 || rx_last[5] != 12 || rx_last[6] != 0) fail("drum map: BK_GET of object 12 refused");
+    for (i = 0; i < 17u; i++) {                     /* (pack7, as bk_read0 unpacks it) */
+        uint32_t m = rx_last[14 + (i / 7u) * 8u], j = i % 7u;
+        if ((uint8_t)(rx_last[15 + (i / 7u) * 8u + j] | ((m >> j) & 1u) << 7) != b[i])
+            fail("drum map: BK_GET of object 12 does not read the part back");
+    }
+    /* a 16-byte object 12 is refused (the part is 17 bytes) */
+    if (bk_put_exact(12, b, 16) != 2) fail("drum map: a 16-byte object 12 was not refused");
+    /* bad bytes through BK_PUT: clamped on read, not refused */
+    memcpy(c, b, sizeof c);
+    c[1] = 99; c[16] = 7;
+    if (bk_put_exact(12, c, sizeof c) != 0) fail("drum map: BK_PUT with a bad lane / speed refused");
+    if (drum_map[1] != 0xFFu || drum_map[0] != 2u || learn_speed_q != LEARN_SPEED_DEF)
+        fail("drum map: BK_PUT did not clamp a bad lane to 0xFF and a bad speed to 1x");
+    /* back from flash at boot: the committed part is what dsu_boot loads */
+    drum_map_clear();
+    if (drum_map_count() != 0u || learn_speed_q != LEARN_SPEED_DEF) fail("drum map: clear");
+    dsu_boot();
+    if (drum_map[0] != 2u || drum_map[5] != 15u || drum_map[1] != 0xFFu || learn_speed_q != LEARN_SPEED_DEF)
+        fail("drum map: dsu_boot did not load the committed part");
+    /* the default part restores the default map and is no longer listed */
+    for (i = 0; i < DRUM_MAP_N; i++) b[i] = 0xFFu;
+    b[DRUM_MAP_N] = LEARN_SPEED_DEF;
+    if (bk_put_exact(12, b, sizeof b) != 0) fail("drum map: BK_PUT of the default part refused");
+    if (drum_map_count() != 0u || learn_speed_q != LEARN_SPEED_DEF) fail("drum map: the default part did not clear it");
+    n = 0; cmdv(ED_BK_LIST, a, 0);
+    if (ed_bk_obj(12, &len) && len) fail("drum map: the default part is still listed as object 12");
+    printf("drum map object 12: BK_PUT / LIST / GET, validation, boot reload ok\n");
+}
+
 /* ---- MODE 2: USB-MIDI in */
 static void midi_rand(void)
 {
@@ -885,6 +971,7 @@ int main(int argc, char **argv)
     __sanitizer_set_death_callback(on_death);
     harness_init();
     after();
+    dm_round_trip();
     for (i = 0; i < iter; i++) {
         if (i && i % 5000 == 0) { printf("mode %u: %u iterations ok\n", mode, i); fflush(stdout); }
         if (mode == 0) {

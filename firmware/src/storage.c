@@ -225,6 +225,63 @@ UI_SMALL static int st_save3(uint32_t obj, const void *src, uint32_t len, const 
     }
     return 0;
 }
+/* an object in up to four parts, src then src2 then src3 then src4 (2.8.2: the settings, the SYN kits, the
+ * MIDI LEARN map, then the drum pad remap + the learned-knob speed). A fourth part of length 0 is not written,
+ * so an object with a default drum map is exactly 2.8.1's. */
+UI_SMALL static int st_save4(uint32_t obj, const void *src, uint32_t len, const void *src2, uint32_t len2,
+                    const void *src3, uint32_t len3, const void *src4, uint32_t len4)
+{
+    uint32_t seq, base, off;
+    int cur, rc;
+    st_hdr_t h;
+    if (obj >= OBJ_COUNT || len + len2 + len3 + len4 > ST_PAYLOAD_MAX)
+        return -1;
+    cur = st_current(obj, &h);
+    seq = cur < 0 ? 0u : h.seq;
+    base = st_sector(obj, cur == 0 ? 1u : 0u);       /* write the other copy */
+    for (off = 0; off < len; off++)
+        st_buf[off] = ((const uint8_t *)src)[off];    /* the driver wants RAM sources */
+    for (off = 0; off < len2; off++)
+        st_buf[len + off] = ((const uint8_t *)src2)[off];
+    len += len2;
+    for (off = 0; off < len3; off++)
+        st_buf[len + off] = ((const uint8_t *)src3)[off];
+    len += len3;
+    for (off = 0; off < len4; off++)
+        st_buf[len + off] = ((const uint8_t *)src4)[off];
+    len += len4;
+    if ((rc = st_erase(base)) != 0)
+        return rc;
+    for (off = 0; off < len; off += 256u) {
+        uint32_t n = len - off > 256u ? 256u : len - off;
+        if ((rc = st_prog(base + ST_PAYLOAD_OFF + off, st_buf + off, n)) != 0)
+            return rc;
+    }
+    if (st_side && st_side_len && st_side_len <= ST_SIDE_MAX) {   /* (2.7) the side record, before the commit */
+        uint8_t sb[ST_SIDE_MAX];
+        for (off = 0; off < st_side_len; off++)
+            sb[off] = ((const uint8_t *)st_side)[off];      /* (RAM source) */
+        if ((rc = st_prog(base + ST_SIDE_OFF, sb, st_side_len)) != 0)
+            return rc;
+    }
+    h.magic = ST_MAGIC;
+    h.type = (uint16_t)obj;
+    h.slot = (uint16_t)(cur == 0 ? 1u : 0);
+    h.seq = seq + 1u;
+    h.len = len;
+    h.crc = st_crc32(st_buf, len);
+    h.rsv[0] = h.rsv[1] = 0xFFFFFFFFu;
+    h.hcrc = st_crc32(&h, sizeof h - 4u);
+    if ((rc = st_prog(base, &h, sizeof h)) != 0)       /* the commit record, last */
+        return rc;
+    {   /* read back: a write-protected or failing part must not report SAVED */
+        st_hdr_t chk;
+        uint32_t c = cur == 0 ? 1u : 0u;
+        if (st_head(obj, c, &chk) || memcmp(&chk, &h, sizeof h) || st_body(obj, c, &chk))   /* the whole record */
+            return -7;
+    }
+    return 0;
+}
 UI_SMALL static int st_save2(uint32_t obj, const void *src, uint32_t len, const void *src2, uint32_t len2)
 {
     return st_save3(obj, src, len, src2, len2, 0, 0);

@@ -1743,6 +1743,73 @@ int main(int argc, char **argv)
         tap(B_OCTUP);
         check(ui.menu_sel == MI_LCLEAR && ml_count() == 0u, "menu SYSTEM > MIDI LEARN CLEAR, OCT+: nothing learned any more");
         ui.menu = 0; ui.force = 1; go_home(); frames(16);
+        {   /* (2.8.2) the learned-knob speed: the K1..K4 followers only, through a quarter-detent
+             * accumulator (ui.c ml_knob_poll). The CCs go through midi_cc as a controller would send
+             * them; ml_knob_poll is called directly so the injected detents are read before any page
+             * consumes them. */
+            int32_t inj;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_learn_entry(74, 0, ML_KNOB_FOLLOW);   /* CC 74 -> KNOB 1 follower */
+            check(ml_count() == 1u && follow_acc[0] == 0 && follow_cc_last[0] == -1,
+                  "LEARN SPEED: learning a follower starts it with no baseline and no fraction");
+            ml_preset_cc = 0; ml_track_cc = 0;
+            learn_speed_q = 4;                        /* 1x: a delta of 5 injects 5 detents, as before */
+            follow_cc_last[0] = -1; follow_acc[0] = 0;
+            midi_cc(&trk[0], 74, 100); ml_knob_poll();   /* the baseline: no move */
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 105); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 5 && follow_acc[0] == 0, "LEARN SPEED 1x: a CC delta of 5 injects 5 detents (unchanged)");
+            learn_speed_q = 2;                        /* 0.5x: one unit injects nothing, the second one */
+            follow_cc_last[0] = -1; follow_acc[0] = 0;
+            midi_cc(&trk[0], 74, 100); ml_knob_poll();   /* the baseline */
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 101); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 0 && follow_acc[0] == 2, "LEARN SPEED 0.5x: a CC delta of 1 injects 0 detents, the half carried");
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 102); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 1 && follow_acc[0] == 0, "LEARN SPEED 0.5x: a second CC delta of 1 then injects 1 detent");
+            learn_speed_q = 8;                        /* 2x: one unit injects two detents */
+            follow_cc_last[0] = -1; follow_acc[0] = 0;
+            midi_cc(&trk[0], 74, 100); ml_knob_poll();   /* the baseline */
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 101); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 2 && follow_acc[0] == 0, "LEARN SPEED 2x: a CC delta of 1 injects 2 detents");
+            learn_speed_q = 16;                       /* 4x: a delta of 3 injects 8 in the first frame (clamped) */
+            follow_cc_last[0] = -1; follow_acc[0] = 0;
+            midi_cc(&trk[0], 74, 100); ml_knob_poll();   /* the baseline */
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 103); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 8 && follow_acc[0] == 16, "LEARN SPEED 4x: a CC delta of 3 injects 8 detents, clamped, remainder carried");
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 103); ml_knob_poll();   /* (no new move: the carried remainder still turns) */
+            inj = enc_inject[EN_K1];
+            check(inj == 4 && follow_acc[0] == 0, "LEARN SPEED 4x: the carried remainder injects 4 detents next frame");
+            learn_speed_q = 2;                        /* a negative move at 0.5x: fractions carry downward too */
+            follow_cc_last[0] = -1; follow_acc[0] = 0;
+            midi_cc(&trk[0], 74, 100); ml_knob_poll();   /* the baseline */
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 99); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == 0 && follow_acc[0] == -2, "LEARN SPEED 0.5x: a CC delta of -1 injects 0, the half carried");
+            enc_inject[EN_K1] = 0;
+            midi_cc(&trk[0], 74, 98); ml_knob_poll();
+            inj = enc_inject[EN_K1];
+            check(inj == -1 && follow_acc[0] == 0, "LEARN SPEED 0.5x: a second CC delta of -1 then injects -1 detent");
+            follow_acc[0] = 7;                        /* (re-)learning the follower resets its accumulator */
+            check(ml_learn_entry(75, 0, ML_KNOB_FOLLOW) == 1u && follow_acc[0] == 0 && follow_cc_last[0] == -1,
+                  "LEARN SPEED: (re-)learning a follower resets its accumulator and baseline");
+            drum_map[0] = 2; learn_speed_q = 8;       /* (LEARN CLEAR clears the drum map and the speed too) */
+            check(ml_clear_all() && drum_map_count() == 0u && learn_speed_q == LEARN_SPEED_DEF,
+                  "LEARN CLEAR: OCT+ also clears the drum pad remap and the learned-knob speed");
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            follow_acc[0] = 0; follow_cc_last[0] = -1; ml_follow_cc[0] = 0;
+            enc_inject[EN_K1] = 0; learn_speed_q = LEARN_SPEED_DEF; settings_later = 0;
+        }
         {   /* MIDI LEARN (2.8): a button pressed while learning is picked, and a knob turned is picked */
             for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
             press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */

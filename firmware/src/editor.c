@@ -404,6 +404,7 @@ _Static_assert(sizeof proj_tmp >= sizeof(project_t) && sizeof proj_tmp >= sizeof
                sizeof proj_tmp >= sizeof(persist_t), "backup staging");
 static persist_t ed_bk_set;                             /* LIST's snapshot of the settings */
 static uint8_t ed_bk_ml[MIDI_PART];                     /* .. and of the MIDI part (2.6, object 10: project.c) */
+static uint8_t ed_bk_dm[DRUM_MAP_PART_N];               /* .. and of the drum map + learned-knob speed (2.8.2, object 12) */
 static uint8_t ed_bk_valid, ed_bk_put, ed_bk_id;
 static uint32_t ed_bk_len, ed_bk_crc, ed_bk_pos, ed_bk_ms;
 UI_SMALL static void ed_bk_u32(uint32_t v) { uint32_t i; for (i = 0; i < 5u; i++) ed_b((v >> (7u * i)) & 127u); }
@@ -457,6 +458,15 @@ UI_SMALL static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no
             *len = sizeof theme;
         return (const uint8_t *)&theme;
     }
+    if (id == 12u) {                                      /* 2.8.2: the drum pad remap + the learned-knob speed
+                                                         * (project.c drum_part, 17 bytes: 16 map bytes, byte 16 the
+                                                         * speed in quarters): listed only while it is not the
+                                                         * default (a backup without it stays one an older editor
+                                                         * reads; its restore leaves them as they are) */
+        if (!drum_part_default(ed_bk_dm))
+            *len = sizeof ed_bk_dm;
+        return ed_bk_dm;
+    }
     if (id >= 32u && id < 32u + SMP_USER_SLOTS) {
         const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(id - 32u);
         if (h->magic == SMP_USER_MAGIC && h->version == 1u && h->nz && h->nz <= 16u &&
@@ -466,8 +476,8 @@ UI_SMALL static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no
     }
     return 0;
 }
-static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32, 33, 34, 35};   /* 11: your theme (2.7) */   /* 35: USR4 (2.4), 9: SYN kits (2.5),
-                                                                                      * 10: MIDI LEARN (2.6) */
+static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 32, 33, 34, 35};   /* 11: your theme (2.7), */   /* 35: USR4 (2.4), 9: SYN kits (2.5),
+                                                                                      * 10: MIDI LEARN (2.6), 12: the drum map (2.8.2) */
 
 /* a flash erase silences the audio for ~50 ms and stalls USB: only while stopped (as the panel) */
 UI_SMALL static uint32_t ed_flash_busy(void) { return song.playing || transport_req; }
@@ -534,6 +544,20 @@ UI_SMALL static uint32_t ed_bk_commit(void)
         persist_saved = p;
         return 0;
     }
+    if (id == 12u) {                                      /* 2.8.2: the drum map + learned-knob speed, written with
+                                                         * the settings (the whole 17-byte part, as listed) */
+        persist_t p;
+        if (ed_flash_busy())
+            return 3;
+        if (n != DRUM_MAP_PART_N)
+            return 2;
+        drum_part_read(raw, n);                           /* (every byte checked: a lane or 0xFF, a speed of five) */
+        persist_fill(&p);
+        if (!flash_ok || settings_write(&p))
+            return 4;
+        persist_saved = p;
+        return 0;
+    }
     if (id == 11u) {                                      /* SLOOP 2.7: your theme (n 0: none), written with the settings;
                                                          * sent, it is shown (MENU > COLOR on it) */
         persist_t p;
@@ -575,16 +599,17 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
             proj_capture((project_t *)ED_BK_RAW);           /* the working project, as it is now */
             persist_fill(&ed_bk_set);
             midi_part_fill(ed_bk_ml);
+            drum_part_fill(ed_bk_dm);
             ed_bk_valid = 1;
             ed_bk_put = 0;
         }
         ed_b(rc);
         ed_b(rc ? 0u : (uint32_t)sizeof ED_BK_IDS - (ed_bk_obj(10u, &len) && !len ? 1u : 0u) -
-                           (ed_bk_obj(11u, &len) && !len ? 1u : 0u));
+                           (ed_bk_obj(11u, &len) && !len ? 1u : 0u) - (ed_bk_obj(12u, &len) && !len ? 1u : 0u));
         for (i = 0; !rc && i < sizeof ED_BK_IDS; i++) {
             p = ed_bk_obj(ED_BK_IDS[i], &len);
-            if ((ED_BK_IDS[i] == 10u || ED_BK_IDS[i] == 11u) && !len)
-                continue;                                 /* (nothing learned / no theme: not in the list) */
+            if ((ED_BK_IDS[i] == 10u || ED_BK_IDS[i] == 11u || ED_BK_IDS[i] == 12u) && !len)
+                continue;                                 /* (nothing learned / no theme / the default drum map: not in the list) */
             ed_b(ED_BK_IDS[i]);
             ed_bk_u32(len);
             ed_bk_u32(st_crc32(p, len));
@@ -611,7 +636,7 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
         rc = 1;
         if (!flash_ok) {
             rc = 4;
-        } else if (op == 0u && na == 12u && (id <= 11u)) {  /* begin: id, length (5), CRC-32 (5) */
+        } else if (op == 0u && na == 12u && (id <= 12u)) {  /* begin: id, length (5), CRC-32 (5) */
             len = ed_bk_r32(a + 2);
             if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
                 if (len <= sizeof proj_tmp) {

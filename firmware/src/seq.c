@@ -1825,8 +1825,41 @@ static void learn_btn_cc(uint32_t k, uint32_t value)   /* a learned button CC: p
         learn_btn_up |= bit;
     }
 }
+/* DRUM PAD REMAP (2.8.2): which drum sound sits on which note of the 16-pad block (MIDI notes 36..51).
+ * One table, index = note - 36, value = lane 0..15 or 0xFF (unmapped: the default lane). It applies to MIDI
+ * input only: the on-device keys call drum_input directly and never go through midi_drum_lane. Kept with the
+ * settings (project.c drum_part, the fourth part of the settings object; backup object 12) and reset by
+ * HOME > SYSTEM > MIDI LEARN CLEAR (ui.c ml_clear_all). The learned-knob speed lives in the same part:
+ * byte 16, in quarters (1 = 0.25x, 2 = 0.5x, 4 = 1x, 8 = 2x, 16 = 4x), for the K1..K4 knob followers only
+ * (ui.c ml_knob_poll). */
+#define DRUM_MAP_N 16u
+#define DRUM_MAP_PART_N 17u                     /* the settings part / backup object 12: 16 map bytes + speed */
+#define LEARN_SPEED_DEF 4u                      /* 1x */
+static uint8_t drum_map[DRUM_MAP_N] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu,
+                                       0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu};
+static uint8_t learn_speed_q = LEARN_SPEED_DEF; /* the learned-knob speed, in quarters */
+static int learn_speed_ok(uint32_t q)           /* a speed byte this firmware stores */
+{
+    return q == 1u || q == 2u || q == 4u || q == 8u || q == 16u;
+}
+static uint32_t drum_map_count(void)            /* the pads remapped (ui_menu.c: MIDI LEARN CLEAR's count) */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < DRUM_MAP_N; i++)
+        n += drum_map[i] != 0xFFu;
+    return n;
+}
+static void drum_map_clear(void)                /* all pads unmapped, the learned-knob speed back to 1x */
+{
+    uint32_t i;
+    for (i = 0; i < DRUM_MAP_N; i++)
+        drum_map[i] = 0xFFu;
+    learn_speed_q = LEARN_SPEED_DEF;
+}
 static uint32_t midi_drum_lane(uint32_t note)
 {
+    if (note >= 36u && note < 36u + DRUM_MAP_N && drum_map[note - 36u] != 0xFFu)
+        return drum_map[note - 36u];
     return song.g[G_DRMAP] ? (note + 128u - 36u) % 16u : lane_of_note(note);
 }
 static const uint8_t *in_chord;                    /* input_on's note is note in_chord_i of in_chord (CHORD+) */

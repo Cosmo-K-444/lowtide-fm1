@@ -1060,6 +1060,9 @@ static uint8_t ml_exit_pending;   /* learn just exited: say so once the mapping 
 static int32_t preset_cc_last = -1;   /* PRESETS CC: the last value heard, so the knob steps by its move */
 static int32_t track_cc_last = -1;    /* ALGORITHM CC: the last value heard, so the knob steps by its move */
 static int32_t follow_cc_last[4] = {-1, -1, -1, -1};   /* a follower CC: the last value heard per knob slot */
+static int32_t follow_acc[4] = {0, 0, 0, 0};          /* a follower CC's fractional detents, in quarter-detents
+                                                         * (2.8.2: at a slow learned-knob speed a CC unit is less
+                                                         * than a detent, so the fraction is carried, not lost) */
 UI_SMALL static uint32_t ml_code(uint32_t id) { return id >= P_E0 ? ML_E0 + id - P_E0 : id + 1u; }
 UI_SMALL static void ml_put(uint32_t i, uint32_t e)       /* (the ISR reads the entry: never half of one) */
 {
@@ -1092,8 +1095,10 @@ UI_SMALL static uint32_t ml_learn_entry(uint32_t cc, uint32_t track, uint32_t co
                 preset_cc_last = -1;
             else if (code == ML_KNOB_ALGO)
                 track_cc_last = -1;
-            else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u)
+            else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u) {
                 follow_cc_last[code - ML_KNOB_FOLLOW] = -1;
+                follow_acc[code - ML_KNOB_FOLLOW] = 0;   /* (2.8.2: no stale fractional detent drives the new one) */
+            }
             return 1;
         }
     return 0;
@@ -1142,12 +1147,19 @@ UI_SMALL static void ml_pick_knob(uint32_t code)
 }
 UI_SMALL static int ml_clear_all(void)                    /* HOME > SYSTEM > LEARN CLEAR; 1 = there were */
 {
-    uint32_t i, n = ml_count();
+    uint32_t i, n = ml_count(), dm = drum_map_count();
+    int sp = learn_speed_q != LEARN_SPEED_DEF;
     for (i = 0; i < ML_N; i++)
         ml_put(i, 0);
-    if (n)
+    if (dm || sp)
+        drum_map_clear();                       /* (2.8.2: the drum pad remap and the learned-knob speed too) */
+    for (i = 0; i < 4u; i++) {                  /* (a cleared follower starts from no baseline and no fraction) */
+        follow_acc[i] = 0;
+        follow_cc_last[i] = -1;
+    }
+    if (n || dm || sp)
         settings_later = 1;                      /* (saved when quiet) */
-    return n != 0u;
+    return (n || dm || sp) != 0u;
 }
 UI_SMALL static void ml_toggle(void)                      /* GLO + F#3 */
 {
@@ -1361,7 +1373,11 @@ UI_SMALL static void ml_knob_poll(void)
     }
     /* a knob follower (2.8-learnfix6): the CC's move turns the knob slot on the current page, as if the
      * physical knob was turned. At most 8 detents a frame, the rest carried to the next frame, so a fast
-     * sweep does not jump the parameter in one go. */
+     * sweep does not jump the parameter in one go. (2.8.2) The learned-knob speed (seq.c learn_speed_q, in
+     * quarters: 1 0.25x, 2 0.5x, 4 1x, 8 2x, 16 4x) scales the move through a fixed-point accumulator in
+     * quarter-detents, so the fractions are kept at slow speeds: at 0.5x two CC units move one detent, at
+     * 2x one CC unit moves two. At 1x this is the old 1:1 move, remainder carried. PRESETS / ALGORITHM,
+     * VOLUME and SELECT are not scaled: they step through discrete presets, tracks, or a level. */
     for (k = 0; k < 4u; k++) {
         if (!ml_follow_cc[k])
             continue;
@@ -1371,12 +1387,14 @@ UI_SMALL static void ml_knob_poll(void)
             follow_cc_last[k] = (int32_t)v;
             continue;
         }
-        d = (int32_t)v - follow_cc_last[k];
+        follow_acc[k] += ((int32_t)v - follow_cc_last[k]) * (int32_t)learn_speed_q;
+        follow_cc_last[k] = (int32_t)v;
+        d = follow_acc[k] / 4;                  /* (C division truncates toward zero: the sign is kept) */
         if (d > 8) d = 8;
         else if (d < -8) d = -8;
         if (d) {
             panel_enc_inject(EN_K1 + k, d);
-            follow_cc_last[k] += d;
+            follow_acc[k] -= d * 4;
         }
     }
 }

@@ -88,15 +88,16 @@ UI_SMALL static const char *mi_value(uint32_t i, uint16_t *c)
     case MI_CPU1:                                     /* the render on both cores (fx.c); live, the sound is the same */
         *c = mi_cpu1_have() ? C_HI : C_DIM;
         return cpu1_off ? "OFF" : "ON";
-    case MI_LCLEAR: {                                 /* (2.6) the CCs MIDI LEARN holds; OCT+ clears them */
+    case MI_LCLEAR: {                                 /* (2.6) the CCs MIDI LEARN holds; OCT+ clears them
+                                                         * (2.8.2: and the drum pad remap + the learned-knob speed) */
         static char b[8];
-        uint32_t n = ml_count();
-        if (!n) {
+        uint32_t n = ml_count(), dm = drum_map_count();
+        if (!n && !dm) {
             *c = C_DIM;
             return "NONE";
         }
-        fmt_int(b, (int32_t)n);
-        str_cpy(b + str_len(b), " CC", 4);
+        fmt_int(b, (int32_t)(n + dm));
+        str_cpy(b + str_len(b), dm ? " MAP" : " CC", 5);
         return b;
     }
     default:
@@ -110,6 +111,7 @@ UI_SMALL static void draw_menu(void)
     uint32_t i, pass, sec = mi_sec(ui.menu_sel % MI_COUNT);
     uint32_t sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
                    settings.zoom * 104729u + lights_lvl * 1299709u + lights_keys * 15485863u + ml_count() * 2654435u +
+                   drum_map_count() * 40503u + (uint32_t)learn_speed_q * 65599u +
                    lights_notes * 32452843u + usb_full * 49979687u + usb_serial * 86028121u + usb_rate * 15486719u + theme_shown() * 32452867u + theme.crc + cpu1_off * 122949829u +
                    knob_accel_off * 179424673u + drum_preview * 236887691u + step_adv_off * 373587883u + flt_reso * 512927357u;
     if (!ui.force && sig == ui.menu_sig)
@@ -309,9 +311,12 @@ UI_SMALL static void mi_set(uint32_t i, int32_t s)
             lights_lvl = LIGHTS_LOW;                   /* keys lit need a level: the lowest */
         break;
     }
-    case MI_LCLEAR:                                    /* (2.6) every learned CC: OCT+ */
-        if (!s)
-            ui_message(ml_clear_all() ? "LEARN CLEARED" : "NOTHING LEARNED");
+    case MI_LCLEAR:                                    /* (2.6) every learned CC: OCT+
+                                                         * (2.8.2: and the drum pad remap + the learned-knob speed) */
+        if (!s) {
+            uint32_t dm = drum_map_count() + (learn_speed_q != LEARN_SPEED_DEF ? 1u : 0u);
+            ui_message(ml_clear_all() ? (dm ? "MAPS CLEARED" : "LEARN CLEARED") : "NOTHING LEARNED");
+        }
         break;
     case MI_PANEL:                                     /* actions: OCT+ only */
         if (!s) {

@@ -812,6 +812,105 @@ static void t_drmap(void)
     render(8);
 }
 
+/* (2.8.2) DRUM PAD REMAP: notes 36..51 rearranged by a 16-byte map (lane 0..15, 0xFF = the default lane),
+ * backup object 12 with the learned-knob speed as byte 16. The map wins over GM and over DR MAP 1-16;
+ * an unmapped pad and a note outside 36..51 fall back as before; a recorded hit lands on the remapped
+ * lane; a synth kit plays the remapped lane's sound. */
+static void dm_clear(void)
+{
+    uint32_t i;
+    for (i = 0; i < DRUM_MAP_N; i++)
+        drum_map[i] = 0xFFu;
+    learn_speed_q = LEARN_SPEED_DEF;
+}
+static void t_drmap_remap(void)
+{
+    uint32_t i, dch, rec2 = 0, rec0 = 0;
+    int32_t semi;
+    setup();
+    mi_r = mi_w;
+    song.g[G_ROUTE] = 0;
+    dch = (uint32_t)song.g[G_DRCH] - 1u;                /* the drums' channel (10) */
+    dm_clear();
+    drum_map[0] = 2;                                    /* note 36 -> lane 2 (SNARE), not the kick */
+    song.g[G_DRMAP] = 0;
+    pen_lane = 99;
+    note_in(dch, 36, 100);
+    note_in(dch, 36, 0);
+    check(pen_lane == 2u, "DRUM REMAP: note 36 -> lane 2 (SNARE) with the map set, GM mode");
+    song.g[G_DRMAP] = 1;                                /* (the map wins over DR MAP 1-16 too) */
+    pen_lane = 99;
+    note_in(dch, 36, 100);
+    note_in(dch, 36, 0);
+    check(pen_lane == 2u, "DRUM REMAP: note 36 -> lane 2 with DR MAP 1-16 as well");
+    song.g[G_DRMAP] = 0;
+    pen_lane = 99;                                      /* (an unmapped pad falls back to its GM lane) */
+    note_in(dch, 37, 100);
+    note_in(dch, 37, 0);
+    check(pen_lane == lane_of_note(37), "DRUM REMAP: unmapped note 37 falls back to its default lane");
+    pen_lane = 99;                                      /* (outside 36..51: the map never applies) */
+    note_in(dch, 60, 100);
+    note_in(dch, 60, 0);
+    check(pen_lane == lane_of_note(60), "DRUM REMAP: note 60 outside the pad block is unaffected (GM)");
+    song.g[G_DRMAP] = 1;
+    pen_lane = 99;
+    note_in(dch, 60, 100);
+    note_in(dch, 60, 0);
+    check(pen_lane == 8u, "DRUM REMAP: note 60 outside the pad block is unaffected (DR MAP 1-16)");
+    song.g[G_DRMAP] = 0;
+    {   /* the recorded pattern: the hit lands on the remapped lane */
+        uint32_t was_playing;
+        setup();
+        mi_r = mi_w;
+        song.g[G_ROUTE] = 0;
+        dch = (uint32_t)song.g[G_DRCH] - 1u;
+        dm_clear();
+        drum_map[0] = 2;
+        rec_wait = 0;
+        song.rec = 1u << TRK_DRUM;
+        transport_req = 1;
+        render(100);
+        was_playing = song.playing;
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        render(4);
+        transport_req = 2;
+        render(4);
+        song.rec = 0;
+        for (i = 0; i < 16u; i++) {
+            rec2 += dstep_has(&TDRUM->dstep[i], 2);
+            rec0 += dstep_has(&TDRUM->dstep[i], 0);
+        }
+        check(was_playing && rec2 >= 1u && rec0 == 0u,
+              "DRUM REMAP: a recorded note 36 lands on lane 2 of the pattern, not the kick");
+    }
+    {   /* a synth kit: the remapped lane's sound (the ds sound for the lane's GM note) */
+        const dsnd_t *want;
+        uint32_t found = 0, ok = 0;
+        setup();
+        mi_r = mi_w;
+        song.g[G_ROUTE] = 0;
+        dch = (uint32_t)song.g[G_DRCH] - 1u;
+        dm_clear();
+        drum_map[0] = 2;
+        memset(&drums, 0, sizeof drums);
+        drums.set = -2;
+        TDRUM->p[P_E0] = (int16_t)DRUM_SAMPLED;         /* the first synthesised kit */
+        want = &DS_KITS[0].s[ds_lane(LANE_NOTE[2], &semi)];
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        render(4);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].note == LANE_NOTE[2]) {
+                found = 1;
+                ok = drums.synth[i] && drums.ds[i].d == want;
+            }
+        check(found && ok, "DRUM REMAP: a synth kit plays the remapped lane's sound (note 36 -> the snare's ds sound)");
+    }
+    dm_clear();
+    render(8);
+}
+
 /* 2.7: a user zone's loop. looped 2 (the editor's LOOP / LOOP+TAIL): [ls, le] again while the note is held, let go the
  * rest to the end (the tail); 1 (the factory sets): always; 0: one-shot; LOOP OFF (the engine's param): none */
 static void t_loophold(void)
@@ -895,6 +994,7 @@ int main(void)
     t_limiter_bass();
     t_throw();
     t_drmap();                                          /* (last: its drum hits ring on) */
+    t_drmap_remap();
     t_remote();
     t_loophold();
     printf("fx251: %s\n", fails ? "FAILED" : "all checks ok");

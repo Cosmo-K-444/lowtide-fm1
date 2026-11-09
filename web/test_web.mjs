@@ -606,8 +606,8 @@ async function editorBackup() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   ok(info.proto >= 6, "backup: INFO protocol v6 or later");
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
-  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 32, 33, 34, 35\}/.test(ec) && E.backupObjects && [10, 11].every((id) => ec.includes(`id == ${id}u`)),
-    "backup: the object ids == editor.c ED_BK_IDS (35: USR4, 9: SYN kits, 10: MIDI LEARN, 11: theme)");
+  ok(/ED_BK_IDS\[\] = \{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 32, 33, 34, 35\}/.test(ec) && E.backupObjects && [10, 11].every((id) => ec.includes(`id == ${id}u`)),
+    "backup: the object ids == editor.c ED_BK_IDS (35: USR4, 9: SYN kits, 10: MIDI LEARN, 11: theme, 12: the drum map + knob speed)");
   await rq(E.req.upStore(3, "BACKUP ME"));
   await rq(E.req.project(1, 2), { timeout: 4000, retries: 0 });
   const s = Int16Array.from({ length: 3000 }, (_, i) => Math.round(8000 * Math.sin(i / 7)));
@@ -636,6 +636,66 @@ async function editorBackup() {
   const oi = E.parse[C.INFO](await old.rq(E.req.info()));
   ok(oi.proto === 5, "backup: firmware without it says protocol 5 (the editor hides backup)");
   old.done();
+}
+
+/* --------------------------- the drum map + knob speed (backup object 12, 17 bytes) --- */
+async function editorDrumMap() {
+  const C = E.CMD;
+  const { m, rq, done } = attachMock({});
+  const info = E.parse[C.INFO](await rq(E.req.info()));
+  const list = async () => E.parse[C.BK_LIST](await rq(E.req.bkList()));
+  const get12 = async () => {
+    await list();   /* the mock's BK_GET reads the snapshot a BK_LIST took (a BK_PUT clears it) */
+    const g = E.parse[C.BK_GET](await rq(E.req.bkGet(12, 0, 17)));
+    if (g.rc) throw new Error(`GET rc ${g.rc}`);
+    return g.data;
+  };
+  const put12 = async (bytes) => {
+    let r = E.parse[C.BK_PUT](await rq(E.req.bkBegin(12, bytes.length, E.crc32(bytes))));
+    if (r.rc) return r.rc;
+    r = E.parse[C.BK_PUT](await rq(E.req.bkData(12, 0, bytes)));
+    if (r.rc) return r.rc;
+    return E.parse[C.BK_PUT](await rq(E.req.bkCommit(12))).rc;
+  };
+  ok(!(await list()).items.some((x) => x.id === 12), "drum map: object 12 absent when the map is default (speed 1x)");
+  /* swap KICK and HI TOM, speed 2x */
+  const map = new Uint8Array(17).fill(0xFF);
+  map[0] = 10; map[12] = 0; map[16] = 8;
+  ok((await put12(map)) === 0, "drum map: BK_PUT of 17 bytes commits (rc 0)");
+  const it = (await list()).items.find((x) => x.id === 12);
+  const back = await get12();
+  ok(!!it && it.len === 17 && eq(back, map) && it.crc === E.crc32(map) && m.state.drumMap[16] === 8,
+    "drum map: BK_LIST shows object 12 (17 bytes); BK_GET reads the swapped map and speed 2x back");
+  /* speed only: 4x, map back to default */
+  const fast = new Uint8Array(17).fill(0xFF); fast[16] = 16;
+  ok((await put12(fast)) === 0 && (await get12())[16] === 16 && m.state.drumMap[16] === 16, "drum map: speed 4x round trip (byte 16)");
+  /* reset to the default: the object leaves BK_LIST again */
+  const def = new Uint8Array(17).fill(0xFF); def[16] = 4;
+  ok((await put12(def)) === 0 && !(await list()).items.some((x) => x.id === 12), "drum map: all-0xFF + speed 1x is the default again (object 12 unlisted)");
+  /* a bad object is refused; a bad byte is taken as the firmware takes it (project.c drum_part_read) */
+  const badLen = new Uint8Array(16).fill(0xFF);
+  ok((await put12(badLen)) === 2, "drum map: 16 bytes (not 17) -> rc 2");
+  const badSpeed = new Uint8Array(17).fill(0xFF); badSpeed[16] = 3;
+  ok((await put12(badSpeed)) === 0 && m.state.drumMap[16] === 4 && !(await list()).items.some((x) => x.id === 12),
+    "drum map: speed 3 (not a quarter step) -> stored as 1x (and the object is default again)");
+  const badLane = new Uint8Array(17).fill(0xFF); badLane[0] = 20; badLane[16] = 8;
+  ok((await put12(badLane)) === 0 && (await get12())[0] === 0xFF && m.state.drumMap[16] === 8,
+    "drum map: lane 20 (not a lane) -> stored as unmapped, the speed kept");
+  /* the editor's GM fallback for notes 36..51 == drums.c LANE_OF_GM (the device's default for an unmapped note) */
+  const dc = readFileSync(join(HERE, "../firmware/src/drums.c"), "utf8");
+  const gmNums = ((/LANE_OF_GM\[81 - 35 \+ 1\] = \{([^}]*)\}/.exec(dc) || [])[1] || "").replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => +x);
+  const ed = readFileSync(join(HERE, "editor.html"), "utf8");
+  const fb = ((/GM_FALLBACK: \[([^\]]*)\]/.exec(ed) || [])[1] || "").split(",").map((x) => +x);
+  ok(gmNums.length === 47 && fb.join() === gmNums.slice(1, 17).join(),
+    "drum map: the editor's GM fallback for notes 36..51 == drums.c LANE_OF_GM");
+  /* a backup carries object 12; a restore puts it back */
+  await put12(map);
+  const A = await E.backupCapture(rq, info);
+  await put12(def);
+  ok(A.objects.some((x) => x.id === 12 && x.len === 17), "drum map: a backup holds object 12 when non-default");
+  await E.backupRestore(rq, JSON.parse(JSON.stringify(A)));
+  ok(eq(await get12(), map) && m.state.drumMap[16] === 8, "drum map: a restore puts the map and speed back");
+  done();
 }
 
 /* ------------------------------------- editor v5 (SLOOP 2.0): lanes, levels, ratchets --- */
@@ -1788,6 +1848,7 @@ await editorV7();
 await editorV8();
 await editorV9();
 await editorBackup();
+await editorDrumMap();
 await editor25();
 await editorDsyn();
 await editorCart();
