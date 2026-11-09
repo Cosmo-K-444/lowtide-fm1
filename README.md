@@ -492,6 +492,7 @@ The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 | | |
 | --- | --- |
 | Device | M-VAVE FM-1 (the official firmware can be put back at any time) |
+| Newer FM-1 units | supported, including units with the UC25HQ80 flash chip (sold from late 2026, mostly on AliExpress) — both the original Puya P25Q80 and the UC25HQ80 are recognised, so projects save and the installer works on either |
 | Installer and editor | **Chrome or Edge** on Windows, macOS or Linux (they use Web MIDI with SysEx) |
 | Cable | a USB **data** cable, plugged directly (no hub) |
 | USB audio | any computer that takes a class-compliant USB audio input (no driver) |
