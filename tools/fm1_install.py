@@ -18,7 +18,7 @@ install finishes the write. Needs mido with python-rtmidi.
 Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 3 FM-1 not found, 4 connection lost or the device stopped, 5 timeout (no
 loader / no restart), 6 wrong model, another identity after the install, or the
-FM-1 is in the update mode of another firmware (only SLOOP's own loader,
+FM-1 is in the update mode of another firmware (only Lowtide's own loader,
 ota-FM-1_9XX, is resumed).
 """
 import argparse
@@ -33,8 +33,8 @@ FINISH_CHECK, FINISH_WRITE = 0xE0000000, 0xF0000000
 MAXDATA = 512
 BLOCKS, BLK, KEEP = 20, 0x30, 0x2F
 LOADER_MARK = b"FELUCCA-LOADER-1"
-PORT_RE = re.compile(r"fm-1|felucca|sloop|clipper|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
-# (the FM-1 under SLOOP / Felucca, under CLIPPER, the update loaders, the stock firmware: as web/fm1ota.js FM1_PORT)
+PORT_RE = re.compile(r"fm-1|felucca|sloop|lowtide|clipper|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+# (the FM-1 under Lowtide / Felucca, under CLIPPER, the update loaders, the stock firmware: as web/fm1ota.js FM1_PORT)
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,

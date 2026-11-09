@@ -134,10 +134,10 @@ UI_SMALL static void draw_menu(void)
         cv_begin(240, pass ? 95u : 124u, C_BLACK);
         cv_oy = pass ? -124 : 0;
         if (ui.menu == 2) {
-            cv_text(4, 4, &FONT_L, "SLOOP", C_WHITE);
-            cv_rect(96, 10, 8, 4, TE_COL[0]), cv_rect(96, 16, 12, 4, TE_COL[1]);   /* the sail */
-            cv_rect(96, 22, 16, 4, TE_COL[2]), cv_rect(96, 28, 20, 4, TE_COL[3]);
-            cv_text(4, 36, &FONT_S, "BASED ON FELUCCA", C_AMB);
+            cv_text(4, 4, &FONT_L, "LOWTIDE", C_WHITE);
+            cv_rect(125, 10, 8, 4, TE_COL[0]), cv_rect(125, 16, 12, 4, TE_COL[1]);   /* the sail (right of the title) */
+            cv_rect(125, 22, 16, 4, TE_COL[2]), cv_rect(125, 28, 20, 4, TE_COL[3]);
+            cv_text(4, 36, &FONT_S, "BASED ON SLOOP", C_AMB);
             cv_text(4, 54, &FONT_S, FELUCCA_VERSION, C_HI);
             cv_text(236 - text_w(&FONT_S, __DATE__), 54, &FONT_S, __DATE__, C_GRAY);   /* build date */
             cv_text(cv_text(4, 72, &FONT_S, "LEO KUROSHITA", C_HI) + 8, 72, &FONT_S, "@KUROGEDELIC", C_AMB);
@@ -154,7 +154,7 @@ UI_SMALL static void draw_menu(void)
 #if FELUCCA_CPU1                                    /* (the host tests include this file without cpu1.c) */
             cv_text(236 - text_w(&FONT_S, cpu1_label()), 119, &FONT_S, cpu1_label(), C_AMB);   /* 2 CORES / 1 CORE (cpu1.c) */
 #endif
-            cv_text(4, 132, &FONT_S, "GITHUB.COM/ISOD89/SLOOP-FM1", C_AMB);   /* (the source of this firmware) */
+            cv_text(4, 132, &FONT_S, "GITHUB.COM/COSMO-K-444/MIDI-LOWTIDE-FM1", C_AMB);   /* (the source of this firmware) */
             cv_text(4, 146, &FONT_S, "FONT: TERMINUS (OFL)", C_DIM);
             cv_text(4, 159, &FONT_S, "SAMPLES: VERSILIAN (CC0)", C_DIM);
             cv_text(4, 172, &FONT_S, "+ SONIC PI (CC0)", C_DIM);

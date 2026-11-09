@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Compile the real SLOOP DSP/clock for browser preview (requires emcc).
+"""Compile the real Lowtide DSP/clock for browser preview (requires emcc).
 
 python3 tools/build_preview.py
 Then web/make_site.py includes the generated audio assets in the local site.

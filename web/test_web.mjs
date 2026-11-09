@@ -188,7 +188,7 @@ async function editorLibrarian() {
   const rcEmpty = await E.bank.load(rq, 11);
   ok(rc === 0 && !b2.slots[11].used && b2.slots[10].used && rcEmpty === 1, "librarian: UP_ERASE, UP_LOAD of an empty slot -> rc 1");
 
-  /* audition: a PHASE patch with a pattern into an empty sequencer: the sound only (as UP_LOAD in SLOOP), never
+  /* audition: a PHASE patch with a pattern into an empty sequencer: the sound only (as UP_LOAD in Lowtide), never
      the pattern, and the mix / pattern / key parameters stay (ui.c param_kept) */
   const bass = await E.bank.get(rq, info, 2);   /* PHASE RESO, with the ACID pattern */
   for (let i = 0; i < info.nstep; i++) await rq(E.req.stepSet(i, emptyStep));
@@ -643,7 +643,7 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 12 && /SLOOP/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v12: INFO ends with the protocol version (12: LIVE); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  ok(info.proto === 12 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v12: INFO ends with the protocol version (12: LIVE); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
   /* the firmware says the same: ED_DRUM_STEP is command 33, INFO sends 5, P_CHORD / the master globals as the mock has them */
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8"), pc = readFileSync(join(HERE, "../firmware/src/params.c"), "utf8");
   const en = (/enum \{ ED_INFO = 1,([^}]*)\}/.exec(ec) || [])[1] || "";
@@ -943,9 +943,9 @@ async function editor25() {
   const notes = SMF.fromSteps(steps, len, 2);
   ok(notes.length === 3 && notes[0].t === 0 && notes[0].dur === 4 * 24 - 1 && notes[0].vel === 80 && notes[1].vel === 42 && notes[2].t === 8 * 24 && notes[2].vel === 127,
     "midi: a track's steps -> notes (ties as lengths; velocity, level, accent as the device plays them)");
-  const file = SMF.write(notes, { bpm: 97, ch: 2, name: "SLOOP track 3" });
+  const file = SMF.write(notes, { bpm: 97, ch: 2, name: "Lowtide track 3" });
   const back = SMF.read(file);
-  ok(back.format === 0 && back.ppq === 96 && back.bpm === 97 && back.tracks.length === 1 && back.tracks[0].name === "SLOOP track 3"
+  ok(back.format === 0 && back.ppq === 96 && back.bpm === 97 && back.tracks.length === 1 && back.tracks[0].name === "Lowtide track 3"
     && js(back.tracks[0].notes.map((n) => [n.t, n.dur, n.key, n.vel, n.ch])) === js(notes.slice().sort((a, b) => a.t - b.t || a.key - b.key).map((n) => [n.t, n.dur, n.key, n.vel, 2])),
     "midi: write -> read: the same notes, tempo, name, channel");
   const plan = SMF.toSteps(back.tracks[0].notes, back.ppq, 2, 64);
@@ -1066,7 +1066,7 @@ async function editorDsyn() {
   let bad = "";
   try { DSYN.fromFile({ format: "sloop-drumsynth", sounds: [[1, 2]] }); } catch (e) { bad = e.message; }
   const bank = DSYN.bankEncode([kit, kit, kit, kit]), dec = DSYN.bankDecode(bank);
-  ok(back.name === "MY 808" && back.crush === 0x21 && js(back.sounds.map((x) => Array.from(x))) === js(kit.sounds.map((x) => Array.from(x))) && /not a SLOOP/.test(bad)
+  ok(back.name === "MY 808" && back.crush === 0x21 && js(back.sounds.map((x) => Array.from(x))) === js(kit.sounds.map((x) => Array.from(x))) && /not a Lowtide/.test(bad)
     && bank.length === 1464 && dec && dec[3].name === "MY 808" && dec[2].crush === 0x21 && js(Array.from(dec[1].sounds[15])) === js(Array.from(kit.sounds[15]))
     && DSYN.bankDecode(bank.slice(1)) === null, "dsyn: a kit file and the backup object, there and back; a wrong file refused");
   /* the device (mock): LIST / GET / PUT / STORE / PLAY */
@@ -1115,7 +1115,7 @@ async function editorDsyn() {
     && m.state.ml[65] === 11, "midi learn: a backup holds the learned CCs and GLO > MIDI (object 10, only when not the default); a restore puts them back");
   {   /* 2.6: a 2.6 backup without object 10 (the defaults then): restored as the defaults, not left as they are now */
     const N1 = JSON.parse(JSON.stringify(N));
-    N1.firmware = "SLOOP 2.6";
+    N1.firmware = "LOWTIDE 2.6";
     await E.backupRestore(rq, N1);
     ok(m.state.ml.length === 72 && m.state.ml.slice(0, 64).every((x) => x === 0) && m.state.ml[64] === 1 && m.state.ml[65] === 2
       && m.state.ml[66] === 3 && m.state.ml[67] === 10 && m.state.ml[68] === 2,
@@ -1125,8 +1125,8 @@ async function editorDsyn() {
     const f6 = Uint8Array.of(0x36, 0x4E, 0x55, 0x46, 1), f5 = Uint8Array.of(0x35, 0x4E, 0x55, 0x46);
     ok(E.bkProjFormat(f6) === 6 && E.bkProjFormat(f5) === 5 && E.bkProjFormat(Uint8Array.of(1, 2, 3, 4)) === 0
       && E.bkDevFormat({ pcount: 71 }) === 6 && E.bkDevFormat({ pcount: 61 }) === 5 && E.bkDevFormat({ pcount: 53 }) === 4
-      && E.bkFwAtLeast("SLOOP 2.6", [2, 5, 1]) && E.bkFwAtLeast("SLOOP 2.6", [2, 5, 1]) && !E.bkFwAtLeast("SLOOP 2.5", [2, 5, 1])
-      && !E.bkFwAtLeast("FELUCCA SLOOP 2.0 (MOCK)", [2, 5, 1]),
+      && E.bkFwAtLeast("LOWTIDE 2.6", [2, 5, 1]) && E.bkFwAtLeast("LOWTIDE 2.6", [2, 5, 1]) && !E.bkFwAtLeast("LOWTIDE 2.5", [2, 5, 1])
+      && !E.bkFwAtLeast("FELUCCA LOWTIDE 2.0 (MOCK)", [2, 5, 1]),
       "backup: the project format of an object, what a device reads (INFO), the firmware compared");
     let err = null, writes = 0;
     const rq25 = async (r, o) => {                    /* a 2.5 FM-1 (INFO: 61 parameters); anything else counts as a write */
@@ -1483,7 +1483,7 @@ function editorTabs() {
     const te = readFileSync(join(HERE, "../firmware/src/gfx.c"), "utf8");   /* (2.7: TE_COL_DEF, a theme may change them) */
     ok(/TE_COL_DEF\[4\] = \{RGB\(40, 124, 255\), RGB\(30, 204, 112\), RGB\(255, 198, 24\), RGB\(255, 98, 26\)\}/.test(te),
       "editor: ... the same four as the firmware's TE_COL");
-    ok(/SLOOP-FONT\*\/url\(data:font\/ttf;base64,[A-Za-z0-9+\/=]{20000,}\)/.test(html), "editor: the device's Terminus font inlined (tools/gen_webfont.py)");
+    ok(/LOWTIDE-FONT\*\/url\(data:font\/ttf;base64,[A-Za-z0-9+\/=]{20000,}\)/.test(html), "editor: the device's Terminus font inlined (tools/gen_webfont.py)");
   }
 }
 
@@ -1730,7 +1730,7 @@ async function updater() {
   ok(e && e.code === "lost", "fm1ota.js: unplugged in step 1 -> error code 'lost'");
   const e2 = await new Updater({ inputs: new Map(), outputs: new Map() }).install(image, "FM-1_900").then(() => null, (x) => x);
   ok(e2 && e2.code === "notfound", "fm1ota.js: no device -> error code 'notfound'");
-  {   /* an FM-1 running CLIPPER (USB name "Clipper", SLOOP's sister firmware) installs SLOOP like any FM-1 */
+  {   /* an FM-1 running CLIPPER (USB name "Clipper", Lowtide's sister firmware) installs Lowtide like any FM-1 */
     const cl = new FakeFM1(image, { name: "Clipper", identity: "FM-1_901" });
     const g = await new Updater(cl.access).install(image, "FM-1_900");
     ok(g === "FM-1_900" && cl.bad === 0, "fm1ota.js: an FM-1 under CLIPPER (port 'Clipper') -> found and installed");
@@ -1739,7 +1739,7 @@ async function updater() {
     const e6 = await new Updater(other.access).install(image, "FM-1_900").then(() => null, (x) => x);
     ok(e6 && e6.code === "notfound" && other.served === 0 && /Arturia KeyStep Pro/.test(e6.detail),
        `fm1ota.js: a port of other gear is left alone; 'not found' lists it${e6 ? e6.detail : ""}`);
-    ok(["FM-1", "Felucca", "Felucca Update", "Clipper", "SLOOP", "MIDIIN2 (Clipper)", "USB-MIDI"].every((n) => FM1_PORT.test(n)) &&
+    ok(["FM-1", "Felucca", "Felucca Update", "Clipper", "SLOOP", "LOWTIDE", "MIDIIN2 (Clipper)", "USB-MIDI"].every((n) => FM1_PORT.test(n)) &&
        !["Arturia KeyStep Pro", "loopMIDI Port", "Microsoft GS Wavetable Synth"].some((n) => FM1_PORT.test(n)),
        "fm1ota.js: FM1_PORT takes the FM-1's names (SLOOP, CLIPPER, the loader, the stock firmware), not other gear");
     /* the editor finds the FM-1 by the installer's names (a port name kept from another firmware: "X0X FM-1") */

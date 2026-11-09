@@ -211,7 +211,7 @@ def installs():
     dev = FakeFM1(image, identity="FM-1_901", name="Clipper")
     rc, out, err = cli([p, "--yes"], dev)
     ok(rc == 0 and dev.bad == 0 and "done: the FM-1 runs FM-1_900" in out,
-       "install: an FM-1 under CLIPPER (port 'Clipper') -> found, SLOOP installed")
+       "install: an FM-1 under CLIPPER (port 'Clipper') -> found, Lowtide installed")
 
     dev = FakeFM1(image, identity="ota-FM-1_900", name="Felucca Update")
     rc, out, err = cli([p, "--yes"], dev)

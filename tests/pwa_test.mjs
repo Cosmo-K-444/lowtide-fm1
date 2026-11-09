@@ -76,31 +76,31 @@ try {
 
   await stop();                                          // ---- no network at all
   await page.goto(base + "installer/");
-  await page.waitForFunction(() => /SLOOP \d/.test(document.getElementById("status").textContent), null, { timeout: 8000 })
+  await page.waitForFunction(() => /Lowtide \d/.test(document.getElementById("status").textContent), null, { timeout: 8000 })
     .catch(() => {});
   const st = await page.textContent("#status");
-  ok(/^SLOOP \d/.test(st), `offline: the installer loads its firmware from the copy (${st.trim().slice(0, 40)})`);
+  ok(/^Lowtide \d/.test(st), `offline: the installer loads its firmware from the copy (${st.trim().slice(0, 40)})`);
   await page.goto(base + "editor/");
   const ed = await page.evaluate(async () => {
     await document.fonts.ready;
     return { title: document.title, connect: !!document.getElementById("connect"), font: document.fonts.check('16px "Fukiai"', "") };
   });
-  ok(ed.title === "SLOOP Editor" && ed.connect, "offline: the editor loads");
+  ok(ed.title === "Lowtide Editor" && ed.connect, "offline: the editor loads");
   ok(ed.font, "offline: with its icon font");
   await page.goto(base + "editor/index.html?x=1");
-  ok((await page.title()) === "SLOOP Editor", "offline: index.html and a query find the same copy");
+  ok((await page.title()) === "Lowtide Editor", "offline: index.html and a query find the same copy");
   const miss = await page.goto(base + "nothing.html").then(() => "page").catch(() => "error");
   ok(miss === "error", "offline: what is not kept is not invented");
 
   await serve();                                         // ---- online again, the site changed
   const f = join(site, "webapp", "editor", "index.html");
   const orig = readFileSync(f, "utf8");
-  writeFileSync(f, orig.replace("<title>SLOOP Editor</title>", "<title>SLOOP Editor NEW</title>"));
+  writeFileSync(f, orig.replace("<title>Lowtide Editor</title>", "<title>Lowtide Editor NEW</title>"));
   await page.goto(base + "editor/");
-  ok((await page.title()) === "SLOOP Editor NEW", "online: the page as published now, not the old copy");
+  ok((await page.title()) === "Lowtide Editor NEW", "online: the page as published now, not the old copy");
   await stop();
   await page.goto(base + "editor/");
-  ok((await page.title()) === "SLOOP Editor NEW", "offline after that: the copy is the newest one seen");
+  ok((await page.title()) === "Lowtide Editor NEW", "offline after that: the copy is the newest one seen");
   writeFileSync(f, orig);
 
   await serve();                                         // ---- a new site: a new sw.js takes over, the old copy goes
@@ -143,7 +143,7 @@ os.chdir(${JSON.stringify(site)}); http.server.ThreadingHTTPServer(("127.0.0.1",
   await p2.reload();
   await p2.waitForTimeout(800);
   const second = await p2.textContent("#status");
-  ok(/SLOOP 2\.7/.test(first) && /SLOOP 2\.7/.test(second), "a new build of the same name: the new firmware, not the browser's old copy");
+  ok(/Lowtide 2\.7/.test(first) && /Lowtide 2\.7/.test(second), "a new build of the same name: the new firmware, not the browser's old copy");
   writeFileSync(fw, fw0); writeFileSync(ix, ix0);
   await c2.close();
 } finally {

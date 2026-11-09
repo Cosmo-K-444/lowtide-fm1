@@ -11,13 +11,13 @@ const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 const MAXDATA = 512;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const IS_OTA = (id) => /^ota-/i.test(id.model);
-// the update loader of SLOOP / Felucca packages ("ota-FM-1_9XX"). A device left in the update mode of another
+// the update loader of Lowtide / Felucca packages ("ota-FM-1_9XX"). A device left in the update mode of another
 // firmware (the stock updater's loader) is never written: its loader may lay the image out differently.
 export const OUR_LOADER = (id) => /^ota-FM-1_9\d\d$/i.test(id.text);
-// the MIDI ports the installer may probe (never other gear): the FM-1 under SLOOP / Felucca ("Felucca"), under
-// CLIPPER ("Clipper", its sister firmware), under a firmware named after itself ("SLOOP"), the update loaders, and
+// the MIDI ports the installer may probe (never other gear): the FM-1 under Lowtide / Felucca ("Felucca"), under
+// CLIPPER ("Clipper", its sister firmware), under a firmware named after itself ("SLOOP" or "LOWTIDE"), the update loaders, and
 // the names Windows / macOS give the stock firmware
-export const FM1_PORT = /fm-1|felucca|sloop|clipper|ota|composite|sinco|usb-midi/i;
+export const FM1_PORT = /fm-1|felucca|sloop|lowtide|clipper|ota|composite|sinco|usb-midi/i;
 
 // errors carry a code the pages translate: notfound, model, stopped, noloader, lost, noreturn,
 // mismatch (detail: the identity the device reports), badreq, foreign (detail: the loader's identity)
@@ -251,7 +251,7 @@ export class Updater {
     return s2;
   }
 
-  // resume: the device is already in update mode (loader) -> true when the write finished. Only SLOOP's
+  // resume: the device is already in update mode (loader) -> true when the write finished. Only Lowtide's
   // own loader is resumed, except for the return to the official firmware (opts.product: the official
   // package, its identity checked once the FM-1 is back, after Felucca 1.0): that one is the official
   // loader's own image, as M-UPGRADE would write it

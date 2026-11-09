@@ -24,9 +24,9 @@ def check(what, ok):
     bad += not ok
 
 
-check("the editor links the offline file (download)", src.count('download="sloop-editor.html"') == 1)
+check("the editor links the offline file (download)", src.count('download="lowtide-editor.html"') == 1)
 check("the installer page links it too",
-      (ROOT / "web" / "index_pkg.html").read_text(encoding="utf-8").count('href="../editor/sloop-editor.html"') == 1)
+      (ROOT / "web" / "index_pkg.html").read_text(encoding="utf-8").count('href="../editor/lowtide-editor.html"') == 1)
 check("offline: the icon font inlined", 'url("fukiai.ttf")' not in off and "font/ttf;base64," in off)
 check("offline: no download link to itself", "<!--DL-->" not in off and 'id="offline"' not in off)
 check("offline: the installer and the font licence online",
@@ -57,7 +57,7 @@ try:
     check("sw.js keeps the installer, the editor, its font, the firmware",
           {"installer/", "editor/", "editor/fukiai.ttf", "../firmware/sloop-9.9.fwsc"} <= set(files))
     check("sw.js: every file it keeps is in the site", all(path(f).is_file() for f in files))
-    m = json.loads((app / "sloop.webmanifest").read_text(encoding="utf-8"))
+    m = json.loads((app / "lowtide.webmanifest").read_text(encoding="utf-8"))
     check("manifest: standalone, starts at the editor, icons 192 and 512 (+ maskable)",
           m["display"] == "standalone" and m["start_url"] == "editor/" and
           {i["sizes"] for i in m["icons"]} == {"192x192", "512x512"} and
@@ -66,7 +66,7 @@ try:
     for page in ("editor", "installer"):
         h = (app / page / "index.html").read_text(encoding="utf-8")
         check(f"{page}: links the manifest, registers ../sw.js, an install button",
-              'href="../sloop.webmanifest"' in h and 'register("../sw.js")' in h and "beforeinstallprompt" in h)
+              'href="../lowtide.webmanifest"' in h and 'register("../sw.js")' in h and "beforeinstallprompt" in h)
     stamp = sw.split('const STAMP = "')[1].split('"')[0]
     (tmp / "site2").mkdir()
     make_site.main(tmp / "p.fwsc", "9.9", tmp / "site2")

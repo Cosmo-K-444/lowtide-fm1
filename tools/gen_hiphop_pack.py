@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build the SLOOP HIP-HOP PACK: free sounds for the user sample slots USR1..USR3.
+"""Build the LOWTIDE HIP-HOP PACK: free sounds for the user sample slots USR1..USR3.
 
     python tools/gen_hiphop_pack.py            (needs numpy, scipy, soundfile; network once)
 
@@ -286,7 +286,7 @@ def build_scratch(snd, report):
     return zones
 
 
-CREDITS = """SLOOP HIP-HOP PACK - free sounds for the user sample slots USR1..USR3
+CREDITS = """LOWTIDE HIP-HOP PACK - free sounds for the user sample slots USR1..USR3
 Made by tools/gen_hiphop_pack.py: retuned, cut and processed ("dusty" chain) from:
 
   E.PIANO   Wurlitzer EP200 samples by Greg Sullivan (http://www.sullivang.net/),

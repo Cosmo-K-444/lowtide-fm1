@@ -3,7 +3,7 @@
 """The FM-1's own font for the web editor: Terminus 8x16 (assets/fonts/ter-u16n.bdf, SIL OFL 1.1), as a
 TrueType font whose outlines are the bitmap's pixels (each row's runs of lit pixels as rectangles), so the
 editor shows the same letters as the screen, crisp at 16 px and its multiples. Written into web/editor.html
-as a data: URI between the /*SLOOP-FONT*/ markers (no extra file: the editor also runs from file://, where
+as a data: URI between the /*LOWTIDE-FONT*/ markers (no extra file: the editor also runs from file://, where
 a font file next to it may not load).
   tools/gen_webfont.py [editor.html]
 Needs fontTools (pip install fonttools)."""
@@ -89,7 +89,7 @@ def build(path):
     fb.setupGlyf(outlines)
     fb.setupHorizontalMetrics({n: (metrics[n][0], outlines[n].xMin if hasattr(outlines[n], "xMin") and outlines[n].numberOfContours else 0) for n in order})
     fb.setupHorizontalHeader(ascent=ascent, descent=-descent)
-    fb.setupNameTable({"familyName": "SLOOP Terminus", "styleName": "Regular",
+    fb.setupNameTable({"familyName": "Lowtide Terminus", "styleName": "Regular",
                        "copyright": "Terminus Font (C) 2020 Dimitar Toshkov Zhekov, SIL Open Font License 1.1",
                        "licenseDescription": "SIL Open Font License, Version 1.1"})
     fb.setupOS2(sTypoAscender=ascent, sTypoDescender=-descent, usWinAscent=ascent, usWinDescent=descent,
@@ -105,9 +105,9 @@ def main():
     ttf, n = build(BDF)
     uri = "data:font/ttf;base64," + base64.b64encode(ttf).decode()
     s = editor.read_text(encoding="utf-8")
-    new, k = re.subn(r"/\*SLOOP-FONT\*/url\([^)]*\)/\*SLOOP-FONT\*/", f"/*SLOOP-FONT*/url({uri})/*SLOOP-FONT*/", s)
+    new, k = re.subn(r"/\*LOWTIDE-FONT\*/url\([^)]*\)/\*LOWTIDE-FONT\*/", f"/*LOWTIDE-FONT*/url({uri})/*LOWTIDE-FONT*/", s)
     if k != 1:
-        sys.exit(f"{editor}: no /*SLOOP-FONT*/url(...)/*SLOOP-FONT*/ marker")
+        sys.exit(f"{editor}: no /*LOWTIDE-FONT*/url(...)/*LOWTIDE-FONT*/ marker")
     editor.write_text(new, encoding="utf-8")
     print(f"web font: {n} glyphs, {len(ttf)} B TTF -> {editor.name}")
 

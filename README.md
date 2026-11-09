@@ -1,21 +1,21 @@
-<p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
+<p align="center"><img src="assets/logo/lowtide-logo.png" alt="Lowtide" width="420"></p>
 
-<p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style. Patched the MIDI Learn function to make it work as intended</b><br>
-Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
+<p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>
+Free and open source (GPL-3.0), a fork of <a href="https://github.com/isod89/sloop-fm1">SLOOP</a> by isod89, based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
 
 <p align="center">
-<a href="https://isod89.github.io/sloop-fm1/"><b>Install from the browser</b></a> ·
+<a href="https://cosmo-k-444.github.io/midi-lowtide-fm1/"><b>Install from the browser</b></a> ·
 <a href="GUIDE.md">Complete guide</a> ·
-<a href="SLOOP.md">Manual</a> ·
+<a href="LOWTIDE.md">Manual</a> ·
 <a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
-<a href="https://isod89.github.io/sloop-fm1/webapp/editor/">Web editor</a> ·
+<a href="https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/">Web editor</a> ·
 <a href="../../releases">Releases</a> ·
 <a href="../../issues">Report a bug</a>
 </p>
 
 ---
 
-SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths and a drum machine** with 16 sounds on the white keys, twelve synthesis engines, 153 sounds, 37 drum kits, your own samples, a song mode you play with your hands, USB audio, MIDI in on the jack and MIDI clock — and now **physical models** (guitars, sitar, bells, hand drums), a **noise** engine, **six-operator FM with DX7 patches**, **parameter locks**, **micro timing**, **fills**, a **quick chain** of sections and the **sequencer to MIDI out**. House, techno, hip-hop, trap, drum & bass, amapiano, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
+Lowtide turns the FM-1 into a four-track groovebox you play live: **three synths and a drum machine** with 16 sounds on the white keys, twelve synthesis engines, 153 sounds, 37 drum kits, your own samples, a song mode you play with your hands, USB audio, MIDI in on the jack and MIDI clock — and now **physical models** (guitars, sitar, bells, hand drums), a **noise** engine, **six-operator FM with DX7 patches**, **parameter locks**, **micro timing**, **fills**, a **quick chain** of sections and the **sequencer to MIDI out**. House, techno, hip-hop, trap, drum & bass, amapiano, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
 
 > **Status:** 2.8.5 (FM-1 units with the newer UC25HQ80 flash chip: saving and updating now work — they were taken for an unknown chip). 2.8.4 (fixes: no more distortion at the end of notes, 3.5 mm and USB; UNISON no longer stacks its voices in phase; PHYS strings in tune; NZ ARCADE, SAMPLE and GRAIN follow the top keys; a firm press on a layer button opens its pages; on REC READY a knob changes only its own value; the way back to the official firmware with V16). 2.8.3 (hold a note under others: on a POLY track a note you hold keeps sounding while you record over it and on playback, free take included, it goes on through the notes already there when you overdub, and SEQ → NOTES LEN runs on under later notes — a long bass under a melody; a MONO or LEGATO sound says *MONO: SET VOICE POLY*; no stuck note after a MIDI burst; drums: on a busy beat the kick no longer drops out; a quick button tap no longer flashes its layer page; a sample or slice played again starts with its ATK, no click; the second core: a bad read no longer crashes the FM-1, SLOOP goes on with one core). 2.8.1 (the per-step note sheet, held with OCT+, now shows as a strip along the bottom of the screen instead of a box over the sequencer, so the piano roll and the drum grid stay fully visible; and it reopens on the row you last used, for a quick MOVE). 2.8: a NOTES piano-roll editor for the synth tracks and the same per-step sheet on the drums, the playing section A–D shown on the main screen, resonance on every filter, the FX filter on the drums, drum TUNE on the noise sounds, a settable punch-in fade, steadier MIDI clock in, MIDI Bank Select; fixes: a reliable USB RESCUE, the browser installer finds the FM-1's loader by its handshake, the in-browser return-to-stock removed — use M-UPGRADE. 2.7: two processor cores, fifteen arp modes, KBD HOLD, drum TUNE and DECAY, favourite sounds, looping samples, QUANT off, MIDI 3, your own screen colours; after 2.6's 27 punch-in effects, INSERT and MIDI LEARN. Still a beta: install at your own risk, and please [report](../../issues) what you find. Your projects, presets, samples and settings are kept when you update, and you can go back at any time (see [Going back](#going-back)).
 
@@ -78,7 +78,7 @@ SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths a
 - **USB RATE** (44.1 / 48 kHz) for phones; the drum **MUTE mode stays** after EDIT (#126).
 - **SAVE → SECTION A–D** (was PROJECT 1–4): the FM-1 holds one song; keep several as editor backups.
 
-Details in [SLOOP.md](SLOOP.md#new-in-27). Projects, autosaves and backups from 2.6 load as they are; a project saved in 2.7 opens in 2.6 without the 2.7 features.
+Details in [LOWTIDE.md](LOWTIDE.md#new-in-27). Projects, autosaves and backups from 2.6 load as they are; a project saved in 2.7 opens in 2.6 without the 2.7 features.
 
 ## What's new in 2.6
 
@@ -99,13 +99,13 @@ Details in [SLOOP.md](SLOOP.md#new-in-27). Projects, autosaves and backups from 
 - **Fixed in the web editor:** the same value set on a second track (DIV 1/8 on the drums, then on track 1) is sent again.
 - **The installer finds an FM-1 running CLIPPER** (or another firmware naming its USB port its own way).
 
-Details in [SLOOP.md](SLOOP.md#new-in-26). Projects, autosaves and backups from 2.5 load as they are; a project saved in 2.6 does not open in 2.5 (keep a backup before updating). Going back to 2.5 after changing GLO → MIDI or learning CCs: restore your SYN drum kits from a backup (2.5 does not read the 2.6 settings and starts them over).
+Details in [LOWTIDE.md](LOWTIDE.md#new-in-26). Projects, autosaves and backups from 2.5 load as they are; a project saved in 2.6 does not open in 2.5 (keep a backup before updating). Going back to 2.5 after changing GLO → MIDI or learning CCs: restore your SYN drum kits from a backup (2.5 does not read the 2.6 settings and starts them over).
 
 ## What's new in 2.5
 
 - **PHYS: physical models.** An eleventh engine, from Felucca 1.0 (the models of DaisySP and Mutable Instruments Rings, by Emilie Gillet): plucked and struck strings, bars and bells, drum heads, and strings with sympathetic strings that ring along. Guitars (NYLON GTR, STEEL GTR, MUTED GTR), PLUCK BASS, KOTO, BANJO, SITAR and TANPURA, PHYS HARP, CHIMES, BIG BELL, VIBRA BAR, STEEL PAN, WOOD BLOCK, CELLO BOW, GLASS BOWL, TABLA, CONGA, TIMPANI and more: 26 sounds.
 - **NOISE.** A twelfth engine, from Felucca 1.0: noise from analogue to digital, through a resonant filter. WIND, RAIN, OCEAN, VINYL, HISS, RISER, NZ SNARE, BITCRUSH, RADIO, NZ ARCADE, NZ METAL.
-- **153 factory sounds** (76 in 2.4): 77 new, every one level-matched. Besides PHYS and NOISE: bass guitar, mono and saw basses, harp, steel drum, glockenspiel, celesta, xylophone, tubular bell, pan flute, harmonica, accordion, a 70s string machine (ENSEMBLE), an 80s poly synth, rock and chapel organs, granular clouds (STR CLOUD, SHIMMER, DRONE, PNO FREEZE, HORN CLOUD), chip sounds (NES BASS, CHIP CHORD, WAVE LEAD…), CZ lead / pad / reso, ROBOT and VOX PAD. See [the sound bank](SLOOP.md#the-sound-bank).
+- **153 factory sounds** (76 in 2.4): 77 new, every one level-matched. Besides PHYS and NOISE: bass guitar, mono and saw basses, harp, steel drum, glockenspiel, celesta, xylophone, tubular bell, pan flute, harmonica, accordion, a 70s string machine (ENSEMBLE), an 80s poly synth, rock and chapel organs, granular clouds (STR CLOUD, SHIMMER, DRONE, PNO FREEZE, HORN CLOUD), chip sounds (NES BASS, CHIP CHORD, WAVE LEAD…), CZ lead / pad / reso, ROBOT and VOX PAD. See [the sound bank](LOWTIDE.md#the-sound-bank).
 - **Two engines, no memory more.** GRAIN, FM6 and PHYS keep their big per-track state in one shared area (a track plays one engine at a time), so the new engines cost no memory at all; the pitch table now takes 768 bytes instead of 8 KB. Every sound of 2.4 renders bit for bit as before.
 - **The web editor: piano roll, MIDI files, song.** On the **Sequencer** page: a **length** control (1–64 steps; the steps redraw at once), a **piano roll** to draw, delete and stretch notes and chords with the mouse, and **Export MIDI / Import MIDI** for the selected track (the drum track too, as GM drum notes), with a preview that says what moves or does not fit before anything is written. A new **Song** page edits the order of the sections A–D, as the FM-1's SONG screen does. Thanks to the viewer who suggested them!
 - **USB audio at 48 kHz too: record into your phone.** The FM-1's USB audio input now also runs at 48 kHz when the phone, tablet or app asks for it (many only take 48 kHz), resampled in the FM-1 (after Felucca 1.1.5). Plug it into your phone and record into a sampler app. At 44.1 kHz nothing changed.
@@ -134,7 +134,7 @@ Projects, autosaves and backups from 2.4 load as they are. Going back to 2.4: a 
 | **Your own drum kits** | A 4th sample slot (USR4). KIT USR1–USR4 or **USR3+4** (a big kit, about 15 s) on the drum track: 16 of your sounds, one per lane, built in the editor's new **Drum kit** page (drop WAVs on pads, sorted by name; pitch, gain, length; choose where; ZIP to share). |
 | **New web editor** | Rebuilt in the FM-1's own look (black, the four track colours, its pixel font): each button's pages as rows of four coloured knobs, values you drag like knobs, the steps as the device's tiles. |
 | **CHORD+** | In chord mode the black keys change the chord (major ↔ minor, 7th, sus4, 9th, inversion), even while it is held; STRUM strums the chords, VLEAD voices them smoothly. After HiChord and minichord. |
-| **The visualiser** | On the TRACKS screen, tap HOME: 12 full-screen styles (oscilloscope, spectrum, spectrogram, Lissajous, VU meters, circle, tape, LCD, bounce, orbit, wires, the SLOOP logo), SELECT to change. |
+| **The visualiser** | On the TRACKS screen, tap HOME: 12 full-screen styles (oscilloscope, spectrum, spectrogram, Lissajous, VU meters, circle, tape, LCD, bounce, orbit, wires, the Lowtide logo), SELECT to change. |
 | **A filter per track** | One knob, low-pass to the left, high-pass to the right, on each track and the drums: FX → FILTER, or FX held + KNOB 4. Lockable on a step. |
 | **Bigger values** | Pages without a graph (EDIT, VOICE, GLOBAL…) show their four values in large type in the middle of the screen. |
 | **SELECT turns the pages** | On a page (LFO, FX, EDIT…), SELECT goes to the next / previous page of its group. On HOME it is still the tempo. |
@@ -142,7 +142,7 @@ Projects, autosaves and backups from 2.4 load as they are. Going back to 2.4: a 
 | **Longer steps, dotted delays** | DIV goes to **1/2**, **1 bar** and **2 bars**; the delay has **1/8 dotted** and **1/16 dotted**. |
 | **Fixes** | A MIDI START during the REC count-in records at once; swing leaves triplets alone; turning DIV right after PLAY no longer skips a step; the SEQ layer's DIV reaches 1/2, 1 bar, 2 bars; the editor never writes flash while the song plays; *12 kHz* reads in full. |
 
-Projects, autosaves and backups from 2.3 load as they are. The full list, and what came before: [SLOOP.md](SLOOP.md#new-in-24).
+Projects, autosaves and backups from 2.3 load as they are. The full list, and what came before: [LOWTIDE.md](LOWTIDE.md#new-in-24).
 
 ## What's new in 2.3
 
@@ -150,7 +150,7 @@ Projects, autosaves and backups from 2.3 load as they are. The full list, and wh
 | --- | --- |
 | **USB audio** | On USB the FM-1 is also an audio input (*Felucca*, 44.1 or 48 kHz stereo, no driver): record it in your DAW, in Audacity or in a sampler app on your phone over the same cable. Its level follows the MASTER knob, or stays at a fixed full level (HOME menu → **USB AUDIO**). From Felucca 1.0. |
 | **MIDI keyboard on the jack** | The 3.5 mm TRS MIDI IN works: a keyboard or a pad controller through a TRS-to-DIN adapter. Channels 1–3 the synths, 10 the drums, 4–16 the selected track. No note left hanging. |
-| **MIDI clock in** | GLO → SYSTEM → **SYNC** = USB or TRS: SLOOP follows a DAW or a drum machine — tempo, START, CONTINUE, STOP — pulse by pulse, with no drift. |
+| **MIDI clock in** | GLO → SYSTEM → **SYNC** = USB or TRS: Lowtide follows a DAW or a drum machine — tempo, START, CONTINUE, STOP — pulse by pulse, with no drift. |
 | **Record your way** | The REC screen has three dials: **mode** (*free*: the tempo follows your playing, or *tempo*: the tempo you set), **length** (1, 2 or 4 bars), **start** (your first note, or a one-bar **count-in** after PLAY). |
 | **Lights for playing in the dark** | HOME menu: **LIGHTS** (every button glows, LOW / MID / HIGH), **KEYS** (the C keys or every white key), **NOTES** (the notes playing light their keys, by @renebohne). |
 | **Backup and restore** | The web editor saves everything on the FM-1 in one file — the music in progress, projects, user presets, samples, settings — and puts it all back. |
@@ -158,35 +158,35 @@ Projects, autosaves and backups from 2.3 load as they are. The full list, and wh
 | **Back to the official firmware** | A backup first, then M-VAVE's M-UPGRADE with the official FM-1 V16 (or, if it does not find the FM-1, Clipper's installer page: Return to the official firmware, no need to install Clipper). |
 | **Steadier** | Knobs that answer every click; no dropped notes over USB MIDI; one voice fades on overload, never the bass or the lead; keys a millisecond faster; no stuck note after a VOICE change; stricter checks of what is read back from flash. |
 
-The full list, and what came in 2.0, 2.1 and 2.2: [SLOOP.md](SLOOP.md#new-in-23). Release notes: [Releases](../../releases).
+The full list, and what came in 2.0, 2.1 and 2.2: [LOWTIDE.md](LOWTIDE.md#new-in-23). Release notes: [Releases](../../releases).
 
 ## Screenshots
 
-<p align="center"><img src="assets/screens/sloop-2.6-screens.png" alt="SLOOP 2.6 screens on the FM-1" width="760"></p>
+<p align="center"><img src="assets/screens/sloop-2.6-screens.png" alt="Lowtide 2.6 screens on the FM-1" width="760"></p>
 
 <p align="center"><sub>The FM-1's screen in 2.6, in its bold font: the tracks playing, the 27 punch-in effects (FREEZE held, REV THROW on), an INSERT on a track, LFO 2 synced to the tempo, a note's LEN on the STEP page, the TEXTURE bed, every track's MIDI channel (GLO → MIDI, MIDI 2) and MIDI LEARN.</sub></p>
 
-<p align="center"><img src="assets/screens/editor-sound.png" alt="SLOOP web editor: the Sound page with INSERT, ENV SYNC and LFO 2" width="760"></p>
+<p align="center"><img src="assets/screens/editor-sound.png" alt="Lowtide web editor: the Sound page with INSERT, ENV SYNC and LFO 2" width="760"></p>
 
 <p align="center"><sub>The web editor's Sound page in 2.6: the INSERT and its dry / wet, ENV SYNC, LFO 2 (SYNC, TRIG, POL).</sub></p>
 
-<p align="center"><img src="assets/screens/editor-midi-texture.png" alt="SLOOP web editor: MIDI and TEXTURE settings" width="760"></p>
+<p align="center"><img src="assets/screens/editor-midi-texture.png" alt="Lowtide web editor: MIDI and TEXTURE settings" width="760"></p>
 
 <p align="center"><sub>Settings: each track's MIDI channel, the other channels and the bend range; the TEXTURE bed.</sub></p>
 
-<p align="center"><img src="assets/screens/sloop-screens.png" alt="SLOOP screens on the FM-1" width="760"></p>
+<p align="center"><img src="assets/screens/sloop-screens.png" alt="Lowtide screens on the FM-1" width="760"></p>
 
 <p align="center"><sub>And the rest, in 2.6's look: the drum grid and kit, a step held in the SEQ layer (its note, velocity, ratchet and a lock), the GLO mix layer, the SAVE layer's song sections and chain, PHYS, FM6, chords on the keys (SEL), the visualiser.</sub></p>
 
-<p align="center"><img src="assets/screens/editor-drumsynth.png" alt="SLOOP web editor: the Drum synth page" width="760"></p>
+<p align="center"><img src="assets/screens/editor-drumsynth.png" alt="Lowtide web editor: the Drum synth page" width="760"></p>
 
 <p align="center"><sub>The web editor's Drum synth page: every value of every drum sound, heard on the FM-1 at once.</sub></p>
 
-<p align="center"><img src="assets/screens/editor-cartridge.png" alt="SLOOP web editor: a DX7 cartridge on the FM6 panel" width="760"></p>
+<p align="center"><img src="assets/screens/editor-cartridge.png" alt="Lowtide web editor: a DX7 cartridge on the FM6 panel" width="760"></p>
 
 <p align="center"><sub>A 32-voice DX7 cartridge dropped on the FM6 panel: 27 voices ticked, into the bank in one write, and as user presets if you choose.</sub></p>
 
-<p align="center"><img src="assets/screens/editor-pianoroll.png" alt="SLOOP web editor: the piano roll" width="760"></p>
+<p align="center"><img src="assets/screens/editor-pianoroll.png" alt="Lowtide web editor: the piano roll" width="760"></p>
 
 <p align="center"><sub>The piano roll: draw, delete and stretch notes and chords with the mouse; Export MIDI / Import MIDI next to it.</sub></p>
 
@@ -266,7 +266,7 @@ Every button can glow so its label is readable on a black FM-1; the C keys or ev
 
 ### Memory and safety
 
-- **Autosave:** stop and leave it 2.5 s, your work is kept; at power-on SLOOP comes back exactly as you left it.
+- **Autosave:** stop and leave it 2.5 s, your work is kept; at power-on Lowtide comes back exactly as you left it.
 - **1 song of 4 sections (A–D)** (more songs as backup files), **32 user presets**, **27 FM6 patches**, **undo / redo**.
 - **Full backup and restore** from the web editor (2.3).
 - **Safe updates:** the installer checks the package (SHA-256) before writing it, the update loader checks it again (CRC) before starting it; an interrupted install finishes when you press Install again; **USB rescue** (OCT− at power-on).
@@ -275,25 +275,25 @@ Every button can glow so its label is readable on a black FM-1; the C keys or ev
 
 ### From the browser (recommended)
 
-1. Open **[the SLOOP installer](https://isod89.github.io/sloop-fm1/)** in **Chrome or Edge** on a computer.
+1. Open **[the Lowtide installer](https://cosmo-k-444.github.io/midi-lowtide-fm1/)** in **Chrome or Edge** on a computer.
 2. Connect the FM-1 by USB — a **data** cable, directly (no hub).
-3. Press **INSTALL**, allow MIDI access, and wait for *Done*. The FM-1 restarts on the SLOOP logo.
+3. Press **INSTALL**, allow MIDI access, and wait for *Done*. The FM-1 restarts on the Lowtide logo.
 
 Nothing to download or compile. Your projects, user presets, samples and settings are kept. After an install, **unplug and plug the FM-1 back in** once so the computer finds its USB audio input.
 
 ### Other ways
 
 - **Python:** the `.fwsc` of a [release](../../releases) with `python tools/fm1_install.py sloop-2.4.fwsc` (needs `pip install mido python-rtmidi`).
-- **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-SLOOP.bat` builds SLOOP and opens the installer locally.
+- **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-LOWTIDE.bat` builds Lowtide and opens the installer locally.
 
 ### Going back
 
-- **To an earlier SLOOP:** install the `.fwsc` of its [release](../../releases) (for example [2.3](../../releases/tag/v2.3)). Your samples, user presets and settings stay. **Projects saved by 2.4** (format FUN5: locks, nudges, fills) **do not open in 2.3 or older** — 2.3 sees them as empty, and its autosave can write over the music in progress; a 2.4 backup restores into 2.4 only. **Save a backup before you go back**, and restore it once you are on 2.4 again.
-- **To the official firmware:** save a backup with the editor first. Then use M-VAVE's own updater, **M-UPGRADE** (m-vave.com → Downloads → PC Software), with the official **FM-1** firmware (PC Firmware → FM-1, **V16**, `FM-1.fwsc`); close every other app that uses MIDI first. If M-UPGRADE does not find the FM-1 (SLOOP shows up on the computer under its own name, and some systems' M-UPGRADE then does not list it): open **Clipper**'s installer page (https://isod89.github.io/clipper-fm1/webapp/installer/) and use its **Return to the official firmware** (it works with SLOOP on the FM-1: no need to install Clipper) with that `FM-1.fwsc` (V16 or V15; the file is checked before anything is written). To come back to SLOOP, install it again and restore your backup.
+- **To an earlier Lowtide:** install the `.fwsc` of its [release](../../releases) (for example [2.3](../../releases/tag/v2.3)). Your samples, user presets and settings stay. **Projects saved by 2.4** (format FUN5: locks, nudges, fills) **do not open in 2.3 or older** — 2.3 sees them as empty, and its autosave can write over the music in progress; a 2.4 backup restores into 2.4 only. **Save a backup before you go back**, and restore it once you are on 2.4 again.
+- **To the official firmware:** save a backup with the editor first. Then use M-VAVE's own updater, **M-UPGRADE** (m-vave.com → Downloads → PC Software), with the official **FM-1** firmware (PC Firmware → FM-1, **V16**, `FM-1.fwsc`); close every other app that uses MIDI first. If M-UPGRADE does not find the FM-1 (Lowtide shows up on the computer under its own name, and some systems' M-UPGRADE then does not list it): open **Clipper**'s installer page (https://isod89.github.io/clipper-fm1/webapp/installer/) and use its **Return to the official firmware** (it works with Lowtide on the FM-1: no need to install Clipper) with that `FM-1.fwsc` (V16 or V15; the file is checked before anything is written). To come back to Lowtide, install it again and restore your backup.
 
 ### Rescue
 
-- **The FM-1 no longer starts SLOOP:** hold **OCT−** alone while switching it on (*SLOOP USB RESCUE*), then install again.
+- **The FM-1 no longer starts Lowtide:** hold **OCT−** alone while switching it on (*LOWTIDE USB RESCUE*), then install again.
 - **An install was cut off:** the FM-1 stays in update mode; press INSTALL again and it finishes.
 - If an FM-1 no longer starts at all, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
@@ -354,7 +354,7 @@ Two more settings of the FM-1 live elsewhere: **SYNC** (GLO → SYSTEM: INT, USB
 
 ### MIDI in
 
-SLOOP takes MIDI from two places at once:
+Lowtide takes MIDI from two places at once:
 
 - **The MIDI IN jack** (3.5 mm TRS): a keyboard or a pad controller with a MIDI output, through a **TRS-to-DIN MIDI adapter**. If nothing plays, try the other adapter type (A / B).
 - **USB**, from a computer or a phone (a DAW, a MIDI routing app) or a USB MIDI host box.
@@ -367,9 +367,9 @@ SLOOP takes MIDI from two places at once:
 
 **Your own channels (2.6).** For an external sequencer with its own channels (drums 10, bass 2, pad 11, lead 8…): GLO → **MIDI** sets each track's channel (CH1, CH2, CH3, CH4 the drums: OFF or 1–16, in and out; two tracks never share one) and GLO → **MIDI 2** the rest: **IN**, **OTHER** (SEL: the channels no track has play the selected track; OFF: ignored), **OUT**, **BEND**. Notes, CCs and MIDI out follow. Settings of the FM-1, kept through power-off.
 
-Your sequencer uses the other channels for other gear? GLO → MIDI 2 → **IN = CH 1 … CH 16** (2.6): SLOOP then answers that one channel only, on the selected track, and ignores the rest.
+Your sequencer uses the other channels for other gear? GLO → MIDI 2 → **IN = CH 1 … CH 16** (2.6): Lowtide then answers that one channel only, on the selected track, and ignores the rest.
 
-A USB keyboard plugged **straight into the FM-1** cannot work: both are USB devices, and a USB link needs a host (a computer, a phone, or a USB MIDI host box). Bluetooth MIDI is not supported: SLOOP, like Felucca, never switches the radio on.
+A USB keyboard plugged **straight into the FM-1** cannot work: both are USB devices, and a USB link needs a host (a computer, a phone, or a USB MIDI host box). Bluetooth MIDI is not supported: Lowtide, like Felucca, never switches the radio on.
 
 ### MIDI out
 
@@ -377,9 +377,9 @@ What you play on the keys always goes out on USB MIDI, each track on its channel
 
 ### MIDI clock in
 
-GLO → SYSTEM → **SYNC** = **USB** or **TRS** (INT: SLOOP's own tempo). START plays from the top, CONTINUE carries on, STOP stops; the tempo follows the master and the steps follow its 24 pulses a beat, so SLOOP never drifts. When the clock stops for half a second, PLAY on the FM-1 plays at its own tempo again.
+GLO → SYSTEM → **SYNC** = **USB** or **TRS** (INT: Lowtide's own tempo). START plays from the top, CONTINUE carries on, STOP stops; the tempo follows the master and the steps follow its 24 pulses a beat, so Lowtide never drifts. When the clock stops for half a second, PLAY on the FM-1 plays at its own tempo again.
 
-**Clock only (2.4):** GLO → MIDI 2 → **IN** = **CLOCK**: SLOOP follows the clock and ignores incoming notes (and CCs), handy when a DAW or a sequencer also sends notes to other gear.
+**Clock only (2.4):** GLO → MIDI 2 → **IN** = **CLOCK**: Lowtide follows the clock and ignores incoming notes (and CCs), handy when a DAW or a sequencer also sends notes to other gear.
 
 ### MIDI CCs (2.5)
 
@@ -397,7 +397,7 @@ The knobs of a MIDI controller set the sound, on the track the channel plays (as
 
 Other CCs (mod wheel…) are ignored. From 2.6 the **sustain pedal** (CC 64) and **pitch bend** work too (the bend's range: GLO → MIDI 2 → BEND, 1–12 semitones).
 
-**MIDI LEARN** (2.6, after Felucca 1.5): **GLO + F#3**, turn the knob of SLOOP you want, move a knob of your controller; GLO + F#3 again to finish. A learned CC sets that track's parameter on any channel, in place of the map above (up to 16; kept through power-off). HOME menu → SYSTEM → **MIDI LEARN CLEAR** forgets them. Details: [GUIDE.md](GUIDE.md#midi-learn-26).
+**MIDI LEARN** (2.6, after Felucca 1.5): **GLO + F#3**, turn the knob of Lowtide you want, move a knob of your controller; GLO + F#3 again to finish. A learned CC sets that track's parameter on any channel, in place of the map above (up to 16; kept through power-off). HOME menu → SYSTEM → **MIDI LEARN CLEAR** forgets them. Details: [GUIDE.md](GUIDE.md#midi-learn-26).
 
 ### USB audio: record the FM-1 on a computer
 
@@ -409,7 +409,7 @@ On USB the FM-1 is also an **audio input named "Felucca"**: 44.1 or 48 kHz (2.5:
 
 ## The web editor
 
-Open it from the [installer page](https://isod89.github.io/sloop-fm1/) (or the [editor link](https://isod89.github.io/sloop-fm1/webapp/editor/)) in Chrome or Edge, with the FM-1 on USB, and press **Connect**. It follows the device live: turn a knob on the FM-1 and the editor moves.
+Open it from the [installer page](https://cosmo-k-444.github.io/midi-lowtide-fm1/) (or the [editor link](https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/)) in Chrome or Edge, with the FM-1 on USB, and press **Connect**. It follows the device live: turn a knob on the FM-1 and the editor moves.
 
 **Local audio preview.** Build the browser audio engine with `python3 tools/build_preview.py`
 (Emscripten required; see [BUILDING.md](BUILDING.md#browser-audio-preview)), generate and serve the local site,
@@ -441,9 +441,9 @@ only for the current page session. This mode makes no MIDI requests and does not
 It previews the current project loop; the saved Song section order and hardware recording are not emulated.
 Audio preview requires the served site, rather than the downloaded single-file editor.
 
-**Offline (2.6).** *Download the editor* (under Connect, or on the installer page) saves the whole editor as one file for a computer, `sloop-editor-2.6.html`, also attached to each [release](https://github.com/isod89/sloop-fm1/releases). Double-click it: it opens in Chrome or Edge without internet (Chrome asks once to allow MIDI) and works as the online one. Its sound library (kept in the browser) is its own, apart from the online editor's: move sounds between them with Export / Import, or a backup.
+**Offline (2.6).** *Download the editor* (under Connect, or on the installer page) saves the whole editor as one file for a computer, `lowtide-editor-2.6.html`, also attached to each [release](https://github.com/Cosmo-K-444/midi-lowtide-fm1/releases). Double-click it: it opens in Chrome or Edge without internet (Chrome asks once to allow MIDI) and works as the online one. Its sound library (kept in the browser) is its own, apart from the online editor's: move sounds between them with Export / Import, or a backup.
 
-**As an app, also on Android (2.6).** Open the [online editor](https://isod89.github.io/sloop-fm1/webapp/editor/) or the installer once with internet, then *Install the app* (under Connect, or on the installer page; or Chrome's menu → *Install app* / *Add to Home screen*). From then on the SLOOP app opens the editor without internet, and its link to the installer works offline too (with the firmware it installs). It stays the online site kept by the browser, so it uses the same sound library as the online editor, and it takes each new SLOOP version by itself the next time it opens online. On Android, use the app rather than the downloaded file: Chrome on Android does not allow MIDI in a downloaded file.
+**As an app, also on Android (2.6).** Open the [online editor](https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/) or the installer once with internet, then *Install the app* (under Connect, or on the installer page; or Chrome's menu → *Install app* / *Add to Home screen*). From then on the Lowtide app opens the editor without internet, and its link to the installer works offline too (with the firmware it installs). It stays the online site kept by the browser, so it uses the same sound library as the online editor, and it takes each new Lowtide version by itself the next time it opens online. On Android, use the app rather than the downloaded file: Chrome on Android does not allow MIDI in a downloaded file.
 
 - **Sound** — every parameter of the selected track, the engines and the presets; on an FM6 track the **FM6** panel: every operator, the bank, **Import / Export SysEx** (DX7 voices and banks).
 - **Sequencer** — the steps, as tiles or as a **piano roll**, and the track's length (1–64 steps); on the drum track a grid of 16 sounds × the steps, with levels and ratchets, and the kit. Click a step for its nudge, parameter locks and fill condition. **Export MIDI / Import MIDI**: the selected track as a MIDI file, and back.
@@ -455,7 +455,7 @@ Audio preview requires the served site, rather than the downloaded single-file e
 - **Song & sections** — the sections A–D, and **Backup** (one file per song): *Save a backup* writes everything on the FM-1 to one file (with the FM6 bank); *Restore from a file* puts it all back (stop playback first).
 - **Settings** — global, master (DUST, DUCK, FILT, ROLL), drums.
 
-<p align="center"><img src="assets/screens/editor-backup.png" alt="SLOOP web editor: projects and backup" width="560"></p>
+<p align="center"><img src="assets/screens/editor-backup.png" alt="Lowtide web editor: projects and backup" width="560"></p>
 
 The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
@@ -474,7 +474,7 @@ The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
 **The installer or the editor does not find the FM-1.** Use Chrome or Edge, a data cable, no hub, and allow MIDI access. Close every other app or tab that uses MIDI (a DAW, M-UPGRADE, another editor tab), then reload the page.
 
-**An install stopped half-way.** The FM-1 waits in update mode: press INSTALL again. If SLOOP no longer starts, hold **OCT−** alone while switching on (*SLOOP USB RESCUE*) and install again.
+**An install stopped half-way.** The FM-1 waits in update mode: press INSTALL again. If Lowtide no longer starts, hold **OCT−** alone while switching on (*LOWTIDE USB RESCUE*) and install again.
 
 **The black keys make no sound on a synth track.** That track plays chords or the scale on the white keys (in chord mode the black keys change the chord: CHORD+): hold **SEL** (between FX and ENV) and set **KNOB 1 CHORD** to OFF and **KNOB 3 KEYS** to OFF. The drum track always uses the black keys.
 
@@ -484,13 +484,13 @@ The protocol is documented in [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md).
 
 **The USB recording is too quiet, or follows the volume knob.** Set HOME menu → **USB AUDIO** to **FULL**, or turn MASTER up.
 
-**Recorded notes move to the grid.** SLOOP quantises what you record to the steps of the track (its **DIV**: 1/4 … 1/32, triplets). In 2.7, set **QUANT off** on the REC screen (KNOB 4): your timing is kept as each step's nudge. Otherwise set DIV to 1/32, or hold the step and nudge it (KNOB 4); for groove, use SWING.
+**Recorded notes move to the grid.** Lowtide quantises what you record to the steps of the track (its **DIV**: 1/4 … 1/32, triplets). In 2.7, set **QUANT off** on the REC screen (KNOB 4): your timing is kept as each step's nudge. Otherwise set DIV to 1/32, or hold the step and nudge it (KNOB 4); for groove, use SWING.
 
-**Notes fade out on a dense part.** The processor is at its limit: SLOOP fades one voice at a time (never the bass or the lead) rather than glitching. Fewer held notes or a lighter engine help.
+**Notes fade out on a dense part.** The processor is at its limit: Lowtide fades one voice at a time (never the bass or the lead) rather than glitching. Fewer held notes or a lighter engine help.
 
 **An FM6 sound changed after loading a project.** A project keeps the track's patch slot (PTCH), not the patch itself: store a patch you edited in the bank (editor → FM6 → Store in bank) and set PTCH to it.
 
-**The lights or SYNC went back to OFF / INT.** You went back to an earlier SLOOP, which does not keep them; set them again in 2.4.
+**The lights or SYNC went back to OFF / INT.** You went back to an earlier Lowtide, which does not keep them; set them again in 2.4.
 
 Something else? [Open an issue](../../issues): what you did, what you expected, what happened, and the version shown in HOME menu → ABOUT.
 
@@ -515,7 +515,7 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 ## Documentation
 
 - [GUIDE.md](GUIDE.md) — **the complete guide**: every button, combination, layer, page, engine and editor page, with a one-page cheat sheet
-- [SLOOP.md](SLOOP.md) — the manual (every page, layer, sound and kit) and the history of each version
+- [LOWTIDE.md](LOWTIDE.md) — the manual (every page, layer, sound and kit) and the history of each version
 - [DEMARRAGE-RAPIDE-FR.md](DEMARRAGE-RAPIDE-FR.md) — guide de démarrage en français
 - [BUILDING.md](BUILDING.md) — building, build options and tests
 - [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md) — the editor's SysEx protocol
@@ -523,7 +523,7 @@ Something else? [Open an issue](../../issues): what you did, what you expected, 
 
 ## Building and tests
 
-See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of the AC79 SDK, then `./build.sh` (Linux / macOS) or `INSTALL-SLOOP.bat` (Windows with WSL), which builds the firmware and serves the installer and the editor on `http://localhost:8766`.
+See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of the AC79 SDK, then `./build.sh` (Linux / macOS) or `INSTALL-LOWTIDE.bat` (Windows with WSL), which builds the firmware and serves the installer and the editor on `http://localhost:8766`.
 
 `tests/run_tests.sh` runs the host test suite with no hardware: audio renders against golden hashes, CPU budgets, the sequencer's timing (no drift, swing, ratchets, rolls, the REC modes and the count-in, MIDI clock), the UI pages and layers, the knobs, flash storage, the update loader, MIDI and USB audio, and the web pages (editor, backup, CHOP, installer).
 
@@ -531,7 +531,7 @@ See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of
 
 - **Bugs and ideas:** [open an issue](../../issues) — what you did, what you expected, what happened, and the version in HOME menu → ABOUT.
 - **Pull requests** are welcome. Keep the style of the code around your change, add a host test when you can, and make sure `tests/run_tests.sh` passes. Contributions are credited in the release notes and the manual.
-- By contributing you agree that your code is released under GPL-3.0, like the rest of SLOOP.
+- By contributing you agree that your code is released under GPL-3.0, like the rest of Lowtide.
 
 ## Credits and thanks
 
@@ -543,10 +543,10 @@ See [BUILDING.md](BUILDING.md). In short: the JieLi toolchain and three files of
 - **juanjiant-bit** ([JIANT FM](https://github.com/juanjiant-bit/JIANT)) — in 2.7 the progressive knob acceleration (KNOB ACCEL) and the LEVEL / PAN glide come from JIANT's.
 - **renebohne** — in 2.7 MIDI CC 74 sweeps each engine's own cutoff or brightness, after his pull request #71 (Felucca 1.1.5's standard CC map).
 - **@ordenador** (Mario Faúndez Vidal) — the web editor's local audio preview: the firmware's own engines and sequencer in the browser (WebAssembly), with the playable piano / pads and the inline sequence editing (pull request #120).
-- **Everyone who installed SLOOP, made music with it, commented, reported a bug or asked for a feature** — most of each update comes from your messages: parameter locks, DX7 patches, dotted delays and longer steps (2.4); in 2.6 a MIDI channel per track, sustain and pitch bend, step entry from a MIDI keyboard, TEXTURE, the fixed crackles, the web editor bug with the same value on two tracks, and the MIDI learn backup. You asked, tested and reported them.
+- **Everyone who installed Lowtide, made music with it, commented, reported a bug or asked for a feature** — most of each update comes from your messages: parameter locks, DX7 patches, dotted delays and longer steps (2.4); in 2.6 a MIDI channel per track, sustain and pitch bend, step entry from a MIDI keyboard, TEXTURE, the fixed crackles, the web editor bug with the same value on two tracks, and the MIDI learn backup. You asked, tested and reported them.
 - Samples: Versilian Studios VSCO-2 CE and VCSL, Sonic Pi (all CC0). Font: Terminus and Terminus Bold (SIL OFL 1.1). Icons: Fukiai (MIT, Hügelton Instruments). PHASE engine after CrispyZebra (GPL); VOICE after klattsch (MIT); FM6: msfa from Dexed by Google Inc. and Pascal Gauthier (Apache-2.0).
 - Interface ideas after teenage engineering's pocket operators and EP-133, Elektron's step entry and Akai's MPC (swing, note repeat, erase).
 
 ## Licence
 
-Code: GPL-3.0-only (see [LICENSE](LICENSE), and [LICENSING.md](LICENSING.md) for the assets). No warranty. M-VAVE and FM-1 are trademarks of their owners; SLOOP is not affiliated with M-VAVE, teenage engineering, Elektron or Akai. Drum kit names describe styles, not products.
+Code: GPL-3.0-only (see [LICENSE](LICENSE), and [LICENSING.md](LICENSING.md) for the assets). No warranty. M-VAVE and FM-1 are trademarks of their owners; Lowtide is not affiliated with M-VAVE, teenage engineering, Elektron or Akai. Drum kit names describe styles, not products.

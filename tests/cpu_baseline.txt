@@ -1,4 +1,4 @@
-# SLOOP host CPU baseline (tests/regress.c): cost per sample, per mille of the idle + drums mix
+# Lowtide host CPU baseline (tests/regress.c): cost per sample, per mille of the idle + drums mix
 # (cpu/mix/idle_drums = 1000), cc -O2; instructions counted on the host that wrote it. The check allows +25 %
 # (instructions) or +35 % (timed). Rewritten by BUDGET_UPDATE=1.
 cpu/ANALOG/00_808_BOOM 1896
