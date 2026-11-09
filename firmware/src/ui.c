@@ -1303,25 +1303,42 @@ UI_SMALL static void ml_knob_poll(void)
     if (ml_preset_cc) {
         v = ml_preset_cc - 1u;
         ml_preset_cc = 0;
-        total = 0;
-        cur = preset_pos(&total);
-        if (total) {
-            /* PRESETS steps by the knob's move, like the physical knob: an absolute jump lands on preset
-             * indices the preset table cannot reach (a dangling BANK entry loads preset 0 of its engine
-             * instead), so a value that maps to the last preset did nothing at all. Stepping by the delta
-             * from the last value heard follows the same path as the knob and always moves. */
+        if (is_drum(TSEL)) {
+            /* the drum track: its kits, like the physical PRESETS knob (ui_input.c) — a learned
+             * PRESETS CC must copy the knob, and preset_go() returns early on the drum track */
+            int32_t kit = (int32_t)TDRUM->p[P_E0];
             if (preset_cc_last < 0)
-                preset_cc_last = (int32_t)((cur * 127u) / (total > 1u ? total - 1u : 1u));
+                preset_cc_last = (int32_t)((kit * 127) / (DRUM_KITS - 1));
             d = (int32_t)v - preset_cc_last;
             if (d) {
-                int32_t ni = (int32_t)cur + d;
-                if (ni < 0) ni = 0;
-                if (ni >= (int32_t)total) ni = (int32_t)total - 1;
-                if ((uint32_t)ni != cur) {
-                    preset_last = (uint32_t)ni;
-                    preset_go((uint32_t)ni);
-                }
+                int32_t nk = kit + d;
+                if (nk < 0) nk = 0;
+                if (nk >= (int32_t)DRUM_KITS) nk = (int32_t)DRUM_KITS - 1;
+                if (nk != kit)
+                    TDRUM->p[P_E0] = (int16_t)nk;
                 preset_cc_last = (int32_t)v;
+            }
+        } else {
+            total = 0;
+            cur = preset_pos(&total);
+            if (total) {
+                /* PRESETS steps by the knob's move, like the physical knob: an absolute jump lands on preset
+                 * indices the preset table cannot reach (a dangling BANK entry loads preset 0 of its engine
+                 * instead), so a value that maps to the last preset did nothing at all. Stepping by the delta
+                 * from the last value heard follows the same path as the knob and always moves. */
+                if (preset_cc_last < 0)
+                    preset_cc_last = (int32_t)((cur * 127u) / (total > 1u ? total - 1u : 1u));
+                d = (int32_t)v - preset_cc_last;
+                if (d) {
+                    int32_t ni = (int32_t)cur + d;
+                    if (ni < 0) ni = 0;
+                    if (ni >= (int32_t)total) ni = (int32_t)total - 1;
+                    if ((uint32_t)ni != cur) {
+                        preset_last = (uint32_t)ni;
+                        preset_go((uint32_t)ni);
+                    }
+                    preset_cc_last = (int32_t)v;
+                }
             }
         }
     }

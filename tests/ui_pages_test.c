@@ -2024,6 +2024,30 @@ int main(int argc, char **argv)
             for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
             ml_preset_cc = 0;
         }
+        {   /* MIDI LEARN: the learned PRESETS CC steps the drum kit on the drum track (the user's report) */
+            int32_t k0, base;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_learn_entry(30, 0, ML_KNOB_PRESET);   /* PRESETS -> CC 30 */
+            song.sel = TRK_DRUM; go_home(); frames(4);
+            TDRUM->p[P_E0] = 20;   /* a known mid kit */
+            k0 = TDRUM->p[P_E0];
+            base = (int32_t)((k0 * 127) / (DRUM_KITS - 1));   /* the CC value the kit maps to */
+            midi_cc(&trk[0], 30, (uint32_t)base); frames(4);   /* the baseline: no move */
+            check(TDRUM->p[P_E0] == k0, "LEARN: PRESETS CC baseline on the drum track sets no move");
+            midi_cc(&trk[0], 30, (uint32_t)(base + 6)); frames(4);   /* up 6: the kit steps up */
+            check(TDRUM->p[P_E0] == k0 + 6, "LEARN: PRESETS CC up steps the drum kit up");
+            midi_cc(&trk[0], 30, (uint32_t)base); frames(4);   /* down 6: the kit steps back down */
+            check(TDRUM->p[P_E0] == k0, "LEARN: PRESETS CC down steps the drum kit down");
+            midi_cc(&trk[0], 30, 127); frames(4);   /* a large rise: clamps at the last kit */
+            check(TDRUM->p[P_E0] == (int16_t)(DRUM_KITS - 1), "LEARN: PRESETS CC clamps the drum kit at the last kit");
+            midi_cc(&trk[0], 30, 0); frames(4);   /* a large fall: clamps at kit 0 */
+            check(TDRUM->p[P_E0] == 0, "LEARN: PRESETS CC clamps the drum kit at kit 0");
+            midi_cc(&trk[0], 30, 0); frames(4);   /* no move: the kit stays */
+            check(TDRUM->p[P_E0] == 0, "LEARN: PRESETS CC with no move leaves the drum kit");
+            song.sel = 0;
+            for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
+            ml_preset_cc = 0;
+        }
         {   /* GLO > MIDI: CH1 CH2 CH3 OTHER (2.6) */
             uint32_t hit = 0;
             WALK(FAM_GLO, "MIDI", hit);
