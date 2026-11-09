@@ -907,6 +907,43 @@ static void t_drmap_remap(void)
             }
         check(found && ok, "DRUM REMAP: a synth kit plays the remapped lane's sound (note 36 -> the snare's ds sound)");
     }
+    {   /* (2.8.3) TRUE MOVES: a sound on a pad no longer answers its usual note */
+        setup();
+        mi_r = mi_w;
+        song.g[G_ROUTE] = 0;
+        dch = (uint32_t)song.g[G_DRCH] - 1u;
+        dm_clear();
+        song.g[G_DRMAP] = 0;                                /* GM mode */
+        memset(&drums, 0, sizeof drums);
+        drum_map[12] = 15;                                  /* COWBELL (lane 15) on pad 48 */
+        pen_lane = 99;
+        note_in(dch, 48, 100);
+        note_in(dch, 48, 0);
+        check(pen_lane == 15u, "DRUM REMAP: a mapped pad plays its mapped lane (note 48 -> COWBELL)");
+        pen_lane = 99;                                      /* its home note goes silent */
+        note_in(dch, 56, 100);
+        note_in(dch, 56, 0);
+        check(pen_lane == 99u, "DRUM REMAP: a moved sound no longer plays on its home note (note 56 silent)");
+        drum_map[0] = 10;                                   /* HI TOM (lane 10) on pad 36 too */
+        pen_lane = 99;                                      /* an unmapped pad whose usual sound moved away */
+        note_in(dch, 50, 100);                              /* note 50 (D2) is HI TOM by GM */
+        note_in(dch, 50, 0);
+        check(pen_lane == 99u, "DRUM REMAP: an unmapped pad whose GM sound moved away is silent (note 50)");
+        pen_lane = 99;                                      /* an unmapped pad whose sound did not move */
+        note_in(dch, 37, 100);                              /* note 37 (RIM) is on no pad */
+        note_in(dch, 37, 0);
+        check(pen_lane == lane_of_note(37), "DRUM REMAP: an unmapped pad whose GM sound did not move still plays it");
+        {   /* a silenced note's note-off is a no-op: no hit, no stuck voice */
+            uint32_t any = 0;
+            memset(&drums, 0, sizeof drums);
+            pen_lane = 99;
+            note_in(dch, 56, 100);
+            note_in(dch, 56, 0);
+            render(4);
+            for (i = 0; i < NDRUM; i++) any |= drums.v[i].active;
+            check(pen_lane == 99u && !any, "DRUM REMAP: a silenced note's note-off is a no-op (no hit, no stuck voice)");
+        }
+    }
     dm_clear();
     render(8);
 }

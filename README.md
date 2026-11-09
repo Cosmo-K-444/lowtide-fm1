@@ -8,10 +8,6 @@ Free and open source (GPL-3.0), a fork of <a href="https://github.com/isod89/slo
 </p>
 
 <p align="center">
- Sign up for <a href="https://muse.ai">Muse AI,</a> and redeem with my referral code 40SNXR. We both get 1 billion tokens! And you will help support Lowtide development.
-</p>
-
-<p align="center">
 <a href="https://cosmo-k-444.github.io/lowtide-fm1/"><b>Install from the browser</b></a> ·
 <a href="GUIDE.md">Complete guide</a> ·
 <a href="LOWTIDE.md">Manual</a> ·
@@ -50,11 +46,6 @@ If you try it, I'd love to hear how it goes — what works, what doesn't, and wh
 <p align="center">
 <a href="https://patreon.com/lowtide_fm1?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink"> Support me on Patreon for just $1! Patreon members get priority for feature requests and bugfixes.</a>
 </p>
-
-<p align="center">
- Sign up for <a href="https://muse.ai">Muse AI,</a> and redeem with my referral code 40SNXR. We both get 1 billion tokens! And you will help support Lowtide development.
-</p>
-
 Thanks for being here.
 
 

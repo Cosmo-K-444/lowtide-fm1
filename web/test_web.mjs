@@ -695,6 +695,129 @@ async function editorDrumMap() {
   ok(A.objects.some((x) => x.id === 12 && x.len === 17), "drum map: a backup holds object 12 when non-default");
   await E.backupRestore(rq, JSON.parse(JSON.stringify(A)));
   ok(eq(await get12(), map) && m.state.drumMap[16] === 8, "drum map: a restore puts the map and speed back");
+  /* (2.8.3) TRUE MOVES: the editor's effective pads, from the map bytes alone (the pure functions, run in
+     a sandbox with no device: DR MAP off, so the default is the GM sound). PAD_NOTES order is
+     [48,49,50,51,44,45,46,47,40,41,42,43,36,37,38,39]; the default eff there is
+     [10,11,10,12,6,9,5,10,8,9,4,9,0,7,2,3]. */
+  const dpSrc = ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
+    + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("function drumPadsStatus"));
+  const D = vm.runInNewContext(dpSrc + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsSerialize, drumPadsDefaultLane, drumPadsDeviceEff, drumPadsHearNote, drumPadsNotesOfLane })`,
+    { console, dev: null });
+  D.drumPads.map = new Uint8Array(16).fill(0xFF);
+  ok(D.drumPadsEff().join() === [10, 11, 10, 12, 6, 9, 5, 10, 8, 9, 4, 9, 0, 7, 2, 3].join(),
+    "drum map: true moves: the default grid plays each pad's GM sound (no silent pads)");
+  D.drumPads.map[0] = 10;   /* HI TOM on pad 36: its other pads (47, 48, 50) go silent */
+  ok(D.drumPadsEff().join() === [255, 11, 255, 12, 6, 9, 5, 255, 8, 9, 4, 9, 10, 7, 2, 3].join(),
+    "drum map: true moves: a moved sound's other pads are silent (HI TOM on 36 silences 47, 48, 50)");
+  ok(eq(D.drumPadsSerialize(D.drumPadsEff()), new Uint8Array([10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])),
+    "drum map: true moves: silent pads serialise as unmapped (0xFF), the moved lane as its byte");
+  D.drumPads.map = new Uint8Array(16).fill(0xFF);
+  D.drumPads.map[12] = 15;   /* COWBELL on pad 48: no pad's default is COWBELL, so nothing goes silent */
+  ok(D.drumPadsEff().join() === [15, 11, 10, 12, 6, 9, 5, 10, 8, 9, 4, 9, 0, 7, 2, 3].join()
+    && eq(D.drumPadsSerialize(D.drumPadsEff()), new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 15, 0xFF, 0xFF, 0xFF])),
+    "drum map: true moves: COWBELL on pad 48, nothing else silent");
+  /* the grid and the map bytes agree: a swap (KICK <-> HI TOM, bytes 0 and 12) shows each sound on its own
+     pad and serialises back to the same bytes (the bytes are per note, not per grid position) */
+  D.drumPads.map = new Uint8Array(16).fill(0xFF);
+  D.drumPads.map[0] = 10; D.drumPads.map[12] = 0;
+  ok(D.drumPadsEff().join() === [0, 11, 255, 12, 6, 9, 5, 255, 8, 9, 4, 9, 10, 7, 2, 3].join()
+    && eq(D.drumPadsSerialize(D.drumPadsEff()), D.drumPads.map),
+    "drum map: true moves: a KICK/HI TOM swap shows on the right pads and round-trips");
+  /* (2.8.3) PREVIEW: the note that plays a lane on the FM-1 as it is now (its map as last read, obj): with
+     the default device map, HI TOM is heard on 48 (its first pad), KICK on 36, COWBELL on its usual note 56
+     (outside the block); with HI TOM moved to 36 on the device, it is heard on 36 — and KICK, on no pad
+     with its usual note taken, has no note at all (-1) */
+  const defObj = () => { const b = new Uint8Array(17).fill(0xFF); b[16] = 4; return b; };
+  D.drumPads.obj = defObj();
+  ok(D.drumPadsHearNote(10) === 48 && D.drumPadsHearNote(0) === 36 && D.drumPadsHearNote(15) === 56
+    && D.drumPadsHearNote(9) === 45,
+    "drum map: preview: the note that plays a lane on the default device map");
+  D.drumPads.obj = defObj(); D.drumPads.obj[0] = 10;   /* HI TOM on 36 on the device */
+  ok(D.drumPadsHearNote(10) === 36 && D.drumPadsHearNote(0) === -1,
+    "drum map: preview: a moved lane is heard on its pad; a lane with no pad and its note taken has none");
+  D.drumPads.obj = defObj(); D.drumPads.obj[12] = 15;   /* COWBELL on 48 on the device */
+  ok(D.drumPadsHearNote(15) === 48,
+    "drum map: preview: COWBELL moved to pad 48 is heard on 48, not its usual note 56");
+  /* the help text says moves, not copies, and the pad labels are big and bright */
+  ok(!/as in Ableton's Drum Rack/.test(ed) && !/still plays on its usual note too/.test(ed)
+    && /moves there — it no longer plays on its usual note/.test(ed)
+    && /whose usual sound moved away is silent/.test(ed),
+    "drum map: true moves: the help text says a moved sound plays only on its pad");
+  ok(/\.dppad \.sound \{ font-size: 17px/.test(ed) && /\.dppad \.note \{ font-size: 14px; color: var\(--fg2\)/.test(ed)
+    && /\.dppad \.midi \{ font-size: 12px; color: var\(--dim\)/.test(ed),
+    "drum map: the pad labels are larger and brighter (sound 17px, note 14px fg2, MIDI 12px dim)");
+  /* (2.8.3) RESET + PREVIEW, driven through the card itself: a tiny fake DOM runs the card's render code
+     (the real $/el from the file), with a device that still holds the default map. A drag swap is heard as
+     the sound now on the pad, and Reset puts the Current mapping table back to the default layout. */
+  class FakeEl {
+    constructor(tag) {
+      this.tagName = tag.toUpperCase(); this.children = []; this.attrs = {}; this._text = "";
+      this._classes = new Set(); this._listeners = {};
+      this.style = { setProperty: () => {} };
+      this.dataset = new Proxy({}, { get: (_, k) => this.attrs["data-" + k] ?? undefined,
+        set: (_, k, v) => { this.attrs["data-" + k] = String(v); return true; } });
+      this.classList = { add: (...c) => c.forEach((x) => this._classes.add(x)),
+        remove: (...c) => c.forEach((x) => this._classes.delete(x)),
+        toggle: (c, f) => { if (f === undefined) f = !this._classes.has(c); f ? this._classes.add(c) : this._classes.delete(c); },
+        contains: (c) => this._classes.has(c) };
+      this.disabled = false; this.draggable = false;
+    }
+    get textContent() { return this._text + this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join(""); }
+    set textContent(v) { this.children = []; this._text = String(v ?? ""); }
+    setAttribute(k, v) { this.attrs[k] = String(v); if (k === "class") this._classes = new Set(String(v).split(/\s+/).filter(Boolean)); }
+    getAttribute(k) { return this.attrs[k] ?? null; }
+    addEventListener(t, fn) { (this._listeners[t] ??= []).push(fn); }
+    append(...kids) { for (const k of kids) if (k != null) this.children.push(k); return this; }
+    prepend(...kids) { this.children.unshift(...kids.filter((k) => k != null)); return this; }
+    replaceChildren(...kids) { this.children = []; this._text = ""; return this.append(...kids); }
+    click() { (this._listeners.click || []).forEach((f) => f({ preventDefault: () => {} })); }
+    _match(sel) {
+      if (sel.startsWith("[data-note=")) return this.attrs["data-note"] === sel.match(/"([^"]*)"/)[1];
+      if (sel.startsWith(".")) return this._classes.has(sel.slice(1));
+      return this.tagName === sel.toUpperCase();
+    }
+    querySelector(sel) { for (const c of this.children) { if (typeof c !== "string") { if (c._match(sel)) return c; const d = c.querySelector(sel); if (d) return d; } } return null; }
+    querySelectorAll(sel, out = []) { for (const c of this.children) { if (typeof c !== "string") { if (c._match(sel)) out.push(c); c.querySelectorAll(sel, out); } } return out; }
+  }
+  const dpBox = new FakeEl("div");
+  dpBox.setAttribute("id", "drumpads");
+  const notesOn = [];
+  const R = vm.runInNewContext(
+    ed.slice(ed.indexOf("const $ = "), ed.indexOf("const sleep ="))
+    + ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
+    + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("/* ---- MIDI LEARN"))
+    + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsRender, drumPadsDrop, drumPadsHear })`,
+    { console, document: { createElement: (t) => new FakeEl(t), getElementById: (id) => (id === "drumpads" ? dpBox : null) },
+      dev: {}, LV: { kmode: "play" },
+      lvNoteOn: (tok, track, note, vel) => notesOn.push(note),
+      lvNoteOff: () => {}, setTimeout, clearTimeout });
+  const tableText = () => [...R.drumPads.ui.table.querySelectorAll("tr")]
+    .map((r) => [...r.children].map((c) => c.textContent).join("|")).join("\n");
+  const padSound = (note) => R.drumPads.ui.grid.querySelector(`[data-note="${note}"]`).querySelector(".sound").textContent;
+  R.drumPadsRender();
+  const defaultTable = tableText();
+  R.drumPadsDrop({ from: "pad", idx: 12 }, 0);   /* drag pad 36 (KICK) onto pad 48 (HI TOM): a swap */
+  ok(padSound(36) === "HI TOM" && padSound(48) === "KICK"
+    && tableText().split("\n").some((l) => l.startsWith("KICK|C2|48|Yes"))
+    && tableText().split("\n").some((l) => l.startsWith("HI TOM|C1|36|Yes")),
+    "drum map: card: a drag swap shows on the grid and in the Current mapping table");
+  notesOn.length = 0;
+  R.drumPads.ui.grid.querySelector('[data-note="36"]').click();   /* tap the pad now holding HI TOM */
+  const heard36 = notesOn.length ? notesOn[0] : -1;
+  notesOn.length = 0;
+  R.drumPads.ui.grid.querySelector('[data-note="48"]').click();   /* tap the pad now holding KICK */
+  ok(heard36 === 48 && notesOn.length === 1 && notesOn[0] === 36,
+    "drum map: card: tapping a swapped pad previews the sound now on it, not the old one");
+  R.drumPads.map = new Uint8Array(16).fill(0xFF); R.drumPads.map[0] = 10;   /* HI TOM on 36 only: pad 48 is silent */
+  R.drumPadsRender();
+  notesOn.length = 0;
+  R.drumPads.ui.grid.querySelector('[data-note="48"]').click();
+  ok(notesOn.length === 0 && padSound(48) === "—",
+    "drum map: card: tapping a silent pad previews nothing");
+  R.drumPads.ui.reset.click();   /* Reset to default layout */
+  ok(eq(R.drumPads.map, new Uint8Array(16).fill(0xFF)) && tableText() === defaultTable
+    && padSound(36) === "KICK" && padSound(48) === "HI TOM",
+    "drum map: card: Reset puts the Current mapping table and the grid back to the default layout");
   done();
 }
 
@@ -704,6 +827,12 @@ async function editorV5() {
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
   ok(info.proto === 12 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v12: INFO ends with the protocol version (12: LIVE); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  /* (2.8.3) the device's INFO version is LOWTIDE, never FELUCCA: editor.c builds "LOWTIDE " + the version,
+     and uses the default as-is when it already starts with LOWTIDE (ui.c: "LOWTIDE 2.8.5") */
+  const ecVer = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
+  ok(!ecVer.includes('"FELUCCA " FELUCCA_VERSION') && /case ED_INFO[\s\S]{0,1200}LOWTIDE /.test(ecVer)
+    && /already starts with "LOWTIDE "/.test(ecVer),
+    "editor: INFO version is LOWTIDE (editor.c prepends it, never doubled)");
   /* the firmware says the same: ED_DRUM_STEP is command 33, INFO sends 5, P_CHORD / the master globals as the mock has them */
   const ec = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8"), pc = readFileSync(join(HERE, "../firmware/src/params.c"), "utf8");
   const en = (/enum \{ ED_INFO = 1,([^}]*)\}/.exec(ec) || [])[1] || "";

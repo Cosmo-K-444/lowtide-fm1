@@ -96,7 +96,7 @@
   <p id="status"></p>
   <pre id="log"></pre>
   <a class="ed" href="../editor/" data-t="editor"></a>
-  <p class="small"><a href="../editor/lowtide-editor.html" download="lowtide-editor-2.8.2.html" data-t="edOffline"></a></p>
+  <p class="small"><a href="../editor/lowtide-editor.html" download="lowtide-editor-2.8.3.html" data-t="edOffline"></a></p>
   <p><button id="app" class="ed" hidden data-t="appInstall"></button></p>
   <hr>
   <p class="small" data-t="direct"></p>
@@ -542,7 +542,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
-const meta = {"version": "2.8.2", "product": "FM-1_928", "pkg": "../../firmware/lowtide-2.8.2.fwsc", "sha256": "da792d54862c60e9fe39e0be510f956c318d77dcee5e76e913a875896d677a56"};
+const meta = {"version": "2.8.3", "product": "FM-1_928", "pkg": "../../firmware/lowtide-2.8.3.fwsc", "sha256": "135573cdf55a2190b99c58877c9f172c24ca5e5d83ae9710e1a1e4252b58c4fb"};
 
 let writing = false;
 const lockAll = (on) => {

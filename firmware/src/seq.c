@@ -1831,9 +1831,15 @@ static void learn_btn_cc(uint32_t k, uint32_t value)   /* a learned button CC: p
  * settings (project.c drum_part, the fourth part of the settings object; backup object 12) and reset by
  * HOME > SYSTEM > MIDI LEARN CLEAR (ui.c ml_clear_all). The learned-knob speed lives in the same part:
  * byte 16, in quarters (1 = 0.25x, 2 = 0.5x, 4 = 1x, 8 = 2x, 16 = 4x), for the K1..K4 knob followers only
- * (ui.c ml_knob_poll). */
+ * (ui.c ml_knob_poll).
+ * (2.8.3) TRUE MOVES: a sound put on a pad lives only there. The map wins for its own note, and a lane the
+ * map holds no longer answers anywhere else: the GM / DR MAP fallback that would have played it is silenced,
+ * so a moved sound's home note goes quiet and an unmapped pad whose usual sound moved away is silent too.
+ * A lane on two pads is a deliberate copy and still plays on both; a lane on no pad still answers its usual
+ * note (the GM fallback, as before). */
 #define DRUM_MAP_N 16u
 #define DRUM_MAP_PART_N 17u                     /* the settings part / backup object 12: 16 map bytes + speed */
+#define DRUM_LANE_NONE 16u                     /* (2.8.3) midi_drum_lane: no lane — the note plays nothing */
 #define LEARN_SPEED_DEF 4u                      /* 1x */
 static uint8_t drum_map[DRUM_MAP_N] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu,
                                        0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu};
@@ -1856,11 +1862,21 @@ static void drum_map_clear(void)                /* all pads unmapped, the learne
         drum_map[i] = 0xFFu;
     learn_speed_q = LEARN_SPEED_DEF;
 }
+static uint32_t drum_lane_taken(uint32_t lane)  /* (2.8.3) true move: the lane sits on some pad */
+{
+    uint32_t i;
+    for (i = 0; i < DRUM_MAP_N; i++)
+        if (drum_map[i] == (uint8_t)lane)
+            return 1;
+    return 0;
+}
 static uint32_t midi_drum_lane(uint32_t note)
 {
+    uint32_t lane;
     if (note >= 36u && note < 36u + DRUM_MAP_N && drum_map[note - 36u] != 0xFFu)
-        return drum_map[note - 36u];
-    return song.g[G_DRMAP] ? (note + 128u - 36u) % 16u : lane_of_note(note);
+        return drum_map[note - 36u];           /* mapped: the pad's sound, wherever it lives */
+    lane = song.g[G_DRMAP] ? (note + 128u - 36u) % 16u : lane_of_note(note);
+    return drum_lane_taken(lane) ? DRUM_LANE_NONE : lane;  /* (2.8.3) its home note, silenced: the sound moved */
 }
 static const uint8_t *in_chord;                    /* input_on's note is note in_chord_i of in_chord (CHORD+) */
 static uint32_t in_chord_n, in_chord_i;
@@ -1936,7 +1952,9 @@ static void kh_release(track_t *t)                  /* every held note ends */
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
     if (is_drum(t)) {                             /* (a GM note on the drum track: its lane) */
-        drum_input(midi_drum_lane(note), vel_lvl(vel), 0, 1);
+        uint32_t lane = midi_drum_lane(note);     /* (2.8.3) DRUM_LANE_NONE: the sound moved away, silence */
+        if (lane != DRUM_LANE_NONE)
+            drum_input(lane, vel_lvl(vel), 0, 1);
         return;
     }
     last_note = (uint8_t)note;
@@ -1984,8 +2002,11 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
 static void input_off(track_t *t, uint32_t note)
 {
     if (is_drum(t)) {
-        if (ft_on && ft_trk == TRK_DRUM)
-            ft_note_off(midi_drum_lane(note));
+        if (ft_on && ft_trk == TRK_DRUM) {
+            uint32_t lane = midi_drum_lane(note); /* (2.8.3) a silenced note never opened one: nothing to close */
+            if (lane != DRUM_LANE_NONE)
+                ft_note_off(lane);
+        }
         return;
     }
     if (kh_on(t) && kh_has(t, note)) {             /* (2.7) KBD HOLD: it goes on sounding */
@@ -3631,8 +3652,11 @@ static void events_block(uint32_t n)
                 continue;                                 /* (GLO > MIDI > OTHER = OFF: a channel no track has) */
         }
         if (is_drum(t)) {
-            if (st == 0x90u && d2)
-                drum_input(midi_drum_lane(d1), vel_lvl(d2), 0, 1);
+            if (st == 0x90u && d2) {
+                uint32_t lane = midi_drum_lane(d1);   /* (2.8.3) DRUM_LANE_NONE: the sound moved away */
+                if (lane != DRUM_LANE_NONE)
+                    drum_input(lane, vel_lvl(d2), 0, 1);
+            }
         } else if (st == 0x90u && d2) {
             if (t == TSEL) {                          /* the SEQ layer's pen: this note, or the chord held (2.6) */
                 if (!(mi_pen[0] | mi_pen[1] | mi_pen[2] | mi_pen[3]) || pen_n >= 4u)

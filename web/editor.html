@@ -489,16 +489,18 @@
   .dppad:active { transform: scale(.97); }
   .dppad.empty { border-style: dashed; color: var(--s3); cursor: default; }
   .dppad.empty .sound { color: var(--s3); font-weight: 400; }
-  .dppad .sound { font-size: 14px; font-weight: 700; text-align: center; line-height: 1.15; padding: 0 4px; color: var(--c, var(--fg2)); text-transform: uppercase; }
-  .dppad .note { font-size: 12px; color: var(--dim); }
-  .dppad .midi { font-size: 10px; color: var(--s3); }
+  .dppad .sound { font-size: 17px; font-weight: 700; text-align: center; line-height: 1.15; padding: 0 4px; color: var(--c, var(--fg2)); text-transform: uppercase; }
+  .dppad .note { font-size: 14px; color: var(--fg2); }
+  .dppad .midi { font-size: 12px; color: var(--dim); }
+  .dppad.silent { border-style: dashed; }
+  .dppad.silent .sound { color: var(--dim); font-weight: 400; }
   .dppad.playing { background: var(--c, var(--t4)); border-color: var(--c, var(--t4)); }
   .dppad.playing .sound, .dppad.playing .note, .dppad.playing .midi { color: #000; }
   .dppad.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }
   .dppad.drop-target { outline: 2px solid var(--fg); outline-offset: -2px; }
   .dptray { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
   .dpchip { border: 1px solid var(--line); border-radius: 999px; background: var(--bg); padding: 7px 12px;
-            font-size: 13px; cursor: grab; user-select: none; -webkit-user-select: none; color: var(--c, var(--fg2)); }
+            font-size: 14px; cursor: grab; user-select: none; -webkit-user-select: none; color: var(--c, var(--fg2)); }
   .dpchip.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }
   .dptable { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
   .dptable th, .dptable td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
@@ -9840,12 +9842,12 @@ $("bk-load").addEventListener("click", () => { if (dev) $("bk-file").click(); })
    object first when it has never read it, so neither clobbers the other's half.
    The default for a note is the firmware's (seq.c midi_drum_lane): with DR MAP on, lanes 1-16 in order from
    note 36; with it off, the GM sound for the note (drums.c LANE_OF_GM) — so LOW TOM also answers F1, G1 and
-   A1, HI TOM also answers B1, C2 and D2, and no pad is ever empty. A map entry does not move a sound off its
-   usual note: it only adds the sound to that pad, so a sound put on a pad still plays on its home note too,
-   and only a swap takes a sound off a pad. The editor keeps the 16 map bytes as its working state and derives
+   A1, HI TOM also answers B1, C2 and D2. A map entry moves a sound: it plays only on that pad, and its usual
+   note goes silent; a pad whose usual sound moved to another pad is silent too. A sound on two pads is a
+   deliberate copy and plays on both. The editor keeps the 16 map bytes as its working state and derives
    the pads from them, so what it shows is always what the device will play. Note names use Ableton's
    convention (60 = C3), as in the POC. */
-const DRUMPADS = { OBJ: 12, LEN: 17, SPEED_DEF: 4,
+const DRUMPADS = { OBJ: 12, LEN: 17, SILENT: 255, SPEED_DEF: 4,
   PAD_NOTES: [48, 49, 50, 51, 44, 45, 46, 47, 40, 41, 42, 43, 36, 37, 38, 39],
   GM_FALLBACK: [0, 7, 2, 3, 8, 9, 4, 9, 6, 9, 5, 10, 10, 11, 10, 12],   /* notes 36..51, drums.c LANE_OF_GM */
   KIND: ["kick", "kick", "snare", "snare", "hat", "hat", "hat", "rim", "snare", "tom", "tom", "cym", "cym", "shaker", "tom", "bell"],
@@ -9865,18 +9867,52 @@ function drumPadsDrMapOn() {
 function drumPadsDefaultLane(note) {
   return drumPadsDrMapOn() ? (note - 36) & 15 : DRUMPADS.GM_FALLBACK[note - 36];
 }
-/* the sound each pad plays, from the map bytes: the entry, or the note's default */
+/* the sound each pad plays, from the map bytes: the entry, or the note's default — unless that sound moved
+   to another pad, in which case the pad is silent (DRUMPADS.SILENT, shown as —). A lane on two pads is a
+   deliberate copy and plays on both. The map bytes are per note (byte j is note 36 + j), not per grid
+   position: a pad's byte is map[note - 36]. */
 function drumPadsEff() {
-  return DRUMPADS.PAD_NOTES.map((n, i) => (drumPads.map[i] !== 0xFF ? drumPads.map[i] : drumPadsDefaultLane(n)));
+  return DRUMPADS.PAD_NOTES.map((n) => {
+    const m = drumPads.map[n - 36];
+    if (m !== 0xFF) return m;
+    const d = drumPadsDefaultLane(n);
+    return drumPads.map.includes(d) ? DRUMPADS.SILENT : d;
+  });
 }
-/* the pads as shown -> the map bytes: a pad whose sound is its default needs no byte (0xFF) */
+/* the pads as shown -> the map bytes: a pad whose sound is its default needs no byte (0xFF); a silent pad
+   needs none either (its sound lives on another pad). Bytes are per note, as the device stores them. */
 function drumPadsSerialize(eff) {
   const b = new Uint8Array(16).fill(0xFF);
-  for (let i = 0; i < 16; i++) if (eff[i] !== drumPadsDefaultLane(DRUMPADS.PAD_NOTES[i])) b[i] = eff[i];
+  for (let i = 0; i < 16; i++) {
+    const n = DRUMPADS.PAD_NOTES[i];
+    if (eff[i] !== DRUMPADS.SILENT && eff[i] !== drumPadsDefaultLane(n)) b[n - 36] = eff[i];
+  }
   return b;
 }
 function drumPadsNotesOfLane(lane) {
   return drumPadsEff().map((l, i) => (l === lane ? DRUMPADS.PAD_NOTES[i] : -1)).filter((n) => n >= 0);
+}
+/* the sound each pad plays on the FM-1 as it is now (the map as last read, drumPads.obj — not the local,
+   possibly unwritten, map): the same resolution as the firmware's midi_drum_lane for notes 36..51 — the
+   entry, or the note's default unless that sound moved to another pad, in which case the pad is silent */
+function drumPadsDeviceEff() {
+  const dev = drumPads.obj.slice(0, 16);
+  return DRUMPADS.PAD_NOTES.map((n) => {
+    const m = dev[n - 36];
+    if (m !== 0xFF) return m;
+    const d = drumPadsDefaultLane(n);
+    return dev.includes(d) ? DRUMPADS.SILENT : d;
+  });
+}
+/* the MIDI note to send to hear a lane on the FM-1 as it is now: a pad whose device sound is that lane; else
+   the lane's usual note, which only works outside the block (inside, the search above would have found it —
+   with DR MAP on some pad always answers). -1 when no note plays the lane on the device (its usual note is
+   taken by another sound and it sits on no pad): then there is nothing to hear. */
+function drumPadsHearNote(lane) {
+  const eff = drumPadsDeviceEff();
+  for (let i = 0; i < 16; i++) if (eff[i] === lane) return DRUMPADS.PAD_NOTES[i];
+  const home = DRUM_LANES[lane][0];
+  return (home < 36 || home > 51) ? home : -1;
 }
 function drumPadsStatus(msg) {
   drumPads.statusMsg = msg;
@@ -9942,13 +9978,20 @@ function learnRenderSpeed() {
   const s = $("learnspeed");
   if (s) s.value = String([1, 2, 4, 8, 16].includes(drumPads.obj[16]) ? drumPads.obj[16] : DRUMPADS.SPEED_DEF);
 }
-/* a pad heard: its MIDI note on the drum track's channel (as the LIVE page's pads), so the device plays the
-   remapped sound */
+/* a pad heard: the sound now on the pad (the local map, which may be an unwritten swap), played on the drum
+   track's channel (as the LIVE page's pads). The note sent is the one that plays that lane on the FM-1 as it
+   is now — sending the pad's own note would play the device's old map instead. A silent pad, or a sound no
+   note on the device plays, has nothing to hear. The tapped pad flashes, not the pad of the note sent. */
 function drumPadsHear(note) {
   if (!dev) return;
-  const tok = "dp:" + note, km = LV.kmode;
+  const i = DRUMPADS.PAD_NOTES.indexOf(note);
+  const lane = i < 0 ? DRUMPADS.SILENT : drumPadsEff()[i];
+  if (lane === DRUMPADS.SILENT) return;
+  const send = drumPadsHearNote(lane);
+  if (send < 0) return;
+  const tok = "dp:" + send, km = LV.kmode;
   LV.kmode = "play";                                    /* always heard: not the LIVE page's roll / erase */
-  try { lvNoteOn(tok, 3, note, 100); } catch (e) { /* unplugged */ } finally { LV.kmode = km; }
+  try { lvNoteOn(tok, 3, send, 100); } catch (e) { /* unplugged */ } finally { LV.kmode = km; }
   setTimeout(() => lvNoteOff(tok), 180);
   const u = drumPads.ui;
   const d = u && u.grid.querySelector(`[data-note="${note}"]`);
@@ -9985,6 +10028,19 @@ function drumPadsDrop(src, destIdx) {
   }
   drumPadsApplyEff(eff, DRUMPADS.PAD_NOTES[destIdx]);
 }
+/* the Current mapping table: every sound, the notes it plays, from the map as it is now */
+function drumPadsRenderTable() {
+  const u = drumPads.ui;
+  if (!u) return;
+  u.table.replaceChildren(
+    el("tr", {}, ...["Sound", "Note", "MIDI", "On grid"].map((h) => el("th", { text: h }))),
+    ...DRUM_LANES.map(([, name], lane) => {
+      const notes = drumPadsNotesOfLane(lane), on = notes.length > 0;
+      const show = on ? notes : [DRUM_LANES[lane][0]];
+      return el("tr", {}, el("td", { text: name }), el("td", { text: show.map(DRUMPADS.ableton).join(", ") }),
+        el("td", { text: show.join(", ") }), el("td", { text: on ? "Yes" : "Off grid" }));
+    }));
+}
 function drumPadsRender() {
   const box = $("drumpads");
   if (!box) return;
@@ -10004,11 +10060,12 @@ function drumPadsRender() {
       drumPads.dirty = true;
       drumPads.picked = null;
       drumPadsStatus("Reset to the default layout on this page. Press “Write map to FM-1” to save it.");
+      drumPadsRenderTable();   /* the Current mapping table, from the reset map — not left on the old one */
       drumPadsRender();
     } });
     const card = el("div", { class: "card" },
       el("h2", { text: "Drum Pads" }),
-      el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays, as in Ableton's Drum Rack: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad still plays on its usual note too. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits." }),
+      el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad moves there — it no longer plays on its usual note, and a pad whose usual sound moved away is silent. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits." }),
       u.grid,
       el("h3", { text: "Off the grid" }),
       el("p", { class: "dim", text: "Sounds on no pad of the block. Each still plays on its usual note outside the block. Drag one onto a pad, or tap it and then tap a pad." }),
@@ -10021,12 +10078,13 @@ function drumPadsRender() {
   }
   const eff = drumPadsEff();
   u.grid.replaceChildren(...DRUMPADS.PAD_NOTES.map((note, i) => {
-    const lane = eff[i];
+    const lane = eff[i], silent = lane === DRUMPADS.SILENT;
     const d = el("div", { class: "dppad"
+      + (silent ? " silent" : "")
       + (drumPads.picked && drumPads.picked.from === "pad" && drumPads.picked.idx === i ? " picked" : ""),
       "data-note": note });
-    d.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
-    d.append(el("div", { class: "sound", text: DRUM_LANES[lane][1] }),
+    if (!silent) d.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
+    d.append(el("div", { class: "sound", text: silent ? "—" : DRUM_LANES[lane][1] }),
       el("div", { class: "note", text: DRUMPADS.ableton(note) }),
       el("div", { class: "midi", text: "MIDI " + note }));
     d.draggable = true;
@@ -10112,14 +10170,7 @@ function drumPadsRender() {
   });
   if (!chips.length) u.tray.replaceChildren(el("span", { class: "dim", text: "All 16 sounds are on the grid." }));
   else u.tray.replaceChildren(...chips);
-  u.table.replaceChildren(
-    el("tr", {}, ...["Sound", "Note", "MIDI", "On grid"].map((h) => el("th", { text: h }))),
-    ...DRUM_LANES.map(([, name], lane) => {
-      const notes = drumPadsNotesOfLane(lane), on = notes.length > 0;
-      const show = on ? notes : [DRUM_LANES[lane][0]];
-      return el("tr", {}, el("td", { text: name }), el("td", { text: show.map(DRUMPADS.ableton).join(", ") }),
-        el("td", { text: show.join(", ") }), el("td", { text: on ? "Yes" : "Off grid" }));
-    }));
+  drumPadsRenderTable();
   u.status.textContent = drumPads.statusMsg || (!dev ? "Connect the FM-1 to read the drum map."
     : !drumPads.loaded ? "Not read yet. Press Refresh."
     : drumPads.dirty ? "Edits held until “Write map to FM-1” is pressed."

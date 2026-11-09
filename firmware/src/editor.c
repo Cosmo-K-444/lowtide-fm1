@@ -721,8 +721,20 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             return;
         ed_live(a, na);
         break;
-    case ED_INFO:
-        ed_str("FELUCCA " FELUCCA_VERSION, 24);
+    case ED_INFO: {
+        /* the version the editor shows: "LOWTIDE 2.8.3 BETA". A release build's FELUCCA_VERSION is just
+         * the number, so LOWTIDE is prepended; the default build's already starts with "LOWTIDE ", so it
+         * is used as-is and the name is never doubled. */
+        char ver[25];
+        const char *v = FELUCCA_VERSION;
+        uint32_t vi = 0, vj = 0;
+        if (!(v[0] == 'L' && v[1] == 'O' && v[2] == 'W' && v[3] == 'T' && v[4] == 'I' && v[5] == 'D' && v[6] == 'E' && v[7] == ' ')) {
+            const char pre[] = "LOWTIDE ";
+            while (pre[vi] && vi < 24u) { ver[vi] = pre[vi]; vi++; }
+        }
+        while (v[vj] && vi < 24u) ver[vi++] = v[vj++];
+        ver[vi] = 0;
+        ed_str(ver, 24);
         ed_b(NENGINES);
         ed_b(P_COUNT);
         ed_b(G_COUNT);
@@ -733,6 +745,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         ed_b(NTRK);                                       /* v3 */
         ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits) */
         break;
+    }
     case ED_GET:
     case ED_SET:
         if (na < 2u || !(d = ed_desc(a[0], a[1], &vp)))
