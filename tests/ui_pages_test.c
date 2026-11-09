@@ -1887,48 +1887,6 @@ int main(int argc, char **argv)
             follow_acc[0] = 0; follow_cc_last[0] = -1; ml_follow_cc[0] = 0;
             enc_inject[EN_K1] = 0; learn_speed_q = LEARN_SPEED_DEF; settings_later = 0;
         }
-        {   /* DRUM PAD LEARN (2.8.5): arm a pad, hit a pad — the two pads swap notes; the sounds stay on
-             * their pads. The arm is set here as the editor's DP_LEARN does it (editor.c is not in this
-             * harness); the capture (events_block) and the move (dp_learn_poll) are the firmware's own. */
-            #define DPN(c, n, v) (midi_in_q[mi_w++ % MQ] = ((v) ? 0x09u | (0x90u | (c)) << 8 : 0x08u | (0x80u | (c)) << 8) | \
-                                  (uint32_t)(n) << 16 | (uint32_t)(v) << 24)
-            uint32_t dch = (uint32_t)song.g[G_DRCH] - 1u;   /* the drum channel (10), 0-based */
-            song.g[G_DRCH] = 10; song.g[G_ROUTE] = 0; song.rec = 0; settings_later = 0;
-            for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
-            go_home(); frames(4);
-            drum_trig_pending = 0;
-            dp_learn_lane = 0; dp_learn_from = 36; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 36 (KICK) */
-            DPN(dch, 48, 100); DPN(dch, 48, 0); frames(2);   /* a pad hit on note 48 (C2), channel 10 */
-            check(dp_learn_state == 2u && drum_map[12] == 0u && drum_map[0] == 10u && drum_map[11] == 10u && drum_map[14] == 10u,
-                  "DRUM PAD LEARN: a pad hit on channel 10 swaps the two pads' notes (KICK to 48, HI TOM to 36)");
-            check(settings_later == 1u, "DRUM PAD LEARN: the move is saved when quiet (settings_later)");
-            check(!strcmp(ui.msg, "KICK > C3"), "DRUM PAD LEARN: the device shows the lane and note (its own octave: 48 is C3)");
-            check(drum_trig_pending == 1u && drum_trig_note == 48u && drum_trig_ch == 10u && drum_trig_vel == 100u && drum_trig_lane == 10u,
-                  "DRUM TRIG: the learn hit is recorded for the editor (note 48, channel 10, velocity 100, lane 10)");
-            settings_later = 0; drum_trig_pending = 0;
-            dp_learn_lane = 15; dp_learn_from = -1; dp_learn_state = 1; dp_learn_heard = 0;   /* arm COWBELL (the tray) */
-            DPN(dch, 56, 100); DPN(dch, 56, 0); frames(2);   /* outside the block (56): refused */
-            check(dp_learn_state == 4u && drum_map[12] == 0u,
-                  "DRUM PAD LEARN: a note outside 36..51 is refused, the map unchanged");
-            dp_learn_lane = 2; dp_learn_from = 38; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 38 (SNARE) */
-            DPN(0, 40, 100); DPN(0, 40, 0); frames(2);   /* channel 1, not the drum channel: refused */
-            check(dp_learn_state == 3u && dp_learn_expected == 10u && drum_map[4] == 0xFFu,
-                  "DRUM PAD LEARN: a pad hit on another channel is refused, the map unchanged");
-            dp_learn_lane = 2; dp_learn_from = 38; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 38 (SNARE) again */
-            DPN(dch, 40, 100); DPN(dch, 40, 0); frames(2);   /* channel 10, note 40: the pads swap */
-            check(dp_learn_state == 2u && drum_map[4] == 2u && drum_map[2] == 8u,
-                  "DRUM PAD LEARN: the next good hit swaps the pads (SNARE to 40, SNARE 2 to 38)");
-            for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
-            drum_map[12] = 10;   /* HI TOM on pad 48: pads 47 and 50 are empty */
-            dp_learn_lane = -2; dp_learn_from = 47; dp_learn_state = 1; dp_learn_heard = 0;   /* arm the empty pad 47 */
-            DPN(dch, 48, 100); DPN(dch, 48, 0); frames(2);   /* HI TOM is on 48: the empty pad takes it */
-            check(dp_learn_state == 2u && drum_map[11] == 10u && drum_map[12] == 0xFFu && drum_map[14] == 0xFFu,
-                  "DRUM PAD LEARN: an empty pad learns a note and stays empty (HI TOM to 47, 48 and 50 silent)");
-            check(!strcmp(ui.msg, "EMPTY PAD"), "DRUM PAD LEARN: the device shows EMPTY PAD for an empty pad");
-            dp_learn_lane = -1; dp_learn_from = -1; dp_learn_state = 0; dp_learn_heard = 0; settings_later = 0;
-            for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
-            #undef DPN
-        }
         {   /* MIDI LEARN (2.8): a button pressed while learning is picked, and a knob turned is picked */
             for (w = 0; w < ML_N; w++) ml_tab[w] = 0;
             press(B_GLO); frames(10); key(1); release(B_GLO); frames(16);   /* arm learn */

@@ -34,10 +34,9 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v10 (SLOOP 2.5): DSYN_LIST .. DSYN_PLAY = 72..76, editor_dsyn.c; backup object 9 = the SYN kits */
 /* v11 (SLOOP 2.7): backup object 11 = your theme (gfx.c theme_t), the editor's Theme page */
 /* v12 (SLOOP 2.7): LIVE = 77, editor_live.c: the LIVE page (transport, sections, mix keys, punch-in FX, REC, undo) */
-/* v13 (Lowtide 2.8.4): DP_LEARN = 78, below: the drum-pad MIDI learn (a pad hit moves a lane) */
-#define ED_DP_LEARN 78u
+/* v13 (Lowtide 2.8.4): DP_LEARN = 78, the drum-pad MIDI learn — removed in 2.8.6 (the learn is gone) */
 #define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
-#define ED_PROTO 14u                                   /* the protocol version INFO ends with */
+#define ED_PROTO 15u                                   /* the protocol version INFO ends with (2.8.6: the drum-pad learn is gone, single-note toms) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -215,8 +214,11 @@ UI_SMALL static void ed_dstep_from_old(dstep_t *d, const uint8_t *a)
     memset(d, 0, sizeof *d);
     if (a[5] != ST_NOTE)
         return;
-    for (i = 0; i < n; i++)
-        dstep_set(d, lane_of_note(a[1 + i] & 0x7Fu), (a[6] & SF_ACCENT) ? LV_HARD : LV_NORM, 0);
+    for (i = 0; i < n; i++) {
+        uint32_t l = lane_of_note(a[1 + i] & 0x7Fu);
+        if (l != DRUM_LANE_NONE)                        /* (2.8.6) a single-note tom's other notes play nothing */
+            dstep_set(d, l, (a[6] & SF_ACCENT) ? LV_HARD : LV_NORM, 0);
+    }
 }
 /* a step's bytes, as STEP_GET sends them (v5: + level, ratchet) */
 UI_SMALL static void ed_step_out(const track_t *t, uint32_t i)
@@ -712,60 +714,6 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
 
 #include "editor_live.c"                              /* v12: the LIVE page (77) */
 
-/* ---- drum-pad MIDI learn (2.8.4, protocol v13; 2.8.5, protocol v14: the arm carries the PAD, not the
- * lane): the editor arms a pad; the FM-1 listens for the next pad hit on its MIDI in (DIN or USB — the
- * editor cannot hear a controller on DIN, the firmware does not echo notes back). sub 0 arm (note, lane),
- * 1 cancel, 2 query. Reply: sub, result, lane, note, channel, drum channel. result: 0 idle, 1 waiting,
- * 2 done, 3 wrong channel (or the drum channel OFF), 4 note outside 36..51, 5 a bad arm. The capture is
- * seq.c (events_block); the move is ui.c (dp_learn_poll). */
-UI_SMALL static int ed_dp_learn(const uint8_t *a, uint32_t na)
-{
-    uint32_t sub = na >= 1u ? a[0] : 99u, note = na >= 2u ? a[1] : 127u, lane = na >= 3u ? a[2] : 127u, res;
-    if (sub == 0u) {
-        /* the arm (v14): [note, lane] — the pad's note 36..51 (127: no pad, the editor's tray) and the
-         * pad's sound 0..15 (127: the pad is empty, it has no sound). 127 is the sentinel: a SysEx
-         * data byte is 7 bit, so 255 never arrives (the editor masks it to 127 on the wire). An old
-         * editor's [lane] arm has no note to learn on, so it is refused (result 5) — a lane can sit
-         * on several pads. */
-        if ((note != 127u && (note < 36u || note >= 36u + DRUM_MAP_N)) || (lane != 127u && lane >= DRUM_LANES)) {
-            res = 5;
-        } else {
-            dp_learn_from = (note == 127u) ? -1 : (int8_t)note;
-            dp_learn_lane = (lane == 127u) ? -2 : (int8_t)lane;  /* -2: the pad is empty, no sound moves */
-            dp_learn_heard = 0;
-            dp_learn_heard_ch = 0;
-            dp_learn_state = 1;
-            dp_learn_lane_r = (uint8_t)lane;
-            dp_learn_note = 0;
-            dp_learn_ch = 0;
-            dp_learn_expected = (uint8_t)song.g[G_DRCH];
-            ml_message("PAD LEARN: HIT A PAD");
-            res = 1;
-        }
-    } else if (sub == 1u) {
-        dp_learn_lane = -1;
-        dp_learn_from = -1;
-        dp_learn_heard = 0;
-        dp_learn_heard_ch = 0;
-        dp_learn_state = 0;
-        dp_learn_lane_r = 127u;
-        dp_learn_note = 0;
-        dp_learn_ch = 0;
-        dp_learn_expected = 0;
-        res = 0;
-    } else if (sub == 2u) {
-        res = dp_learn_state;
-    } else {
-        return 0;   /* an unknown sub-op: no reply, as an unknown command */
-    }
-    ed_b(sub & 127u);
-    ed_b(res);
-    ed_b(dp_learn_lane_r);
-    ed_b(dp_learn_note);
-    ed_b(dp_learn_ch);
-    ed_b(dp_learn_expected);
-    return 1;
-}
 UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0 and F7 */
 {
     uint32_t cmd = f[3], i;
@@ -792,10 +740,6 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             return;
         ed_live(a, na);
         break;
-    case ED_DP_LEARN:                                      /* v13: the drum-pad MIDI learn */
-        if (!ed_dp_learn(a, na))
-            return;
-        break;
     case ED_INFO: {
         /* the version the editor shows: "LOWTIDE 2.8.3 BETA". A release build's FELUCCA_VERSION is just
          * the number, so LOWTIDE is prepended; the default build's already starts with "LOWTIDE ", so it
@@ -818,7 +762,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn) */
+        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone) */
         break;
     }
     case ED_GET:

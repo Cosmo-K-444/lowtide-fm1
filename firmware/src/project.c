@@ -181,8 +181,11 @@ UI_SMALL static void dstep_from8(dstep_t *d, const step8_t *s)
     memset(d, 0, sizeof *d);
     if (s->time != ST_NOTE)
         return;
-    for (i = 0; i < s->n && i < 4u; i++)
-        dstep_set(d, lane_of_note(s->note[i] & 127u), lvl, 0);
+    for (i = 0; i < s->n && i < 4u; i++) {
+        uint32_t l = lane_of_note(s->note[i] & 127u);
+        if (l != DRUM_LANE_NONE)                        /* (2.8.6) a single-note tom's other notes play nothing */
+            dstep_set(d, l, lvl, 0);
+    }
 }
 UI_SMALL static int16_t swing_from_v3(int32_t v) { return (int16_t)clamp((v * 4 + 2) / 5, 0, 100); }   /* /250 -> /200 */
 

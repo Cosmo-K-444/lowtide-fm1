@@ -1117,7 +1117,6 @@ UI_SMALL static void ui_input(void)
     remote_poll();                                      /* (2.7) the buttons over MIDI */
     pc_poll();                                          /* MIDI Program Change: a sound (2.6, ui.c) */
     ml_knob_poll();                                     /* MIDI LEARN: a learned PRESETS / ALGORITHM CC (2.8) */
-    dp_learn_poll();                                      /* DRUM PAD LEARN: a pad hit for the armed lane (2.8.4) */
     midi_chan_fix();                                    /* GLO > MIDI: no channel on two tracks (2.6, ui.c) */
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
     ml_poll();                                          /* MIDI LEARN: a CC came for the picked parameter (2.6) */

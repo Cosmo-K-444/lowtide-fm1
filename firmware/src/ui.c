@@ -1320,69 +1320,6 @@ UI_SMALL static void ml_poll(void)
     ml_exit_pending = 1;
     settings_later = 1;                          /* (saved when quiet) */
 }
-/* DRUM PAD LEARN (2.8.4; 2.8.5: the learn swaps two pads' notes): the pad hit the editor armed for,
- * carried out in the main loop (the audio block only recorded it). The hit must be on the drum channel
- * (GLO > DRUMS > CH, 10 by default): any other channel is refused, and the editor says only that channel
- * is supported; a note outside the pad block (36..51) is refused too. A good hit swaps the notes of the
- * armed pad and the hit pad: the armed pad's sound takes the hit note, and the sound the hit note played
- * takes the armed pad's note — the sounds stay on their pads (an empty pad stays empty, it has no sound
- * to move; the tray has no pad, so its sound just moves). Saved when quiet, as the MIDI learn map is
- * (settings_later); the editor re-reads the map, which is already the new one. The device's note name is
- * its own (60 = C4); the editor shows Ableton's (60 = C3). */
-UI_SMALL static void dp_learn_poll(void)
-{
-    uint32_t lane, note, ch, exp;
-    char b[24];
-    if (dp_learn_lane == -1 || !dp_learn_heard)
-        return;
-    lane = dp_learn_lane == -2 ? 255u : (uint32_t)dp_learn_lane;   /* 255: the pad is empty, it has no sound */
-    note = dp_learn_heard - 1u;
-    ch = dp_learn_heard_ch;                               /* 1..16, as the editor numbers channels */
-    exp = song.g[G_DRCH];                                 /* 0 = the drum channel is OFF */
-    dp_learn_heard = 0;
-    dp_learn_heard_ch = 0;
-    dp_learn_lane_r = (uint8_t)lane;
-    dp_learn_note = (uint8_t)note;
-    dp_learn_ch = (uint8_t)ch;
-    dp_learn_expected = (uint8_t)exp;
-    if (!exp || ch != exp) {
-        dp_learn_state = 3;
-        if (!exp)
-            ml_message("DRUM CH OFF");
-        else {
-            str_cpy(b, "NEED CH ", 9);
-            fmt_int(b + str_len(b), (int32_t)exp);
-            ml_message(b);
-        }
-    } else if (note < 36u || note >= 36u + DRUM_MAP_N) {
-        dp_learn_state = 4;
-        ml_message("NOTE 36-51 ONLY");
-    } else if (dp_learn_from >= 0 && (int32_t)note == dp_learn_from) {
-        dp_learn_state = 2;                               /* its own note: nothing to swap */
-        if (lane == 255u) {
-            ml_message("EMPTY PAD");
-        } else {
-            str_cpy(b, LANE_NAME[lane], 10);
-            str_cpy(b + str_len(b), " > ", 4);
-            note_name(b + str_len(b), note);
-            ml_message(b);
-        }
-    } else {
-        drum_map_learn(dp_learn_from < 0 ? 255u : (uint32_t)dp_learn_from, lane, note);
-        dp_learn_state = 2;
-        if (lane == 255u) {
-            ml_message("EMPTY PAD");
-        } else {
-            str_cpy(b, LANE_NAME[lane], 10);
-            str_cpy(b + str_len(b), " > ", 4);
-            note_name(b + str_len(b), note);
-            ml_message(b);
-        }
-        settings_later = 1;                               /* (saved when quiet) */
-    }
-    dp_learn_lane = -1;
-    dp_learn_from = -1;
-}
 /* MIDI LEARN (2.8-midilearn): the learned PRESETS / ALGORITHM CCs, carried out in the main loop (a flash read,
  * a sound loaded). Only when the scaled index moves, so a knob sweep loads one sound per step, not per CC */
 UI_SMALL static void ml_knob_poll(void)

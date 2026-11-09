@@ -1835,11 +1835,13 @@ static void learn_btn_cc(uint32_t k, uint32_t value)   /* a learned button CC: p
  * (2.8.3) TRUE MOVES: a sound put on a pad lives only there. The map wins for its own note, and a lane the
  * map holds no longer answers anywhere else: the GM / DR MAP fallback that would have played it is silenced,
  * so a moved sound's home note goes quiet and an unmapped pad whose usual sound moved away is silent too.
- * A lane on two pads is a deliberate copy and still plays on both; a lane on no pad still answers its usual
- * note (the GM fallback, as before). */
+ * (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48); the tom's other
+ * notes (F1 41, A1 45, B1 47, D2 50) answer no lane (drums.c LANE_OF_GM) and play nothing by default. A tom
+ * is a plain single-note lane now, so the map needs a byte only where a pad's sound is not its default —
+ * the 2.8.5 rule that wrote a displaced tom explicitly onto its remaining home notes is gone. A lane on
+ * no pad still answers its usual note (the GM fallback, as before), unless that note is taken too. */
 #define DRUM_MAP_N 16u
 #define DRUM_MAP_PART_N 17u                     /* the settings part / backup object 12: 16 map bytes + speed */
-#define DRUM_LANE_NONE 16u                     /* (2.8.3) midi_drum_lane: no lane — the note plays nothing */
 #define LEARN_SPEED_DEF 4u                      /* 1x */
 static uint8_t drum_map[DRUM_MAP_N] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu,
                                        0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu};
@@ -1863,12 +1865,9 @@ static void drum_map_clear(void)                /* all pads unmapped, the learne
     learn_speed_q = LEARN_SPEED_DEF;
 }
 static uint32_t midi_drum_lane(uint32_t note);
-/* (2.8.5) a drum-pad learn swaps two pads' notes; the sounds stay on their pads. The map bytes for an
- * effective pad layout (eff[n - 36]: the lane the note plays, DRUM_LANE_NONE when it plays nothing):
- * a pad whose sound is not its default needs its byte; a pad whose sound IS its default needs its byte
- * too when that sound sits on another pad as well (a multi-note lane: the tom's other pads) or when some
- * silent pad needs the sound taken to stay silent — otherwise the fallback plays it, or the true-move
- * rule silences a pad that should still play. A silent pad needs no byte. The editor's drumPadsSerialize
+/* (2.8.6) the map bytes for an effective pad layout (eff[n - 36]: the lane the note plays, DRUM_LANE_NONE
+ * when it plays nothing): a pad whose sound is not its default needs its byte; a silent pad needs none
+ * (its sound lives on another pad, so the true-move rule keeps it silent). The editor's drumPadsSerialize
  * follows the same rule, so the firmware and the editor write the same bytes for the same layout. */
 static uint32_t drum_map_default(uint32_t note)
 {
@@ -1876,47 +1875,14 @@ static uint32_t drum_map_default(uint32_t note)
 }
 static void drum_map_from_eff(const uint8_t eff[DRUM_MAP_N])
 {
-    uint32_t n, def, nondef = 0, need = 0;
-    for (n = 0; n < DRUM_MAP_N; n++) {
-        if (eff[n] == DRUM_LANE_NONE) {
-            need |= 1u << drum_map_default(36u + n);   /* this pad is silent only while its sound is taken */
-            continue;
-        }
-        if (eff[n] != drum_map_default(36u + n))
-            nondef |= 1u << eff[n];
-    }
+    uint32_t n;
     for (n = 0; n < DRUM_MAP_N; n++) {
         if (eff[n] == DRUM_LANE_NONE) {
             drum_map[n] = 0xFFu;
             continue;
         }
-        def = drum_map_default(36u + n);
-        drum_map[n] = (eff[n] != def || (nondef & (1u << eff[n])) || (need & (1u << eff[n])))
-            ? eff[n] : 0xFFu;
+        drum_map[n] = (eff[n] != drum_map_default(36u + n)) ? eff[n] : 0xFFu;
     }
-}
-static void drum_map_learn(uint32_t from, uint32_t lane, uint32_t note)
-                    /* (2.8.5) a drum-pad learn: the pad at `from` and the pad at `note` swap notes.
-                     * from 36..51: the pad's sound (lane, 255 = no sound) takes `note`, and the sound
-                     * `note` played takes `from`; every other pad is untouched — a multi-note lane keeps
-                     * its other pads (the tom's F1/A1 when G1 is re-noted). from 255: no pad (the editor's
-                     * tray): the sound just moves to `note`, and the note's old sound falls back to its
-                     * usual note, as 2.8.4 did. */
-{
-    uint8_t eff[DRUM_MAP_N];
-    uint32_t n;
-    for (n = 0; n < DRUM_MAP_N; n++)
-        eff[n] = (uint8_t)midi_drum_lane(36u + n);
-    if (from >= 36u && from < 36u + DRUM_MAP_N) {
-        uint32_t lp = lane >= DRUM_LANES ? DRUM_LANE_NONE : lane;   /* the armed pad's sound (255: none) */
-        uint32_t lx = (note >= 36u && note < 36u + DRUM_MAP_N) ? midi_drum_lane(note) : DRUM_LANE_NONE;
-        eff[from - 36u] = (uint8_t)lx;
-        if (note >= 36u && note < 36u + DRUM_MAP_N)
-            eff[note - 36u] = (uint8_t)lp;
-    } else if (note >= 36u && note < 36u + DRUM_MAP_N && lane < DRUM_LANES) {
-        eff[note - 36u] = (uint8_t)lane;
-    }
-    drum_map_from_eff(eff);
 }
 /* DRUM TRIG (2.8.5): the last live drum hit, for the editor's Drum Pads (the Last triggered line and the pad
  * flash). Recorded on a live MIDI note-on that plays a drum lane (events_block) and on an on-device drum key
@@ -3151,16 +3117,6 @@ _Static_assert(P_E0 < ML_E0 && P_COUNT - P_E0 == 8, "MIDI LEARN: a code per para
 _Static_assert(ML_BTN0 > P_E0 && ML_KNOB_ALGO < ML_E0 && ML_KNOB_FOLLOW + 3u < ML_E0, "MIDI LEARN: button/knob codes in the free range");
 static volatile uint16_t ml_tab[ML_N];
 static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that came meanwhile + 1 (0 none) */
-/* DRUM PAD LEARN (2.8.4): the editor arms a lane; the next note-on, on any channel, is the pad hit. The
- * audio block only records it (dp_learn_heard: the note + 1, its channel + 1; 0 none) — the move is the
- * main loop's (ui.c dp_learn_poll), so no flash write ever happens in the audio block. dp_learn_lane
- * -1 = off, else the lane 0..15 being learned. dp_learn_state: 0 idle, 1 waiting, 2 done, 3 wrong
- * channel (or the drum channel OFF), 4 note outside 36..51; the _r / _note / _ch / _expected fields are
- * what the editor's query reads back (the lane the learn was for, the hit, the drum channel then). */
-static volatile int8_t dp_learn_lane = -1;
-static volatile uint8_t dp_learn_heard, dp_learn_heard_ch;
-static uint8_t dp_learn_state, dp_learn_lane_r = 127u, dp_learn_note, dp_learn_ch, dp_learn_expected;
-static volatile int8_t dp_learn_from = -1;   /* (2.8.5) the pad the learn was armed on: its note 36..51, -1 = no pad (the tray) */
 static volatile uint8_t ml_preset_cc;      /* a learned PRESETS CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_track_cc;       /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_select_cc;      /* (2.8.5) a learned SELECT CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
@@ -3645,14 +3601,6 @@ static void events_block(uint32_t n)
         if ((pkt & 15u) == 0xFu) {                    /* clock / transport: cable 0 USB, 1 TRS */
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
-        }
-        if (dp_learn_lane != -1 && !dp_learn_heard && st == 0x90u && d2) {
-            /* (2.8.4) DRUM PAD LEARN: the next pad hit, on any channel (the UI checks it is the drum
-             * channel and moves the lane; a hit on another channel is refused, not ignored, so the editor
-             * can say only the drum channel is supported). The note still plays as before, through the
-             * old map — the move happens in the main loop, after it was heard. */
-            dp_learn_heard = (uint8_t)(d1 + 1u);
-            dp_learn_heard_ch = (uint8_t)(ch + 1u);
         }
         if (song.g[G_RMCH] && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u && d1 >= REMOTE_CC0 &&
             d1 < REMOTE_CC0 + 14u) {                  /* 2.7: REMOTE (GLO > MIDI 3): the buttons over MIDI */
