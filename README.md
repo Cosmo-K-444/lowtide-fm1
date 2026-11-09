@@ -4,20 +4,50 @@
 Free and open source (GPL-3.0), a fork of <a href="https://github.com/isod89/sloop-fm1">SLOOP</a> by isod89, based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
 
 <p align="center">
+<a href="https://patreon.com/lowtide_fm1?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink"> Support me on Patreon!</a>
+</p>
+
+<p align="center">
 <a href="https://cosmo-k-444.github.io/lowtide-fm1/"><b>Install from the browser</b></a> ·
 <a href="GUIDE.md">Complete guide</a> ·
 <a href="LOWTIDE.md">Manual</a> ·
-<a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
 <a href="https://cosmo-k-444.github.io/lowtide-fm1/webapp/editor/">Web editor</a> ·
 <a href="../../releases">Releases</a> ·
 <a href="../../issues">Report a bug</a>
 </p>
 
 ---
+Hello, and welcome.
 
-Lowtide turns the FM-1 into a four-track groovebox you play live: **three synths and a drum machine** with 16 sounds on the white keys, twelve synthesis engines, 153 sounds, 37 drum kits, your own samples, a song mode you play with your hands, USB audio, MIDI in on the jack and MIDI clock — and now **physical models** (guitars, sitar, bells, hand drums), a **noise** engine, **six-operator FM with DX7 patches**, **parameter locks**, **micro timing**, **fills**, a **quick chain** of sections and the **sequencer to MIDI out**. House, techno, hip-hop, trap, drum & bass, amapiano, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
+Lowtide is my custom firmware for the M-VAVE FM-1 pocket synth, built on SLOOP (by isod89) and Felucca. I started it because I wanted the FM-1 to listen to my MIDI controllers, Akai MPK Mini Mk4 and Novation Launch Control XL, in an optimized way — and it grew from there.
 
-> **Status:** 2.8.5 (FM-1 units with the newer UC25HQ80 flash chip: saving and updating now work — they were taken for an unknown chip). 2.8.4 (fixes: no more distortion at the end of notes, 3.5 mm and USB; UNISON no longer stacks its voices in phase; PHYS strings in tune; NZ ARCADE, SAMPLE and GRAIN follow the top keys; a firm press on a layer button opens its pages; on REC READY a knob changes only its own value; the way back to the official firmware with V16). 2.8.3 (hold a note under others: on a POLY track a note you hold keeps sounding while you record over it and on playback, free take included, it goes on through the notes already there when you overdub, and SEQ → NOTES LEN runs on under later notes — a long bass under a melody; a MONO or LEGATO sound says *MONO: SET VOICE POLY*; no stuck note after a MIDI burst; drums: on a busy beat the kick no longer drops out; a quick button tap no longer flashes its layer page; a sample or slice played again starts with its ATK, no click; the second core: a bad read no longer crashes the FM-1, SLOOP goes on with one core). 2.8.1 (the per-step note sheet, held with OCT+, now shows as a strip along the bottom of the screen instead of a box over the sequencer, so the piano roll and the drum grid stay fully visible; and it reopens on the row you last used, for a quick MOVE). 2.8: a NOTES piano-roll editor for the synth tracks and the same per-step sheet on the drums, the playing section A–D shown on the main screen, resonance on every filter, the FX filter on the drums, drum TUNE on the noise sounds, a settable punch-in fade, steadier MIDI clock in, MIDI Bank Select; fixes: a reliable USB RESCUE, the browser installer finds the FM-1's loader by its handshake, the in-browser return-to-stock removed — use M-UPGRADE. 2.7: two processor cores, fifteen arp modes, KBD HOLD, drum TUNE and DECAY, favourite sounds, looping samples, QUANT off, MIDI 3, your own screen colours; after 2.6's 27 punch-in effects, INSERT and MIDI LEARN. Still a beta: install at your own risk, and please [report](../../issues) what you find. Your projects, presets, samples and settings are kept when you update, and you can go back at any time (see [Going back](#going-back)).
+What's in it:
+
+All the features of Sloop 2.8, PLUS: 
+
+1. MIDI learn for everything. Activate midi learn (Hold GLO + F#3), <u>turn a knob</u> or <u>press a button</u>, then turn a knob or press a button from your controller — it's mapped. 32 slots, covering knobs, buttons, and parameters, and you can edit the whole map in the web editor.
+2. Knob Follower - A global mapping for Knob1 - Knob4, you midi learn it once, it is the same set of knobs for all the pages (FX, SEL, ENV ... etc). Great when you have a limited number of knobs on your midi controller (like the Akai MPK Mini), and you don't want to repeat the same mapping for the same knobs on each page.
+3. Midi Learn is more intuitive, it learns one mapping and exits the learn mode. Avoid overwriting other mappings by mistake.
+4. Messages to clearly indicate it is in Midi learn mode and what has been learned.
+5. Midi mapping confirmations are shown clearly and longer.
+6. The web editor (beside all the features of Sloop 2.8) now has a midi mapping section to show what has been mapped, and also to change or add mappings.
+
+The current release is Lowtide 2.8. New releases from Sloop will be merged here.
+
+Planned changes:
+1. A better chord mode
+2. More Lofi, e.g. global tape, wow, wobble, vinyl crackle, rain
+3. Master Crush
+4. More engines
+5. (what would you like to see here?)
+
+If you try it, I'd love to hear how it goes — what works, what doesn't, and what you'd like to see next. Send me your requests! 
+
+<p align="center">
+<a href="https://patreon.com/lowtide_fm1?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink"> Support me on Patreon for just $1! Patreon members get priority for feature requests and bugfixes.</a>
+</p>
+Thanks for being here.
+
 
 ## Contents
 
@@ -41,9 +71,7 @@ Lowtide turns the FM-1 into a four-track groovebox you play live: **three synths
 
 ---
 
-## What's new in 2.8
 
-3,000 of you now follow SLOOP — thank you. 2.8 is a deeper way to write and shape your music, and most of it comes from your comments and reports.
 
 - **NOTES editor:** a piano-roll note editor for the synth tracks (SEQ → NOTES). KNOB 1 picks the notes (a chord's notes one by one), KNOB 2 the pitch, KNOB 3 the length, KNOB 4 the force; PRESETS zooms, EDIT deletes. Hold OCT+ on a step for its sheet: SLIDE, NUDGE, FILL, MOVE, COPY, DELETE.
 - **The same per-step sheet on the DRUMS grid:** hold OCT+ on a drum step for RATCHET, NUDGE, FILL, MOVE, COPY, DELETE — the groove, shaped step by step.
