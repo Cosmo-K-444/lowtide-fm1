@@ -911,6 +911,7 @@
       <div class="navh" data-t="navDevice"></div>
       <button role="tab" data-tab="projects" data-t="projects" data-ic="symbol_folder"></button>
       <button role="tab" data-tab="settings" data-t="tabSettings" data-ic="symbol_cog"></button>
+      <button role="tab" data-tab="drumpads" data-t="tabDrumPads" data-ic="symbol_grid"></button>
       <button role="tab" data-tab="theme" data-t="tabTheme" data-ic="ui_knob"></button>
     </nav>
     <div class="devcard">
@@ -1129,7 +1130,6 @@
 
     <section class="panel" id="p-kits" data-tab="kits" data-dev hidden>
       <div id="kit"></div>
-      <div id="drumpads"></div>
     </section>
 
     <section class="panel" id="p-drumsynth" data-tab="drumsynth" data-dev hidden>
@@ -1206,6 +1206,10 @@
         <h2 data-t="system" data-ic="symbol_cog"></h2>
         <table id="sysinfo"></table>
       </div>
+    </section>
+
+    <section class="panel" id="p-drumpads" data-tab="drumpads" data-dev hidden>
+      <div id="drumpads"></div>
     </section>
 
     <section class="panel" id="p-theme" data-tab="theme" hidden>
@@ -4818,7 +4822,7 @@ const TEXT = {
     offline: "エディタをダウンロード（パソコンでオフライン用：Chrome / Edge で開く）",
     install: "アプリとしてインストール（オフラインで使える・Android も）",
     tabSeq: "シーケンサー", tabTracks: "トラック", tabSettings: "設定",
-    navTrack: "トラック", navSounds: "サウンド", navDevice: "本体", tabKits: "ドラムキット", fm1: "FM-1",
+    navTrack: "トラック", navSounds: "サウンド", navDevice: "本体", tabKits: "ドラムキット", tabDrumPads: "ドラムパッド", fm1: "FM-1",
     stepList: "ステップ一覧（音名を入力）", stepsOf: "{n} ステップ", fontCredit: "フォント: Terminus（SIL OFL 1.1）",
     ctlDrag: "値を上下にドラッグでも変更できます。",
     kitTitle: "ドラムキット", kitHelp: "ドラムトラック用に 16 の音を作ります（白鍵 1 つに 1 音）。3 ステップ: 音を入れる → 置き場所を選ぶ → FM-1 に送る。",
@@ -5155,7 +5159,7 @@ const TEXT = {
     offline: "Download the editor (offline on a computer: open it in Chrome or Edge)",
     install: "Install the app (works offline, Android too)",
     tabSeq: "Sequencer", tabTracks: "Tracks", tabSettings: "Settings",
-    navTrack: "Track", navSounds: "Sounds", navDevice: "Device", tabKits: "Drum kit", fm1: "FM-1",
+    navTrack: "Track", navSounds: "Sounds", navDevice: "Device", tabKits: "Drum kit", tabDrumPads: "Drum Pads", fm1: "FM-1",
     stepList: "Step list (type note names)", stepsOf: "{n} steps", fontCredit: "Font: Terminus (SIL OFL 1.1)",
     ctlDrag: "You can also drag a value up or down.",
     kitTitle: "Drum kit", kitHelp: "Build 16 sounds for the drum track, one per white key. Three steps: put your sounds on the pads, choose where the kit goes, send it to the FM-1.",
@@ -5346,7 +5350,7 @@ $("lang").addEventListener("click", () => { lang = lang === "ja" ? "en" : "ja"; 
 
 /* ---------------------------------------------------------------- tabs --- */
 /* one panel at a time; the last one is remembered (localStorage) and in the URL hash (#sound ...) */
-const TABS = ["live", "sound", "sequencer", "tracks", "song", "library", "samples", "kits", "drumsynth", "projects", "settings", "theme"];
+const TABS = ["live", "sound", "sequencer", "tracks", "song", "library", "samples", "kits", "drumsynth", "projects", "settings", "drumpads", "theme"];
 const TAB_KEY = "felucca-editor-tab";
 const TRACK_TABS = new Set(["sound", "sequencer", "tracks"]);
 let tab = (() => {
@@ -5389,7 +5393,8 @@ function renderPanels() {
   $("trackbar").hidden = !(ready && hasTracks() && TRACK_TABS.has(want));
   const nb = $("tabs").querySelector(`button[data-tab="${want}"]`);   /* the page's title: its name in the side bar */
   $("pagetitle").textContent = nb ? t(nb.dataset.t) : "";
-  if (want === "kits") { renderKits(); if (ready && !drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); }
+  if (want === "kits") renderKits();
+  if (want === "drumpads") { drumPadsRender(); if (ready) { if (!drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); op(async () => { try { await drumPadsKitRead(); } catch (e) { report(e); } }); } }
   if (want === "drumsynth" && ready) {                 /* (2.5) the SYN kits, read once per connection */
     if (DS.dev !== dev) { Object.assign(DS, { dev, kit: null, list: null, k: 0, lane: 0 }); if (dsOk()) op(() => dsLoad(0)); renderDs(); } else renderDs();
   }
@@ -6042,7 +6047,7 @@ async function connect() {
         onPush: (f) => onPush(f),
         onGap: () => { rewatch = true; },
       });
-      pr.input.onmidimessage = (e) => { learnMidiIn(e.data); l.receive(e.data); };
+      pr.input.onmidimessage = (e) => { learnMidiIn(e.data); drumPadsMidiIn(e.data); l.receive(e.data); };
       if (pr.input.open) await pr.input.open().catch(() => {});
       try {
         await l.request(req.info(), { timeout: 500, retries: 3, quiet: true });   /* (the first frame can be lost) */
@@ -6084,6 +6089,7 @@ function disconnect(reasonKey = "disconnected") {
   learn.loaded = false;   /* the learn map is read again on the next connection */
   drumPads.loaded = false; drumPads.dirty = false; drumPads.picked = null;   /* the drum map too (object 12) */
   drumPads.obj = DRUMPADS.defaultObj(); drumPads.map = new Uint8Array(16).fill(0xFF);
+  drumPads.kit = -1; drumPads.kitNamesUsed = null; drumPads.kitNamesTried = false; drumPads.trigMsg = "";
   renderPanels();
   renderMixer();
   renderSysinfo();
@@ -8233,7 +8239,6 @@ function renderKits() {
   u.where.textContent = t("kitWhereFM1").replace("{x}", kitDest());
   for (let l = 0; l < 16; l++) kitPadUpdate(l);
   kitMeter();
-  drumPadsRender();
 }
 function kitPadUpdate(l) {
   const pu = kitUi && kitUi.pads[l], p = kitDraft.pads[l];
@@ -9853,11 +9858,16 @@ const DRUMPADS = { OBJ: 12, LEN: 17, SILENT: 255, SPEED_DEF: 4,
   KIND: ["kick", "kick", "snare", "snare", "hat", "hat", "hat", "rim", "snare", "tom", "tom", "cym", "cym", "shaker", "tom", "bell"],
   KIND_COLOR: { kick: "#287CFF", snare: "#1ECC70", hat: "#FFC618", rim: "#FF621A", tom: "#287CFF", cym: "#FFC618", shaker: "#1ECC70", bell: "#FF621A" },
   SPEED_LABEL: { 1: "0.25×", 2: "0.5×", 4: "1×", 8: "2×", 16: "4×" },
+  /* the drum presets (kits) by index, drums.c DRUM_KIT_NAMES: the fallback names when the device has not
+     given its own (the KIT descriptor only comes back when the drum track is selected, so the editor keeps
+     this copy for the preset dropdown); the device's names win whenever they are known */
+  KIT_NAMES: ["ACOUSTIC", "DEEP", "TIGHT", "BRIGHT", "DUST", "808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ", "USR1", "USR2", "USR3", "USR4", "USR3+4", "SYN1", "SYN2", "SYN3", "SYN4"],
   defaultObj() { const b = new Uint8Array(DRUMPADS.LEN).fill(0xFF); b[16] = DRUMPADS.SPEED_DEF; return b; },
   ableton(n) { const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]; return NAMES[n % 12] + (Math.floor(n / 12) - 2); },
 };
 const drumPads = { obj: DRUMPADS.defaultObj(), map: new Uint8Array(16).fill(0xFF), loaded: false, dirty: false,
-  picked: null, justPicked: false, dragging: false, statusMsg: "", ui: null };
+  picked: null, justPicked: false, dragging: false, statusMsg: "", ui: null,
+  kit: -1, kitNamesUsed: null, kitNamesTried: false, trigMsg: "" };
 /* DR MAP on (the device's GLO > MIDI 3 setting, as the editor last read it): lanes 1-16 in order from note 36 */
 function drumPadsDrMapOn() {
   if (!dev || !dev.dump || !dev.gdesc) return false;
@@ -9913,6 +9923,106 @@ function drumPadsHearNote(lane) {
   for (let i = 0; i < 16; i++) if (eff[i] === lane) return DRUMPADS.PAD_NOTES[i];
   const home = DRUM_LANES[lane][0];
   return (home < 36 || home > 51) ? home : -1;
+}
+/* the "last triggered" line: a note (its channel, MIDI note number — what Kramer calls its CC — Ableton
+   note name and drum sound) or a genuine CC message (its channel, CC number and value). The lane is the
+   sound the note plays; a silent pad, or a note no pad plays, has no sound. */
+function drumPadsTriggeredLine(t) {
+  if (t.cc != null) return `Last triggered: Ch ${t.ch} · CC ${t.cc} = ${t.value}`;
+  const nm = DRUMPADS.ableton(t.note);
+  let sound = "—";
+  if (t.lane != null && t.lane !== DRUMPADS.SILENT) sound = DRUM_LANES[t.lane][1];
+  return `Last triggered: Ch ${t.ch} · Note ${t.note} (${nm}) · ${sound}`;
+}
+function drumPadsTriggered(t) {
+  drumPads.trigMsg = drumPadsTriggeredLine(t);
+  const u = drumPads.ui;
+  if (u && u.trig) u.trig.textContent = drumPads.trigMsg;
+}
+/* a MIDI note or CC arriving on the FM-1's input: the last triggered line. A note on the drum channel
+   (GLO > MIDI: CH4, 10 by default) is a pad — its lane from the map as shown, or its home lane outside the
+   block; other channels are synth notes, not pads. A genuine CC shows its CC number. */
+function drumPadsMidiIn(data) {
+  if (!dev || !dev.dump || !data || data.length < 3) return;
+  const st = data[0] & 0xF0, ch = (data[0] & 0x0F) + 1;
+  if (st === 0x90 && data[2] > 0) {
+    const drCh = lvGv(lvG("CH4", 24));
+    if (drCh && ch !== drCh) return;
+    const note = data[1] & 127;
+    let lane = null;
+    if (note >= 36 && note <= 51) {   /* drumPadsEff is in pad order (PAD_NOTES), not note order */
+      const i = DRUMPADS.PAD_NOTES.indexOf(note);
+      if (i >= 0) lane = drumPadsEff()[i];
+    } else { const h = DRUM_LANES.findIndex((l) => l[0] === note); if (h >= 0) lane = h; }
+    drumPadsTriggered({ ch, note, lane });
+  } else if (st === 0xB0) {
+    drumPadsTriggered({ ch, cc: data[1] & 127, value: data[2] });
+  }
+}
+/* the drum preset (kit) on the FM-1: its names, from the device when known (dev.kitNames, or the KIT
+   descriptor the drum track's page reads), else the firmware's list (DRUMPADS.KIT_NAMES) */
+function drumPadsKitNames() {
+  if (dev && dev.kitNames && dev.kitNames.length) return dev.kitNames;
+  if (dev && dev.info && dev.pdesc) {
+    const d = dev.pdesc[dev.info.pe0];
+    if (d && d.label === "KIT" && d.names && d.names.length) return d.names;
+  }
+  return DRUMPADS.KIT_NAMES;
+}
+/* the preset row: the dropdown (its value is the preset on the FM-1) and the name it is on now. The options
+   are rebuilt only when the names list changes, so the dropdown does not close under the user's hand. */
+function drumPadsKitRender() {
+  const u = drumPads.ui;
+  if (!u) return;
+  const names = drumPadsKitNames();
+  if (drumPads.kitNamesUsed !== names) {
+    drumPads.kitNamesUsed = names;
+    u.kit.replaceChildren(...names.map((n, i) => el("option", { value: String(i), text: n })));
+  }
+  const ok = !!(dev && dev.info);
+  u.kit.disabled = !ok;
+  if (ok && drumPads.kit >= 0 && document.activeElement !== u.kit) u.kit.value = String(drumPads.kit);
+  u.kitNow.textContent = !ok ? "Connect the FM-1 to read the preset."
+    : drumPads.kit < 0 ? "Preset on the FM-1: —"
+    : `Preset on the FM-1: ${names[drumPads.kit] || drumPads.kit}`;
+}
+/* read the drum track's kit (its P_E0) straight from the device: TRACK_DUMP on the drum track, whatever
+   track is selected in the editor. Also asks for the device's kit names once, when the fallback list is in
+   use — the KIT descriptor only comes back while the drum track is selected, so this is best effort. */
+async function drumPadsKitRead() {
+  if (!dev || !dev.info) return;
+  const drum = (dev.info.ntrk || 4) - 1, pe0 = dev.info.pe0;
+  const d = parse[CMD.TRACK_DUMP](await rq(req.trackDump(drum), { key: "dp:kit", retries: 1 }), dev.info);
+  drumPads.kit = d.p[pe0] ?? -1;
+  drumPadsKitRender();
+  if (drumPads.kitNamesUsed === DRUMPADS.KIT_NAMES && !drumPads.kitNamesTried) {
+    drumPads.kitNamesTried = true;
+    try {
+      const k = await getDescOrNull(0, pe0);
+      if (k && k.label === "KIT" && k.names && k.names.length) { dev.kitNames = k.names; drumPadsKitRender(); }
+    } catch (e) { /* keep the fallback names */ }
+  }
+}
+/* write the drum track's kit: TRACK_PARAM (v4) names the track, so the selection is untouched; on older
+   firmware select the drum track, SET, and select back (the mixer's setPan pattern). The mixer's strip is
+   updated so its kit name follows at once. */
+async function drumPadsKitWrite(kit) {
+  if (!dev || !dev.info) return;
+  const drum = (dev.info.ntrk || 4) - 1, pe0 = dev.info.pe0;
+  let v;
+  if (dev.v4) {
+    const r = parse[CMD.TRACK_PARAM](await rq(req.trackParam(drum, pe0, kit), { key: "dp:kit", front: true }));
+    v = r.value;
+  } else if (drum === dev.sel) {
+    v = parse[CMD.SET](await rq(req.set(0, pe0, kit), { key: "dp:kit" })).value;
+  } else {
+    await rq(req.track(drum), { key: "dp:kit", front: true });
+    try { v = parse[CMD.SET](await rq(req.set(0, pe0, kit), { key: "dp:kit" })).value; }
+    finally { await rq(req.track(dev.sel), { key: "dp:kit" }).catch(() => {}); }
+  }
+  drumPads.kit = v;
+  if (dev.mix && dev.mix.tracks[drum]) dev.mix.tracks[drum].e0 = v;
+  drumPadsKitRender();
 }
 function drumPadsStatus(msg) {
   drumPads.statusMsg = msg;
@@ -9992,6 +10102,7 @@ function drumPadsHear(note) {
   const tok = "dp:" + send, km = LV.kmode;
   LV.kmode = "play";                                    /* always heard: not the LIVE page's roll / erase */
   try { lvNoteOn(tok, 3, send, 100); } catch (e) { /* unplugged */ } finally { LV.kmode = km; }
+  if (LV.held && LV.held.has(tok)) { const h = LV.held.get(tok); drumPadsTriggered({ ch: h.ch + 1, note: send, lane }); }
   setTimeout(() => lvNoteOff(tok), 180);
   const u = drumPads.ui;
   const d = u && u.grid.querySelector(`[data-note="${note}"]`);
@@ -10063,9 +10174,16 @@ function drumPadsRender() {
       drumPadsRenderTable();   /* the Current mapping table, from the reset map — not left on the old one */
       drumPadsRender();
     } });
+    u.kit = el("select", { onchange: (e) => { const v = +e.target.value; if (v !== drumPads.kit) op(async () => { try { await drumPadsKitWrite(v); } catch (err) { report(err); drumPadsKitRender(); } }); } });
+    u.kitNow = el("span", { class: "dim" });
+    u.trig = el("p", { class: "dim", text: "Last triggered: —" });
     const card = el("div", { class: "card" },
       el("h2", { text: "Drum Pads" }),
-      el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad moves there — it no longer plays on its usual note, and a pad whose usual sound moved away is silent. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits." }),
+      el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad moves there — it no longer plays on its usual note, and a pad whose usual sound moved away is silent. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits. The sounds come from the drum preset (kit) currently selected on the drum track — tapping a pad plays that preset's sound." }),
+      el("p", { class: "bar" },
+        el("label", { class: "fld" }, el("span", { text: "Preset" }), u.kit),
+        u.kitNow),
+      u.trig,
       u.grid,
       el("h3", { text: "Off the grid" }),
       el("p", { class: "dim", text: "Sounds on no pad of the block. Each still plays on its usual note outside the block. Drag one onto a pad, or tap it and then tap a pad." }),
@@ -10178,9 +10296,12 @@ function drumPadsRender() {
   u.write.disabled = !dev;
   u.refresh.disabled = !dev;
   u.reset.disabled = !dev;
+  if (drumPads.trigMsg) u.trig.textContent = drumPads.trigMsg;
+  else u.trig.textContent = "Last triggered: —";
+  drumPadsKitRender();
 }
 function drumPadsBind() {
-  /* the card is built by drumPadsRender (called from renderKits); its buttons wire themselves up there */
+  /* the card is built by drumPadsRender (called from renderPanels, on the Drum Pads tab); its buttons wire themselves up there */
   drumPadsRender();
 }
 /* ---- MIDI LEARN: the 32-slot learn map (backup object 10, 72 bytes) in the Settings tab ---- */
