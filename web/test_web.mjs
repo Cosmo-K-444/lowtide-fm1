@@ -570,7 +570,7 @@ async function editorV9() {
   /* the device: FM6_LIST / GET / PUT / ERASE */
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 12 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 12 (v12 includes v9), FM6 is engine 9");
+  ok(info.proto === 13 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 13 (v13 includes v9), FM6 is engine 9");
   const L = E.parse[C.FM6_LIST](await rq(E.req.fm6List()));
   if (!(L.factory === 8 && L.bank === 27 && L.slots.length === 35)) console.log("  FM6_LIST", L.factory, L.bank, L.slots.length, js(L.slots.slice(0, 10)));
   ok(L.factory === 8 && L.bank === 27 && L.slots.length === 35 && L.slots[0].used, "v9: FM6_LIST: 8 factory patches, 27 bank slots");
@@ -658,6 +658,13 @@ async function editorDrumMap() {
     return E.parse[C.BK_PUT](await rq(E.req.bkCommit(12))).rc;
   };
   ok(!(await list()).items.some((x) => x.id === 12), "drum map: object 12 absent when the map is default (speed 1x)");
+  /* (2.8.4) the drum preset: TRACK_DUMP on the drum track reads its kit, TRACK_PARAM writes it — the
+     preset dropdown's protocol. The mock's drum track powers on with kit 5 (808). */
+  const kitOf = async () => E.parse[C.TRACK_DUMP](await rq(E.req.trackDump(3)), info).p[info.pe0];
+  ok((await kitOf()) === 5, "drum pads: the drum track's kit reads as 808 (index 5) on the mock device");
+  ok(E.parse[C.TRACK_PARAM](await rq(E.req.trackParam(3, info.pe0, 6))).value === 6 && (await kitOf()) === 6
+    && E.parse[C.TRACK_PARAM](await rq(E.req.trackParam(3, info.pe0, 5))).value === 5 && (await kitOf()) === 5,
+    "drum pads: TRACK_PARAM writes the drum track's kit (808 -> 909 -> 808, read back each time)");
   /* swap KICK and HI TOM, speed 2x */
   const map = new Uint8Array(17).fill(0xFF);
   map[0] = 10; map[12] = 0; map[16] = 8;
@@ -695,13 +702,41 @@ async function editorDrumMap() {
   ok(A.objects.some((x) => x.id === 12 && x.len === 17), "drum map: a backup holds object 12 when non-default");
   await E.backupRestore(rq, JSON.parse(JSON.stringify(A)));
   ok(eq(await get12(), map) && m.state.drumMap[16] === 8, "drum map: a restore puts the map and speed back");
+  /* (2.8.4) DRUM PAD LEARN: arm a lane, hit a pad — the firmware moves the lane there (true move).
+     The note is the pad hit: the editor arms it, the FM-1 listens on its own MIDI in (DIN, where the
+     controller is), and the editor polls until the firmware reports the result. A hit on another
+     channel, or a note outside 36..51, is refused. The move lands in the map at once (it is saved
+     in flash when quiet — it does not wait for "Write map to FM-1"). */
+  const dpLearn = async (sub, lane) => E.parse[C.DP_LEARN](await rq(E.req.dpLearn(sub, lane)));
+  const map2 = new Uint8Array(17).fill(0xFF); map2[0] = 10; map2[16] = 8;   /* HI TOM on 36, speed 2x */
+  ok(C.DP_LEARN === 78 && E.req.dpLearn(0, 0)[0] === 78 && (await put12(map2)) === 0,
+    "drum pad learn: the DP_LEARN command is 78, sub 0 arms a lane (HI TOM on 36, speed 2x)");
+  ok((await dpLearn(0, 16)).result === 5 && (await dpLearn(2)).result === 0,
+    "drum pad learn: arming lane 16 (not a lane) is refused (result 5), the device stays idle");
+  ok((await dpLearn(0, 0)).result === 1 && (await dpLearn(2)).result === 1,
+    "drum pad learn: arming KICK (lane 0) waits for a pad hit (result 1)");
+  ok(m.sim.dpLearnHit(48, 1) === 3 && (await dpLearn(2)).result === 3,
+    "drum pad learn: a pad hit on channel 1 (not the drum channel 10) is refused (result 3)");
+  ok((await dpLearn(0, 0)).result === 1 && m.sim.dpLearnHit(56, 10) === 4 && (await dpLearn(2)).result === 4,
+    "drum pad learn: a note outside 36..51 is refused (result 4)");
+  ok((await dpLearn(0, 0)).result === 1 && m.sim.dpLearnHit(48, 10) === 2 && (await dpLearn(2)).result === 2,
+    "drum pad learn: a pad hit on channel 10 moves the lane there (result 2)");
+  const learned = await get12();
+  ok(learned[12] === 0 && learned[0] === 10 && learned[16] === 8,
+    "drum pad learn: the move is in the map at once (KICK on 48, HI TOM still on 36, speed 2x kept)");
+  ok((await dpLearn(1)).result === 0 && (await dpLearn(2)).result === 0,
+    "drum pad learn: CANCEL puts the device back to idle (result 0)");
+  const old = attachMock({ v12: true });
+  const oldReply = await old.rq(E.req.dpLearn(0, 0)).then(() => "answered", (e) => e.message);
+  ok(/^timeout/.test(oldReply), "drum pad learn: a device before v13 (proto 12) does not answer DP_LEARN");
+  old.done();
   /* (2.8.3) TRUE MOVES: the editor's effective pads, from the map bytes alone (the pure functions, run in
      a sandbox with no device: DR MAP off, so the default is the GM sound). PAD_NOTES order is
      [48,49,50,51,44,45,46,47,40,41,42,43,36,37,38,39]; the default eff there is
      [10,11,10,12,6,9,5,10,8,9,4,9,0,7,2,3]. */
   const dpSrc = ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
     + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("function drumPadsStatus"));
-  const D = vm.runInNewContext(dpSrc + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsSerialize, drumPadsDefaultLane, drumPadsDeviceEff, drumPadsHearNote, drumPadsNotesOfLane })`,
+  const D = vm.runInNewContext(dpSrc + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsSerialize, drumPadsDefaultLane, drumPadsDeviceEff, drumPadsHearNote, drumPadsNotesOfLane, kitLaneNotes, kitLaneLabel, drumPadsTriggeredLine })`,
     { console, dev: null });
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
   ok(D.drumPadsEff().join() === [10, 11, 10, 12, 6, 9, 5, 10, 8, 9, 4, 9, 0, 7, 2, 3].join(),
@@ -723,6 +758,19 @@ async function editorDrumMap() {
   ok(D.drumPadsEff().join() === [0, 11, 255, 12, 6, 9, 5, 255, 8, 9, 4, 9, 10, 7, 2, 3].join()
     && eq(D.drumPadsSerialize(D.drumPadsEff()), D.drumPads.map),
     "drum map: true moves: a KICK/HI TOM swap shows on the right pads and round-trips");
+  /* (2.8.4) the kit builder shows each sound at its remapped note (Ableton names, 60 = C3): the
+     default — KICK on C1 (36), HI TOM on its three pads, COWBELL on its home note outside the block;
+     a moved sound on its pad; a sound whose home note was taken by another lane has no MIDI note */
+  D.drumPads.map = new Uint8Array(16).fill(0xFF);
+  ok(D.kitLaneLabel(0) === "C1 (36)" && D.kitLaneLabel(10) === "B1 (47), C2 (48), D2 (50)"
+    && D.kitLaneLabel(15) === "G#2 (56)" && D.kitLaneLabel(1) === "B0 (35)",
+    "drum pads: the kit builder shows each sound at its remapped note (Ableton names, 60 = C3)");
+  D.drumPads.map[0] = 15;   /* COWBELL on pad 36: KICK's home note answers COWBELL now */
+  ok(D.kitLaneLabel(15) === "C1 (36)" && D.kitLaneLabel(0) === "—",
+    "drum pads: the kit builder follows a moved sound, and a sound with no MIDI note shows none");
+  D.drumPads.map = new Uint8Array(16).fill(0xFF); D.drumPads.map[0] = 10;   /* HI TOM on 36: KICK on no pad */
+  ok(D.kitLaneLabel(10) === "C1 (36)" && D.kitLaneLabel(0) === "—",
+    "drum pads: a sound on no pad whose home note was taken shows no note");
   /* (2.8.3) PREVIEW: the note that plays a lane on the FM-1 as it is now (its map as last read, obj): with
      the default device map, HI TOM is heard on 48 (its first pad), KICK on 36, COWBELL on its usual note 56
      (outside the block); with HI TOM moved to 36 on the device, it is heard on 36 — and KICK, on no pad
@@ -746,6 +794,42 @@ async function editorDrumMap() {
   ok(/\.dppad \.sound \{ font-size: 17px/.test(ed) && /\.dppad \.note \{ font-size: 14px; color: var\(--fg2\)/.test(ed)
     && /\.dppad \.midi \{ font-size: 12px; color: var\(--dim\)/.test(ed),
     "drum map: the pad labels are larger and brighter (sound 17px, note 14px fg2, MIDI 12px dim)");
+  /* (2.8.4) the preset: the help text, the fallback kit names, and the last triggered line */
+  ok(/The sounds come from the drum preset \(kit\) currently selected on the drum track/.test(ed)
+    && /tapping a pad plays that preset's sound/.test(ed),
+    "drum pads: the help text says the sounds come from the drum track's current preset");
+  const kitEnum = [...ed.match(/const KIT = E\("KIT", \[([^\]]*)\], 0\)/)[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+  ok(D.DRUMPADS.KIT_NAMES.length === 46 && js(D.DRUMPADS.KIT_NAMES) === js(kitEnum),
+    "drum pads: the fallback kit names are the firmware's 46 (the mock's KIT enum)");
+  ok(D.drumPadsTriggeredLine({ ch: 10, note: 36, lane: 0 }) === "Last triggered: Ch 10 · Note 36 (C1) · KICK"
+    && D.drumPadsTriggeredLine({ ch: 10, note: 48, lane: 10 }) === "Last triggered: Ch 10 · Note 48 (C2) · HI TOM"
+    && D.drumPadsTriggeredLine({ ch: 10, note: 48, lane: 255 }) === "Last triggered: Ch 10 · Note 48 (C2) · —"
+    && D.drumPadsTriggeredLine({ ch: 10, note: 51, lane: 12 }) === "Last triggered: Ch 10 · Note 51 (D#2) · RIDE"
+    && D.drumPadsTriggeredLine({ ch: 10, cc: 74, value: 100 }) === "Last triggered: Ch 10 · CC 74 = 100",
+    "drum pads: the last triggered line shows channel, note number (the MIDI CC) and note name, sound — or the CC number for a genuine CC");
+  /* (2.8.4) MIDI in: a note on the drum channel (10) shows in the last triggered line; another channel,
+     and note-offs, are ignored; a genuine CC shows its CC number; a silent pad shows no sound. (The
+     pad-order lookup matters here: drumPadsEff is in PAD_NOTES order, not note order.) */
+  const miDev = { dump: { g: new Array(50).fill(0) }, gdesc: [], info: { pe0: 63 } };
+  miDev.dump.g[24] = 10;   /* the drum channel */
+  const DM = vm.runInNewContext(dpSrc + `\n;({ drumPads, drumPadsMidiIn })`,
+    { console, dev: miDev, lvG: (l, d) => d, lvGv: (id) => miDev.dump.g[id] });
+  DM.drumPadsMidiIn([0x99, 36, 100]);
+  const trig36 = DM.drumPads.trigMsg;
+  DM.drumPadsMidiIn([0x98, 36, 100]);
+  const trigCh9 = DM.drumPads.trigMsg;
+  DM.drumPadsMidiIn([0x99, 36, 0]);
+  const trigOff = DM.drumPads.trigMsg;
+  DM.drumPadsMidiIn([0xB9, 74, 100]);
+  const trigCC = DM.drumPads.trigMsg;
+  DM.drumPads.map = new Uint8Array(16).fill(0xFF); DM.drumPads.map[0] = 10;   /* HI TOM on 36: 48 goes silent */
+  DM.drumPadsMidiIn([0x99, 48, 100]);
+  const trigSilent = DM.drumPads.trigMsg;
+  ok(trig36 === "Last triggered: Ch 10 · Note 36 (C1) · KICK"
+    && trigCh9 === trig36 && trigOff === trig36
+    && trigCC === "Last triggered: Ch 10 · CC 74 = 100"
+    && trigSilent === "Last triggered: Ch 10 · Note 48 (C2) · —",
+    "drum pads: MIDI in: a drum-channel note shows channel, note and sound; other channels and note-offs ignored; a CC shows its number; a silent pad shows no sound");
   /* (2.8.3) RESET + PREVIEW, driven through the card itself: a tiny fake DOM runs the card's render code
      (the real $/el from the file), with a device that still holds the default map. A drag swap is heard as
      the sound now on the pad, and Reset puts the Current mapping table back to the default layout. */
@@ -782,20 +866,30 @@ async function editorDrumMap() {
   const dpBox = new FakeEl("div");
   dpBox.setAttribute("id", "drumpads");
   const notesOn = [];
+  const lvStub = { kmode: "play", held: new Map() };   /* LV.held: what the editor's lvNoteOn records */
+  const cardCtx = { console, document: { createElement: (t) => new FakeEl(t), getElementById: (id) => (id === "drumpads" ? dpBox : null) },
+    dev: {}, LV: lvStub,
+    lvNoteOn: (tok, track, note, vel) => { notesOn.push(note); lvStub.held.set(tok, { ch: 9, note, track }); },
+    lvNoteOff: (tok) => { lvStub.held.delete(tok); }, setTimeout, clearTimeout };
   const R = vm.runInNewContext(
     ed.slice(ed.indexOf("const $ = "), ed.indexOf("const sleep ="))
     + ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
     + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("/* ---- MIDI LEARN"))
     + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsRender, drumPadsDrop, drumPadsHear })`,
-    { console, document: { createElement: (t) => new FakeEl(t), getElementById: (id) => (id === "drumpads" ? dpBox : null) },
-      dev: {}, LV: { kmode: "play" },
-      lvNoteOn: (tok, track, note, vel) => notesOn.push(note),
-      lvNoteOff: () => {}, setTimeout, clearTimeout });
+    cardCtx);
   const tableText = () => [...R.drumPads.ui.table.querySelectorAll("tr")]
     .map((r) => [...r.children].map((c) => c.textContent).join("|")).join("\n");
   const padSound = (note) => R.drumPads.ui.grid.querySelector(`[data-note="${note}"]`).querySelector(".sound").textContent;
   R.drumPadsRender();
   const defaultTable = tableText();
+  /* (2.8.4) the card has the preset dropdown and the last triggered line: without a device the dropdown
+     is disabled and shows the firmware's kit names, and the line is empty */
+  const kitOpts = [...R.drumPads.ui.kit.children].map((c) => c.textContent);
+  ok(R.drumPads.ui.kit && kitOpts.length === 46 && kitOpts[0] === "ACOUSTIC" && kitOpts[5] === "808" && kitOpts[45] === "SYN4"
+    && R.drumPads.ui.kit.disabled === true
+    && R.drumPads.ui.kitNow.textContent === "Connect the FM-1 to read the preset."
+    && R.drumPads.ui.trig.textContent === "Last triggered: —",
+    "drum pads: card: the preset dropdown (46 kits, disabled without a device) and the last triggered line");
   R.drumPadsDrop({ from: "pad", idx: 12 }, 0);   /* drag pad 36 (KICK) onto pad 48 (HI TOM): a swap */
   ok(padSound(36) === "HI TOM" && padSound(48) === "KICK"
     && tableText().split("\n").some((l) => l.startsWith("KICK|C2|48|Yes"))
@@ -804,20 +898,38 @@ async function editorDrumMap() {
   notesOn.length = 0;
   R.drumPads.ui.grid.querySelector('[data-note="36"]').click();   /* tap the pad now holding HI TOM */
   const heard36 = notesOn.length ? notesOn[0] : -1;
+  ok(R.drumPads.ui.trig.textContent === "Last triggered: Ch 10 · Note 48 (C2) · HI TOM",
+    "drum pads: card: tapping a pad shows the triggered channel, note number and note name, and sound");
   notesOn.length = 0;
   R.drumPads.ui.grid.querySelector('[data-note="48"]').click();   /* tap the pad now holding KICK */
   ok(heard36 === 48 && notesOn.length === 1 && notesOn[0] === 36,
     "drum map: card: tapping a swapped pad previews the sound now on it, not the old one");
+  ok(R.drumPads.ui.trig.textContent === "Last triggered: Ch 10 · Note 36 (C1) · KICK",
+    "drum pads: card: the last triggered line follows the pad just tapped");
   R.drumPads.map = new Uint8Array(16).fill(0xFF); R.drumPads.map[0] = 10;   /* HI TOM on 36 only: pad 48 is silent */
   R.drumPadsRender();
   notesOn.length = 0;
   R.drumPads.ui.grid.querySelector('[data-note="48"]').click();
-  ok(notesOn.length === 0 && padSound(48) === "—",
-    "drum map: card: tapping a silent pad previews nothing");
+  ok(notesOn.length === 0 && padSound(48) === "—"
+    && R.drumPads.ui.trig.textContent === "Last triggered: Ch 10 · Note 36 (C1) · KICK",
+    "drum map: card: tapping a silent pad previews nothing (and the last triggered line stays put)");
   R.drumPads.ui.reset.click();   /* Reset to default layout */
   ok(eq(R.drumPads.map, new Uint8Array(16).fill(0xFF)) && tableText() === defaultTable
     && padSound(36) === "KICK" && padSound(48) === "HI TOM",
     "drum map: card: Reset puts the Current mapping table and the grid back to the default layout");
+  /* (2.8.4) the per-pad Learn buttons and the preset help line, with a device connected: a v13 device
+     shows a Learn button on every pad and the preset line is the help message; a v12 device shows no
+     Learn buttons (its firmware cannot do drum-pad learn) */
+  cardCtx.dev.info = { proto: 13, version: "LOWTIDE 2.8.4 BETA", pcount: 71 };
+  R.drumPadsRender();
+  ok(R.drumPads.ui.grid.querySelectorAll(".dplearn").length === 16
+    && R.drumPads.ui.kitNow.textContent === "Select a drum preset to change sounds"
+    && R.drumPads.ui.kit.disabled === false,
+    "drum pads: card: with a v13 device, every pad has a Learn button and the preset line is the help message");
+  cardCtx.dev.info = { proto: 12, version: "LOWTIDE 2.8.3 BETA", pcount: 71 };
+  R.drumPadsRender();
+  ok(R.drumPads.ui.grid.querySelectorAll(".dplearn").length === 0,
+    "drum pads: card: with a v12 device, no Learn buttons (the firmware cannot do drum-pad learn)");
   done();
 }
 
@@ -826,7 +938,7 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 12 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v12: INFO ends with the protocol version (12: LIVE); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  ok(info.proto === 13 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v13: INFO ends with the protocol version (13: DP_LEARN); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
   /* (2.8.3) the device's INFO version is LOWTIDE, never FELUCCA: editor.c builds "LOWTIDE " + the version,
      and uses the default as-is when it already starts with LOWTIDE (ui.c: "LOWTIDE 2.8.5") */
   const ecVer = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
@@ -843,9 +955,10 @@ async function editorV5() {
     && names.indexOf("ED_MICRO_GET") + 1 === C.MICRO_GET && names.indexOf("ED_MICRO_SET") + 1 === C.MICRO_SET
     && names.indexOf("ED_FILL_GET") + 1 === C.FILL_GET && names.indexOf("ED_FILL_SET") + 1 === C.FILL_SET
     && /ED_FM6_GET = 68, ED_FM6_PUT, ED_FM6_LIST, ED_FM6_ERASE/.test(ec) && C.FM6_GET === 68 && C.FM6_ERASE === 71
-    && /#define ED_PROTO 12u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
+    && /#define ED_PROTO 13u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
+    && /#define ED_DP_LEARN 78u/.test(ec) && /case ED_DP_LEARN:/.test(ec) && C.DP_LEARN === 78
     && /enum \{ ED_DSYN_LIST = 72, ED_DSYN_GET, ED_DSYN_PUT, ED_DSYN_STORE, ED_DSYN_PLAY \};/.test(readFileSync(join(HERE, "../firmware/src/editor_dsyn.c"), "utf8"))
-    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v12: command numbers and INFO == editor.c / editor_dsyn.c");
+    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v13: command numbers and INFO == editor.c / editor_dsyn.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -913,7 +1026,7 @@ async function editorV7() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 12, "v7: INFO ends with 12 (v12 includes v7)");
+  ok(info.proto === 13, "v7: INFO ends with 13 (v13 includes v7)");
   /* the lockable set == seq.c p_lockable (the ids as core.h names them) */
   const sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8"), ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8");
   const ids = {}; let n = 0;
@@ -978,7 +1091,7 @@ async function editorV8() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 12, "v8: INFO ends with 12 (v12 includes v8)");
+  ok(info.proto === 13, "v8: INFO ends with 13 (v13 includes v8)");
   /* the condition codes == core.h FC_*; the bit layout of a 2-bit step field */
   const ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8"), sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8");
   ok(/enum \{ FC_NORM, FC_FILL, FC_NOFILL \}/.test(ch) && /uint8_t fill\[NSTEP \/ 4\];/.test(ch)
@@ -1432,7 +1545,7 @@ async function editorLivePage() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   let s = await live(L.STATE);
   const raw = await rq(E.req.live(L.STATE));
-  ok(info.proto === 12 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
+  ok(info.proto === 13 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
     "live page: the state (50 bytes as editor_live.c): stopped, 4 tracks, BPM, no section, no effect, A stored, the master on its knob, the pads as the kit");
   s = await live(L.PLAY, 1);
   ok(s.playing && m.state.playing, "live page: PLAY plays");
@@ -1646,8 +1759,17 @@ function editorTabs() {
   const tabs = [...html.matchAll(/<button role="tab" data-tab="(\w+)"/g)].map((x) => x[1]);
   const panels = [...html.matchAll(/<section class="panel" id="p-(\w+)" data-tab="(\w+)"/g)].map((x) => [x[1], x[2]]);
   const TABS = JSON.parse((/const TABS = (\[[^\]]*\]);/.exec(html) || [])[1] || "[]");
-  ok(tabs.length === 12 && js(tabs) === js(TABS) && js(panels.map((x) => x[1])) === js(TABS) && panels.every(([a, b]) => a === b),
+  ok(tabs.length === 13 && js(tabs) === js(TABS) && js(panels.map((x) => x[1])) === js(TABS) && panels.every(([a, b]) => a === b),
     `editor: ${tabs.length} tabs, one panel each (${tabs.join(" ")})`);
+  {   /* (2.8.4) Drum Pads is its own tab under Device (after Settings, before Theme), with its own panel;
+       the Kits tab keeps only the kit builder */
+    const nav = html.slice(html.indexOf('data-t="navDevice"'), html.indexOf("</nav>"));
+    const kitsPanel = html.slice(html.indexOf('id="p-kits"'), html.indexOf('id="p-drumsynth"'));
+    ok(/data-tab="projects"[\s\S]*data-tab="settings"[\s\S]*data-tab="drumpads"[\s\S]*data-tab="theme"/.test(nav)
+      && /<section class="panel" id="p-drumpads" data-tab="drumpads" data-dev hidden>/.test(html)
+      && !kitsPanel.includes("drumpads"),
+      "editor: Drum Pads is a tab under Device with its own panel; the Kits tab has no Drum Pads in it");
+  }
   ok(/localStorage\.setItem\(TAB_KEY/.test(html) && /try \{ localStorage/.test(html) && /history\.replaceState\([^)]*"#" \+ name\)/.test(html)
     && /addEventListener\("hashchange"/.test(html), "editor: last tab in localStorage (try/catch) and in the URL hash");
   /* every string key in both languages */

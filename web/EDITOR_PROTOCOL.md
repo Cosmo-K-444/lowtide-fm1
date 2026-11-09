@@ -470,6 +470,30 @@ fill bar…) are sent once, never repeated on a timeout. The notes are not SysEx
 the tracks' channels (GLO > MIDI; OTHER = SEL: a free channel on the selected track; DR MAP for the drums). A device
 before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX, TRACK_PARAM, SET, notes).
 
+## v13: drum-pad MIDI learn (Lowtide 2.8.4)
+
+`INFO` ends with 13. Command **78**, `DP_LEARN`, arms a drum-pad learn from the editor's Drum Pads tab:
+the editor cannot hear a controller on the FM-1's DIN MIDI IN (the firmware does not echo notes back over
+USB), so the firmware listens. `sub [lane]`, reply `sub, result, lane, note, channel, drum channel`:
+
+| sub | args | does |
+| --- | --- | --- |
+| 0 | lane 0..15 | arm the learn for that lane; the FM-1 shows *PAD LEARN: HIT A PAD*. A bad lane answers result 5 and arms nothing |
+| 1 | — | cancel: the arm ends, the result goes back to idle |
+| 2 | — | the state now: poll about 4 times a second while armed |
+
+`result`: 0 idle, 1 waiting, 2 done, 3 wrong channel (or the drum channel OFF — `drum channel` 0), 4 note
+outside the pad block (36..51), 5 bad lane (arm only). `lane` is the lane the learn was for (127 none);
+`note`, `channel` (1..16) are the pad hit; `drum channel` is GLO > DRUMS > CH (10 by default, 0 OFF).
+While armed the firmware takes the next note-on on any channel — a hit on another channel is refused,
+not ignored, so the editor can say only the drum channel is supported. A good hit moves the lane to
+that note in the remap table (backup object 12, the same 17 bytes; true moves as 2.8.3: the sound plays
+only on its new pad, its old note goes silent) and the FM-1 shows the lane and note. The move takes
+effect at once and is saved to flash when quiet, as the MIDI learn map is; the editor re-reads object
+12 after a done result so the grid follows at once. The on-device MIDI learn (GLO + F#3, the 32-slot
+map) is untouched; this is a separate mode. A device before 2.8.4 does not answer `DP_LEARN`: the
+editor hides the per-pad Learn buttons.
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.

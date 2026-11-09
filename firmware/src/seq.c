@@ -1862,6 +1862,15 @@ static void drum_map_clear(void)                /* all pads unmapped, the learne
         drum_map[i] = 0xFFu;
     learn_speed_q = LEARN_SPEED_DEF;
 }
+static void drum_map_move(uint32_t lane, uint32_t note)  /* (2.8.4) a learned pad: the lane moves to the note */
+{
+    uint32_t i;
+    for (i = 0; i < DRUM_MAP_N; i++)
+        if (drum_map[i] == (uint8_t)lane)
+            drum_map[i] = 0xFFu;                          /* (true move: the sound plays only on its new pad) */
+    if (note >= 36u && note < 36u + DRUM_MAP_N)
+        drum_map[note - 36u] = (uint8_t)lane;
+}
 static uint32_t drum_lane_taken(uint32_t lane)  /* (2.8.3) true move: the lane sits on some pad */
 {
     uint32_t i;
@@ -3079,6 +3088,15 @@ _Static_assert(P_E0 < ML_E0 && P_COUNT - P_E0 == 8, "MIDI LEARN: a code per para
 _Static_assert(ML_BTN0 > P_E0 && ML_KNOB_ALGO < ML_E0 && ML_KNOB_FOLLOW + 3u < ML_E0, "MIDI LEARN: button/knob codes in the free range");
 static volatile uint16_t ml_tab[ML_N];
 static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that came meanwhile + 1 (0 none) */
+/* DRUM PAD LEARN (2.8.4): the editor arms a lane; the next note-on, on any channel, is the pad hit. The
+ * audio block only records it (dp_learn_heard: the note + 1, its channel + 1; 0 none) — the move is the
+ * main loop's (ui.c dp_learn_poll), so no flash write ever happens in the audio block. dp_learn_lane
+ * -1 = off, else the lane 0..15 being learned. dp_learn_state: 0 idle, 1 waiting, 2 done, 3 wrong
+ * channel (or the drum channel OFF), 4 note outside 36..51; the _r / _note / _ch / _expected fields are
+ * what the editor's query reads back (the lane the learn was for, the hit, the drum channel then). */
+static volatile int8_t dp_learn_lane = -1;
+static volatile uint8_t dp_learn_heard, dp_learn_heard_ch;
+static uint8_t dp_learn_state, dp_learn_lane_r = 127u, dp_learn_note, dp_learn_ch, dp_learn_expected;
 static volatile uint8_t ml_preset_cc;      /* a learned PRESETS CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_track_cc;       /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_follow_cc[4];   /* a learned knob-follower CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
@@ -3561,6 +3579,14 @@ static void events_block(uint32_t n)
         if ((pkt & 15u) == 0xFu) {                    /* clock / transport: cable 0 USB, 1 TRS */
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
+        }
+        if (dp_learn_lane >= 0 && !dp_learn_heard && st == 0x90u && d2) {
+            /* (2.8.4) DRUM PAD LEARN: the next pad hit, on any channel (the UI checks it is the drum
+             * channel and moves the lane; a hit on another channel is refused, not ignored, so the editor
+             * can say only the drum channel is supported). The note still plays as before, through the
+             * old map — the move happens in the main loop, after it was heard. */
+            dp_learn_heard = (uint8_t)(d1 + 1u);
+            dp_learn_heard_ch = (uint8_t)(ch + 1u);
         }
         if (song.g[G_RMCH] && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u && d1 >= REMOTE_CC0 &&
             d1 < REMOTE_CC0 + 14u) {                  /* 2.7: REMOTE (GLO > MIDI 3): the buttons over MIDI */

@@ -944,6 +944,33 @@ static void t_drmap_remap(void)
             check(pen_lane == 99u && !any, "DRUM REMAP: a silenced note's note-off is a no-op (no hit, no stuck voice)");
         }
     }
+    {   /* (2.8.4) DRUM PAD LEARN: drum_map_move — the lane moves to the note, its old pad goes quiet */
+        setup();
+        mi_r = mi_w;
+        song.g[G_ROUTE] = 0;
+        dch = (uint32_t)song.g[G_DRCH] - 1u;
+        dm_clear();
+        song.g[G_DRMAP] = 0;
+        drum_map_move(0, 48);                               /* KICK (lane 0) to pad 48 */
+        check(drum_map[0] == 0xFFu && drum_map[12] == 0u,
+              "DRUM PAD LEARN: drum_map_move puts the lane on its new note and clears the old one");
+        pen_lane = 99;
+        note_in(dch, 48, 100);
+        note_in(dch, 48, 0);
+        check(pen_lane == 0u, "DRUM PAD LEARN: the moved lane plays on its new pad (note 48 -> KICK)");
+        pen_lane = 99;                                      /* its old note goes silent */
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        check(pen_lane == 99u, "DRUM PAD LEARN: the moved lane no longer plays on its old pad (note 36 silent)");
+        drum_map[0] = 10; drum_map[12] = 10;                /* HI TOM on two pads (a deliberate copy) */
+        drum_map_move(10, 40);                              /* ... to pad 40: both old pads cleared */
+        check(drum_map[0] == 0xFFu && drum_map[12] == 0xFFu && drum_map[4] == 10u,
+              "DRUM PAD LEARN: drum_map_move clears every old pad of a copied lane");
+        drum_map_move(10, 40);                              /* the same note again: nothing changes */
+        check(drum_map[4] == 10u, "DRUM PAD LEARN: drum_map_move to the note it is already on keeps it");
+        drum_map_move(10, 60);                              /* outside the block: the lane leaves the map */
+        check(drum_map[4] == 0xFFu, "DRUM PAD LEARN: drum_map_move outside 36..51 sets no byte");
+    }
     dm_clear();
     render(8);
 }
