@@ -480,6 +480,29 @@
   .pad .acts { display: flex; gap: 4px; }
   .pad .acts button { padding: 3px 8px; }
   .pad.playing canvas { outline: 1px solid var(--c); }
+
+  /* ---- drum pads: the 16-pad block (MIDI notes 36-51), Ableton Drum Rack order ---- */
+  .dpgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+  .dppad { aspect-ratio: 1 / 0.82; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+           cursor: grab; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .dppad:active { transform: scale(.97); }
+  .dppad.empty { border-style: dashed; color: var(--s3); cursor: default; }
+  .dppad.empty .sound { color: var(--s3); font-weight: 400; }
+  .dppad .sound { font-size: 14px; font-weight: 700; text-align: center; line-height: 1.15; padding: 0 4px; color: var(--c, var(--fg2)); text-transform: uppercase; }
+  .dppad .note { font-size: 12px; color: var(--dim); }
+  .dppad .midi { font-size: 10px; color: var(--s3); }
+  .dppad.playing { background: var(--c, var(--t4)); border-color: var(--c, var(--t4)); }
+  .dppad.playing .sound, .dppad.playing .note, .dppad.playing .midi { color: #000; }
+  .dppad.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }
+  .dppad.drop-target { outline: 2px solid var(--fg); outline-offset: -2px; }
+  .dptray { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+  .dpchip { border: 1px solid var(--line); border-radius: 999px; background: var(--bg); padding: 7px 12px;
+            font-size: 13px; cursor: grab; user-select: none; -webkit-user-select: none; color: var(--c, var(--fg2)); }
+  .dpchip.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }
+  .dptable { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .dptable th, .dptable td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .dptable th { color: var(--dim); font-weight: 600; }
   .kstep { border-top: 1px solid var(--line); padding: 16px 0 4px; margin-top: 8px; }
   .kstep > h3 { display: flex; align-items: center; gap: 12px; color: var(--fg); text-transform: uppercase; margin: 0 0 10px; }
   .kstep > h3 .num { width: 32px; height: 32px; display: grid; place-content: center; background: var(--trk); color: #000; font-size: 32px; line-height: 32px; }
@@ -1104,6 +1127,7 @@
 
     <section class="panel" id="p-kits" data-tab="kits" data-dev hidden>
       <div id="kit"></div>
+      <div id="drumpads"></div>
     </section>
 
     <section class="panel" id="p-drumsynth" data-tab="drumsynth" data-dev hidden>
@@ -1165,6 +1189,13 @@
         <button type="button" id="learnexport">Export JSON</button>
         <button type="button" id="learnimport">Import JSON</button>
         <input id="learnfile" type="file" accept=".json,application/json" hidden></p>
+        <p><label for="learnspeed">Knob speed</label>
+        <select id="learnspeed">
+          <option value="1">0.25×</option><option value="2">0.5×</option>
+          <option value="4" selected>1×</option><option value="8">2×</option><option value="16">4×</option>
+        </select>
+        <span class="dim">How fast a learned CC turns a K1–K4 knob follower. It does not affect Volume, Select, Presets or Algorithm.</span></p>
+        <p class="dim" id="learnspeedstate"></p>
         <table id="learntable"></table>
         <p class="dim" id="learnmonitor">No CC heard yet.</p>
         <p class="dim">A knob turn in learn mode always maps its knob slot: K1–K4 follow the knob on any page. Buttons map to their button. A parameter can be picked here instead. Stop the sequencer before writing the map.</p>
@@ -2434,8 +2465,9 @@ function b64dec(s) {
    6..7 the user preset banks, 32..35 the sample slots USR1..4 (35, USR4: SLOOP 2.4) */
 /* RESTORE: the objects in the order they are written back (banks first; 8 = the FM6 patch bank, firmware v9: a
    file without it restores fine, a v8 device gets no object 8 sent; 9 = the SYN drum kits, firmware v10, likewise) */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 10, 11, 2, 3, 4, 5, 0, 1] };   /* 10: MIDI LEARN (2.6),
-                                                       * 11: your theme (2.7, before the settings: they say whether it is shown) */
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 10, 11, 12, 2, 3, 4, 5, 0, 1] };   /* 10: MIDI LEARN (2.6),
+                                                       * 11: your theme (2.7, before the settings: they say whether it is shown),
+                                                       * 12: the drum map + knob speed (before the settings too) */
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -2506,8 +2538,8 @@ async function backupRestore(rq, file, progress = () => {}) {
     if (!m.has(id)) continue;
     const d = m.get(id);
     let r = parse[CMD.BK_PUT](await rq(req.bkBegin(id, d.length, crc32(d)), { timeout: 1500, retries: 1 }));
-    if ((r.rc === 1 || r.rc === 5) && (id === 8 || id === 9 || id === 10 || id === 11)) continue;   /* a device without the FM6 bank (v8) /
-                                                       * the SYN kits (v9) / MIDI LEARN (2.6): skipped (its BK_PUT answers
+    if ((r.rc === 1 || r.rc === 5) && (id === 8 || id === 9 || id === 10 || id === 11 || id === 12)) continue;   /* a device without the FM6 bank (v8) /
+                                                       * the SYN kits (v9) / MIDI LEARN (2.6) / the drum map: skipped (its BK_PUT answers
                                                        * an unknown id's begin with 5) */
     if (r.rc) throw new BackupError("bkWrite", `begin ${id} rc ${r.rc}`);
     for (let off = 0; off < d.length; off += 256) {
@@ -2935,6 +2967,10 @@ function mockSettings() {
 /* backup object 10 at its default: nothing learned, CH1-3 = 1 2 3, drums 10, OTHER SEL, BEND 2 (a 64 / 68-byte one: the
    map, the map and the channels) */
 const mlDefault = (b) => b.every((x, i) => i < 64 ? !x : i === 64 ? x === 1 : i === 65 ? x === 2 : i === 66 ? x === 3 : i === 67 ? x === 10 : i === 68 ? x === 2 : !x);
+/* backup object 12: the drum map (16 bytes, note 36..51 -> lane 0..15 or 0xFF = the default for that note) and
+   the learned-knob speed (byte 16, quarters: 1 0.25x, 2 0.5x, 4 1x, 8 2x, 16 4x). The default: every note
+   unmapped, speed 1x. */
+const drumMapDefault = (b) => b.length === 17 && b[16] === 4 && b.subarray(0, 16).every((x) => x === 0xFF);
 function makeMockDevice(opt = {}) {
   const NONOFF = ["OFF", "ON"], NDIV = ["1/4", "1/8", "1/16", "1/32", "8T", "16T"], NGO = ["--", "GO"], NDASH = ["--"];
   const NSDIV = [...NDIV, "1/2", "1BAR", "2BAR"], NDLY = [...NDIV, "1/8D", "1/16D", "1/4D"];   /* SLOOP 2.4: long steps, dotted delays */
@@ -3176,6 +3212,7 @@ function makeMockDevice(opt = {}) {
     settings: mockSettings(),                       /* v6: the settings object (2.5: a PER3 with a song order) */
     dsyn: null, dsynStored: null, dsynPlayed: [],  /* v10: the SYN kits (RAM, flash), the auditions heard */
     ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 32 x 2 bytes), null: none */
+    drumMap: null,                                  /* the drum map + knob speed (object 12, 17 bytes), null: the default */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
     /* v12 (LIVE): the transport's start, the sections (A..D: playing, asked for at a time), song mode, SONG REC, fills,
@@ -3567,6 +3604,8 @@ function makeMockDevice(opt = {}) {
           ...(v10 ? [[9, DSYN.bankEncode(dsynKits())]] : []),
           ...(v10 && st.ml && !mlDefault(st.ml) ? [[10, st.ml.slice()]] : []),   /* MIDI LEARN (2.6): only when not the
                                                                                     * default (editor.c, project.c midi_part_default) */
+          ...(v10 && st.drumMap && !drumMapDefault(st.drumMap) ? [[12, st.drumMap.slice()]] : []),   /* the drum map +
+                                                                                    * knob speed (object 12): only when not the default */
           ...(v11 && st.theme ? [[11, st.theme.slice()]] : []),   /* your theme (2.7): only when there is one */
           ...st.smp.map((_, k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
         st.bkPut = null;
@@ -3587,7 +3626,7 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9, 10] : []), ...(v11 ? [11] : [])].includes(id)) {
+        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9, 10, 12] : []), ...(v11 ? [11] : [])].includes(id)) {
           const len = u35dec(r), crc = u35dec(r);
           if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
@@ -3618,6 +3657,17 @@ function makeMockDevice(opt = {}) {
               if (P.len !== 64 && P.len !== 68 && P.len !== 72) throw 0;
               if (st.playing) rc = 3;
               else st.ml = P.buf.slice();
+            }
+            else if (id === 12) {                           /* the drum map + knob speed (object 12, 17 bytes) */
+              if (P.len !== 17) throw 0;
+              if (st.playing) rc = 3;
+              else {                                          /* the firmware takes every byte checked: a bad lane is
+                                                                 * unmapped, a bad speed is 1x (project.c drum_part_read) */
+                const b = P.buf.slice();
+                for (let k = 0; k < 16; k++) if (b[k] !== 0xFF && b[k] > 15) b[k] = 0xFF;
+                if (![1, 2, 4, 8, 16].includes(b[16])) b[16] = 4;
+                st.drumMap = b;
+              }
             }
             else if (id === 9) {                            /* the SYN kits (with the settings: stopped only) */
               const k = DSYN.bankDecode(P.buf);
@@ -5337,7 +5387,7 @@ function renderPanels() {
   $("trackbar").hidden = !(ready && hasTracks() && TRACK_TABS.has(want));
   const nb = $("tabs").querySelector(`button[data-tab="${want}"]`);   /* the page's title: its name in the side bar */
   $("pagetitle").textContent = nb ? t(nb.dataset.t) : "";
-  if (want === "kits") renderKits();
+  if (want === "kits") { renderKits(); if (ready && !drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); }
   if (want === "drumsynth" && ready) {                 /* (2.5) the SYN kits, read once per connection */
     if (DS.dev !== dev) { Object.assign(DS, { dev, kit: null, list: null, k: 0, lane: 0 }); if (dsOk()) op(() => dsLoad(0)); renderDs(); } else renderDs();
   }
@@ -6030,6 +6080,8 @@ function disconnect(reasonKey = "disconnected") {
   busy = 0;
   needReload = false;
   learn.loaded = false;   /* the learn map is read again on the next connection */
+  drumPads.loaded = false; drumPads.dirty = false; drumPads.picked = null;   /* the drum map too (object 12) */
+  drumPads.obj = DRUMPADS.defaultObj(); drumPads.map = new Uint8Array(16).fill(0xFF);
   renderPanels();
   renderMixer();
   renderSysinfo();
@@ -8179,6 +8231,7 @@ function renderKits() {
   u.where.textContent = t("kitWhereFM1").replace("{x}", kitDest());
   for (let l = 0; l < 16; l++) kitPadUpdate(l);
   kitMeter();
+  drumPadsRender();
 }
 function kitPadUpdate(l) {
   const pu = kitUi && kitUi.pads[l], p = kitDraft.pads[l];
@@ -9779,6 +9832,306 @@ $("bk-save").addEventListener("click", () => op(async () => {
   } catch (e) { bkReport(e); } finally { $("bk-prog").hidden = true; }
 }));
 $("bk-load").addEventListener("click", () => { if (dev) $("bk-file").click(); });
+/* ---- DRUM PADS: which drum sound each MIDI note 36-51 plays, in the Kits tab ---- */
+/* The map is backup object 12 (17 bytes): bytes 0-15 the note -> lane (lane 0-15, 0xFF = the default for that
+   note), byte 16 the learned-knob speed in quarters (1 0.25x, 2 0.5x, 4 1x, 8 2x, 16 4x). The device lists
+   object 12 only when something is non-default; absent, the map is all-0xFF and the speed is 1x. The Drum Pads
+   card touches bytes 0-15 only, the MIDI Learn card's Knob speed touches byte 16 only, and each reads the
+   object first when it has never read it, so neither clobbers the other's half.
+   The default for a note is the firmware's (seq.c midi_drum_lane): with DR MAP on, lanes 1-16 in order from
+   note 36; with it off, the GM sound for the note (drums.c LANE_OF_GM) — so LOW TOM also answers F1, G1 and
+   A1, HI TOM also answers B1, C2 and D2, and no pad is ever empty. A map entry does not move a sound off its
+   usual note: it only adds the sound to that pad, so a sound put on a pad still plays on its home note too,
+   and only a swap takes a sound off a pad. The editor keeps the 16 map bytes as its working state and derives
+   the pads from them, so what it shows is always what the device will play. Note names use Ableton's
+   convention (60 = C3), as in the POC. */
+const DRUMPADS = { OBJ: 12, LEN: 17, SPEED_DEF: 4,
+  PAD_NOTES: [48, 49, 50, 51, 44, 45, 46, 47, 40, 41, 42, 43, 36, 37, 38, 39],
+  GM_FALLBACK: [0, 7, 2, 3, 8, 9, 4, 9, 6, 9, 5, 10, 10, 11, 10, 12],   /* notes 36..51, drums.c LANE_OF_GM */
+  KIND: ["kick", "kick", "snare", "snare", "hat", "hat", "hat", "rim", "snare", "tom", "tom", "cym", "cym", "shaker", "tom", "bell"],
+  KIND_COLOR: { kick: "#287CFF", snare: "#1ECC70", hat: "#FFC618", rim: "#FF621A", tom: "#287CFF", cym: "#FFC618", shaker: "#1ECC70", bell: "#FF621A" },
+  SPEED_LABEL: { 1: "0.25×", 2: "0.5×", 4: "1×", 8: "2×", 16: "4×" },
+  defaultObj() { const b = new Uint8Array(DRUMPADS.LEN).fill(0xFF); b[16] = DRUMPADS.SPEED_DEF; return b; },
+  ableton(n) { const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]; return NAMES[n % 12] + (Math.floor(n / 12) - 2); },
+};
+const drumPads = { obj: DRUMPADS.defaultObj(), map: new Uint8Array(16).fill(0xFF), loaded: false, dirty: false,
+  picked: null, justPicked: false, dragging: false, statusMsg: "", ui: null };
+/* DR MAP on (the device's GLO > MIDI 3 setting, as the editor last read it): lanes 1-16 in order from note 36 */
+function drumPadsDrMapOn() {
+  if (!dev || !dev.dump || !dev.gdesc) return false;
+  return !!lvGv(lvG("DR MAP", 46));
+}
+/* the sound a note plays with no map entry: DR MAP's lane, else the GM sound for the note */
+function drumPadsDefaultLane(note) {
+  return drumPadsDrMapOn() ? (note - 36) & 15 : DRUMPADS.GM_FALLBACK[note - 36];
+}
+/* the sound each pad plays, from the map bytes: the entry, or the note's default */
+function drumPadsEff() {
+  return DRUMPADS.PAD_NOTES.map((n, i) => (drumPads.map[i] !== 0xFF ? drumPads.map[i] : drumPadsDefaultLane(n)));
+}
+/* the pads as shown -> the map bytes: a pad whose sound is its default needs no byte (0xFF) */
+function drumPadsSerialize(eff) {
+  const b = new Uint8Array(16).fill(0xFF);
+  for (let i = 0; i < 16; i++) if (eff[i] !== drumPadsDefaultLane(DRUMPADS.PAD_NOTES[i])) b[i] = eff[i];
+  return b;
+}
+function drumPadsNotesOfLane(lane) {
+  return drumPadsEff().map((l, i) => (l === lane ? DRUMPADS.PAD_NOTES[i] : -1)).filter((n) => n >= 0);
+}
+function drumPadsStatus(msg) {
+  drumPads.statusMsg = msg;
+  const u = drumPads.ui;
+  if (u) u.status.textContent = msg;
+}
+async function drumPadsReadFromList(L) {
+  const it = L.items.find((x) => x.id === DRUMPADS.OBJ);
+  if (!it) {   /* the device lists object 12 only when non-default: the default map, speed 1x */
+    drumPads.obj = DRUMPADS.defaultObj();
+    if (!drumPads.dirty) drumPads.map = new Uint8Array(16).fill(0xFF);
+  } else {
+    const g = parse[CMD.BK_GET](await rq(req.bkGet(DRUMPADS.OBJ, 0, DRUMPADS.LEN), { timeout: 5000, retries: 2 }));
+    if (g.rc) throw new Error(`GET rc ${g.rc}`);
+    if (g.data.length !== DRUMPADS.LEN) throw new Error(`GET: ${g.data.length} bytes, expected ${DRUMPADS.LEN}`);
+    if (crc32(g.data) !== it.crc) throw new Error("object 12: CRC");
+    drumPads.obj = g.data.slice();
+    if (!drumPads.dirty) drumPads.map = drumPads.obj.slice(0, 16);
+  }
+  drumPads.loaded = true;
+  drumPads.statusMsg = "";
+  learnRenderSpeed();
+  drumPadsRender();
+}
+async function drumPadsRead() {
+  const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+  if (L.rc) throw new Error(`LIST rc ${L.rc}`);
+  await drumPadsReadFromList(L);
+}
+async function drumPadsWriteObj(data) {
+  let r = parse[CMD.BK_PUT](await rq(req.bkBegin(DRUMPADS.OBJ, data.length, crc32(data)), { timeout: 5000, retries: 1 }));
+  if (r.rc === 5) throw new Error("this firmware has no drum map (object 12)");
+  if (r.rc) throw new Error(`begin rc ${r.rc}`);
+  r = parse[CMD.BK_PUT](await rq(req.bkData(DRUMPADS.OBJ, 0, data), { timeout: 5000, retries: 1 }));
+  if (r.rc) throw new Error(`data rc ${r.rc}`);
+  r = parse[CMD.BK_PUT](await rq(req.bkCommit(DRUMPADS.OBJ), { timeout: 5000, retries: 0 }));
+  if (r.rc === 3) throw new Error("stop the song first, then write again");
+  if (r.rc) throw new Error(`commit rc ${r.rc}`);
+}
+/* the map (bytes 0-15 as shown, byte 16 the speed as the device has it) */
+async function drumPadsWrite() {
+  if (!drumPads.loaded) await drumPadsRead();
+  const data = new Uint8Array(DRUMPADS.LEN);
+  data.set(drumPads.map, 0);
+  data[16] = drumPads.obj[16];
+  await drumPadsWriteObj(data);
+  drumPads.dirty = false;
+  await drumPadsRead();
+  drumPadsStatus("Map written to the FM-1 and re-read to confirm.");
+}
+/* the speed only (byte 16): the map bytes are the device's own, so a held map edit is not written early */
+async function drumPadsWriteSpeed(v) {
+  if (!drumPads.loaded) await drumPadsRead();
+  const data = drumPads.obj.slice();
+  data[16] = v;
+  await drumPadsWriteObj(data);
+  drumPads.obj = data;
+  learnRenderSpeed();
+  drumPadsRender();
+  $("learnspeedstate").textContent = `Knob speed ${DRUMPADS.SPEED_LABEL[v]} saved to the FM-1.`;
+}
+function learnRenderSpeed() {
+  const s = $("learnspeed");
+  if (s) s.value = String([1, 2, 4, 8, 16].includes(drumPads.obj[16]) ? drumPads.obj[16] : DRUMPADS.SPEED_DEF);
+}
+/* a pad heard: its MIDI note on the drum track's channel (as the LIVE page's pads), so the device plays the
+   remapped sound */
+function drumPadsHear(note) {
+  if (!dev) return;
+  const tok = "dp:" + note, km = LV.kmode;
+  LV.kmode = "play";                                    /* always heard: not the LIVE page's roll / erase */
+  try { lvNoteOn(tok, 3, note, 100); } catch (e) { /* unplugged */ } finally { LV.kmode = km; }
+  setTimeout(() => lvNoteOff(tok), 180);
+  const u = drumPads.ui;
+  const d = u && u.grid.querySelector(`[data-note="${note}"]`);
+  if (d) { d.classList.add("playing"); setTimeout(() => d.classList.remove("playing"), 140); }
+}
+function drumPadsMarkPicked() {
+  const u = drumPads.ui;
+  if (!u) return;
+  u.grid.querySelectorAll(".dppad").forEach((d, i) => d.classList.toggle("picked",
+    !!(drumPads.picked && drumPads.picked.from === "pad" && drumPads.picked.idx === i)));
+  u.tray.querySelectorAll(".dpchip").forEach((c) => c.classList.toggle("picked",
+    !!(drumPads.picked && drumPads.picked.from === "tray" && drumPads.picked.lane === +c.dataset.lane)));
+}
+/* a new arrangement of the pads (an array of 16 lanes, pad order) -> the map bytes, held until written */
+function drumPadsApplyEff(eff, hearNote) {
+  const after = drumPadsSerialize(eff);
+  drumPads.picked = null;
+  if (after.join() === drumPads.map.join()) { drumPadsMarkPicked(); return; }
+  drumPads.map = after;
+  drumPads.dirty = true;
+  drumPadsStatus("Edited. Press “Write map to FM-1” to save it.");
+  drumPadsRender();
+  if (hearNote != null) drumPadsHear(hearNote);
+}
+function drumPadsDrop(src, destIdx) {
+  const eff = drumPadsEff();
+  if (src.from === "pad") {
+    if (src.idx === destIdx) return;
+    const moving = eff[src.idx], displaced = eff[destIdx];
+    eff[destIdx] = moving; eff[src.idx] = displaced;
+  } else {                                              /* from the tray: the displaced sound keeps its usual note */
+    if (eff[destIdx] === src.lane) return;
+    eff[destIdx] = src.lane;
+  }
+  drumPadsApplyEff(eff, DRUMPADS.PAD_NOTES[destIdx]);
+}
+function drumPadsRender() {
+  const box = $("drumpads");
+  if (!box) return;
+  let u = drumPads.ui;
+  if (!u) {
+    u = drumPads.ui = {};
+    u.grid = el("div", { class: "dpgrid" });
+    u.tray = el("div", { class: "dptray" });
+    u.table = el("table", { class: "dptable" });
+    u.status = el("p", { class: "dim" });
+    u.refresh = el("button", { type: "button", text: "Refresh",
+      onclick: () => op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }) });
+    u.write = el("button", { type: "button", class: "pri", text: "Write map to FM-1",
+      onclick: () => op(async () => { try { await drumPadsWrite(); } catch (e) { report(e); } }) });
+    u.reset = el("button", { type: "button", text: "Reset to default layout", onclick: () => {
+      drumPads.map = new Uint8Array(16).fill(0xFF);
+      drumPads.dirty = true;
+      drumPads.picked = null;
+      drumPadsStatus("Reset to the default layout on this page. Press “Write map to FM-1” to save it.");
+      drumPadsRender();
+    } });
+    const card = el("div", { class: "card" },
+      el("h2", { text: "Drum Pads" }),
+      el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays, as in Ableton's Drum Rack: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad still plays on its usual note too. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits." }),
+      u.grid,
+      el("h3", { text: "Off the grid" }),
+      el("p", { class: "dim", text: "Sounds on no pad of the block. Each still plays on its usual note outside the block. Drag one onto a pad, or tap it and then tap a pad." }),
+      u.tray,
+      el("p", { class: "bar" }, u.refresh, u.write, u.reset),
+      u.status,
+      el("h3", { text: "Current mapping" }),
+      u.table);
+    box.replaceChildren(card);
+  }
+  const eff = drumPadsEff();
+  u.grid.replaceChildren(...DRUMPADS.PAD_NOTES.map((note, i) => {
+    const lane = eff[i];
+    const d = el("div", { class: "dppad"
+      + (drumPads.picked && drumPads.picked.from === "pad" && drumPads.picked.idx === i ? " picked" : ""),
+      "data-note": note });
+    d.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
+    d.append(el("div", { class: "sound", text: DRUM_LANES[lane][1] }),
+      el("div", { class: "note", text: DRUMPADS.ableton(note) }),
+      el("div", { class: "midi", text: "MIDI " + note }));
+    d.draggable = true;
+    let lpTimer = 0;
+    d.addEventListener("pointerdown", () => {
+      lpTimer = setTimeout(() => {
+        if (drumPads.dragging) return;
+        drumPads.picked = { from: "pad", idx: i };
+        drumPads.justPicked = true;
+        setTimeout(() => { drumPads.justPicked = false; }, 800);
+        drumPadsMarkPicked();
+      }, 450);
+    });
+    const clearLp = () => clearTimeout(lpTimer);
+    d.addEventListener("pointerup", clearLp);
+    d.addEventListener("pointercancel", clearLp);
+    d.addEventListener("pointerleave", clearLp);
+    d.addEventListener("dragstart", (e) => {
+      clearTimeout(lpTimer);
+      drumPads.dragging = true;
+      e.dataTransfer.setData("text/plain", JSON.stringify({ from: "pad", idx: i }));
+      e.dataTransfer.effectAllowed = "move";
+    });
+    d.addEventListener("dragend", () => { drumPads.dragging = false; u.grid.querySelectorAll(".drop-target").forEach((x) => x.classList.remove("drop-target")); });
+    d.addEventListener("dragover", (e) => { e.preventDefault(); d.classList.add("drop-target"); });
+    d.addEventListener("dragleave", () => d.classList.remove("drop-target"));
+    d.addEventListener("drop", (e) => {
+      e.preventDefault();
+      d.classList.remove("drop-target");
+      try { drumPadsDrop(JSON.parse(e.dataTransfer.getData("text/plain")), i); } catch (err) { /* not a pad drag */ }
+    });
+    d.addEventListener("click", () => {
+      if (drumPads.justPicked) { drumPads.justPicked = false; return; }
+      if (drumPads.picked) {
+        if (drumPads.picked.from === "pad" && drumPads.picked.idx === i) { drumPads.picked = null; drumPadsMarkPicked(); return; }
+        drumPadsDrop(drumPads.picked, i);
+        return;
+      }
+      drumPadsHear(note);
+    });
+    return d;
+  }));
+  const onGrid = new Set(eff);
+  const chips = [];
+  DRUM_LANES.forEach(([, name], lane) => {
+    if (onGrid.has(lane)) return;
+    const c = el("div", { class: "dpchip"
+      + (drumPads.picked && drumPads.picked.from === "tray" && drumPads.picked.lane === lane ? " picked" : "") });
+    c.dataset.lane = String(lane);
+    c.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
+    c.textContent = `${name} · ${DRUMPADS.ableton(DRUM_LANES[lane][0])} (${DRUM_LANES[lane][0]})`;
+    c.draggable = true;
+    c.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ from: "tray", lane }));
+      e.dataTransfer.effectAllowed = "move";
+    });
+    c.addEventListener("dragover", (e) => e.preventDefault());
+    c.addEventListener("drop", (e) => {
+      e.preventDefault();
+      try {
+        const src = JSON.parse(e.dataTransfer.getData("text/plain"));
+        if (src.from === "pad") {   /* the chip's sound takes the pad; the pad's sound keeps its usual note */
+          const eff2 = drumPadsEff();
+          eff2[src.idx] = lane;
+          drumPadsApplyEff(eff2, DRUMPADS.PAD_NOTES[src.idx]);
+        }
+      } catch (err) { /* not a pad drag */ }
+    });
+    c.addEventListener("click", () => {
+      if (drumPads.picked && drumPads.picked.from === "tray" && drumPads.picked.lane === lane) {
+        drumPads.picked = null; drumPadsMarkPicked(); return;
+      }
+      if (drumPads.picked && drumPads.picked.from === "pad") {   /* swap: the chip's sound takes the pad */
+        const eff2 = drumPadsEff();
+        eff2[drumPads.picked.idx] = lane;
+        drumPadsApplyEff(eff2, DRUMPADS.PAD_NOTES[drumPads.picked.idx]);
+        return;
+      }
+      drumPads.picked = { from: "tray", lane };
+      drumPadsMarkPicked();
+    });
+    chips.push(c);
+  });
+  if (!chips.length) u.tray.replaceChildren(el("span", { class: "dim", text: "All 16 sounds are on the grid." }));
+  else u.tray.replaceChildren(...chips);
+  u.table.replaceChildren(
+    el("tr", {}, ...["Sound", "Note", "MIDI", "On grid"].map((h) => el("th", { text: h }))),
+    ...DRUM_LANES.map(([, name], lane) => {
+      const notes = drumPadsNotesOfLane(lane), on = notes.length > 0;
+      const show = on ? notes : [DRUM_LANES[lane][0]];
+      return el("tr", {}, el("td", { text: name }), el("td", { text: show.map(DRUMPADS.ableton).join(", ") }),
+        el("td", { text: show.join(", ") }), el("td", { text: on ? "Yes" : "Off grid" }));
+    }));
+  u.status.textContent = drumPads.statusMsg || (!dev ? "Connect the FM-1 to read the drum map."
+    : !drumPads.loaded ? "Not read yet. Press Refresh."
+    : drumPads.dirty ? "Edits held until “Write map to FM-1” is pressed."
+    : "Map matches the FM-1.");
+  u.write.disabled = !dev;
+  u.refresh.disabled = !dev;
+  u.reset.disabled = !dev;
+}
+function drumPadsBind() {
+  /* the card is built by drumPadsRender (called from renderKits); its buttons wire themselves up there */
+  drumPadsRender();
+}
 /* ---- MIDI LEARN: the 32-slot learn map (backup object 10, 72 bytes) in the Settings tab ---- */
 /* A knob turn in learn mode always maps its knob slot (K1-K4 follow the knob on any page); a button maps to
    its button; a parameter can be picked here instead. The map is backup object 10: 32 entries of 2 bytes
@@ -9856,6 +10209,7 @@ async function learnRead() {
   learnRender();
   const n = learn.entries.filter((e) => e.used).length;
   $("learnstatus").textContent = n ? `${n} of 32 slots used.` : "No bindings yet. Arm MIDI learn on the FM-1 (GLO + F#3) and turn a knob or press a button, then Refresh.";
+  try { await drumPadsReadFromList(L); } catch (e) { /* no drum map on this firmware: the speed stays at 1x */ }
 }
 async function learnWrite() {
   const data = learnObjBytes();
@@ -9981,9 +10335,15 @@ function learnBind() {
     } catch (err) { report(err); }
     e.target.value = "";
   });
+  $("learnspeed").addEventListener("change", () => op(async () => {
+    try { await drumPadsWriteSpeed(parseInt($("learnspeed").value, 10)); }
+    catch (e) { learnRenderSpeed(); report(e); }
+  }));
+  learnRenderSpeed();
 }
 
 learnBind();   /* MIDI LEARN: the Settings tab's learn card (backup object 10) */
+drumPadsBind();   /* DRUM PADS: the Kits tab's pad map (backup object 12) */
 /* (2.7) a song as one file: export it; load one (also from the LIVE page's playlist: lvSongLoad) */
 async function songExport() {
   const name = prompt(t("sfName"), "SONG " + today());
