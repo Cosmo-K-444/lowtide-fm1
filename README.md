@@ -4,11 +4,11 @@
 Free and open source (GPL-3.0), a fork of <a href="https://github.com/isod89/sloop-fm1">SLOOP</a> by isod89, based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
 
 <p align="center">
-<a href="https://cosmo-k-444.github.io/midi-lowtide-fm1/"><b>Install from the browser</b></a> ·
+<a href="https://cosmo-k-444.github.io/lowtide-fm1/"><b>Install from the browser</b></a> ·
 <a href="GUIDE.md">Complete guide</a> ·
 <a href="LOWTIDE.md">Manual</a> ·
 <a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
-<a href="https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/">Web editor</a> ·
+<a href="https://cosmo-k-444.github.io/lowtide-fm1/webapp/editor/">Web editor</a> ·
 <a href="../../releases">Releases</a> ·
 <a href="../../issues">Report a bug</a>
 </p>
@@ -275,7 +275,7 @@ Every button can glow so its label is readable on a black FM-1; the C keys or ev
 
 ### From the browser (recommended)
 
-1. Open **[the Lowtide installer](https://cosmo-k-444.github.io/midi-lowtide-fm1/)** in **Chrome or Edge** on a computer.
+1. Open **[the Lowtide installer](https://cosmo-k-444.github.io/lowtide-fm1/)** in **Chrome or Edge** on a computer.
 2. Connect the FM-1 by USB — a **data** cable, directly (no hub).
 3. Press **INSTALL**, allow MIDI access, and wait for *Done*. The FM-1 restarts on the Lowtide logo.
 
@@ -409,7 +409,7 @@ On USB the FM-1 is also an **audio input named "Felucca"**: 44.1 or 48 kHz (2.5:
 
 ## The web editor
 
-Open it from the [installer page](https://cosmo-k-444.github.io/midi-lowtide-fm1/) (or the [editor link](https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/)) in Chrome or Edge, with the FM-1 on USB, and press **Connect**. It follows the device live: turn a knob on the FM-1 and the editor moves.
+Open it from the [installer page](https://cosmo-k-444.github.io/lowtide-fm1/) (or the [editor link](https://cosmo-k-444.github.io/lowtide-fm1/webapp/editor/)) in Chrome or Edge, with the FM-1 on USB, and press **Connect**. It follows the device live: turn a knob on the FM-1 and the editor moves.
 
 **Local audio preview.** Build the browser audio engine with `python3 tools/build_preview.py`
 (Emscripten required; see [BUILDING.md](BUILDING.md#browser-audio-preview)), generate and serve the local site,
@@ -441,9 +441,9 @@ only for the current page session. This mode makes no MIDI requests and does not
 It previews the current project loop; the saved Song section order and hardware recording are not emulated.
 Audio preview requires the served site, rather than the downloaded single-file editor.
 
-**Offline (2.6).** *Download the editor* (under Connect, or on the installer page) saves the whole editor as one file for a computer, `lowtide-editor-2.6.html`, also attached to each [release](https://github.com/Cosmo-K-444/midi-lowtide-fm1/releases). Double-click it: it opens in Chrome or Edge without internet (Chrome asks once to allow MIDI) and works as the online one. Its sound library (kept in the browser) is its own, apart from the online editor's: move sounds between them with Export / Import, or a backup.
+**Offline (2.6).** *Download the editor* (under Connect, or on the installer page) saves the whole editor as one file for a computer, `lowtide-editor-2.6.html`, also attached to each [release](https://github.com/Cosmo-K-444/lowtide-fm1/releases). Double-click it: it opens in Chrome or Edge without internet (Chrome asks once to allow MIDI) and works as the online one. Its sound library (kept in the browser) is its own, apart from the online editor's: move sounds between them with Export / Import, or a backup.
 
-**As an app, also on Android (2.6).** Open the [online editor](https://cosmo-k-444.github.io/midi-lowtide-fm1/webapp/editor/) or the installer once with internet, then *Install the app* (under Connect, or on the installer page; or Chrome's menu → *Install app* / *Add to Home screen*). From then on the Lowtide app opens the editor without internet, and its link to the installer works offline too (with the firmware it installs). It stays the online site kept by the browser, so it uses the same sound library as the online editor, and it takes each new Lowtide version by itself the next time it opens online. On Android, use the app rather than the downloaded file: Chrome on Android does not allow MIDI in a downloaded file.
+**As an app, also on Android (2.6).** Open the [online editor](https://cosmo-k-444.github.io/lowtide-fm1/webapp/editor/) or the installer once with internet, then *Install the app* (under Connect, or on the installer page; or Chrome's menu → *Install app* / *Add to Home screen*). From then on the Lowtide app opens the editor without internet, and its link to the installer works offline too (with the firmware it installs). It stays the online site kept by the browser, so it uses the same sound library as the online editor, and it takes each new Lowtide version by itself the next time it opens online. On Android, use the app rather than the downloaded file: Chrome on Android does not allow MIDI in a downloaded file.
 
 - **Sound** — every parameter of the selected track, the engines and the presets; on an FM6 track the **FM6** panel: every operator, the bank, **Import / Export SysEx** (DX7 voices and banks).
 - **Sequencer** — the steps, as tiles or as a **piano roll**, and the track's length (1–64 steps); on the drum track a grid of 16 sounds × the steps, with levels and ratchets, and the kit. Click a step for its nudge, parameter locks and fill condition. **Export MIDI / Import MIDI**: the selected track as a MIDI file, and back.

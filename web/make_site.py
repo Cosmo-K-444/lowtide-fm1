@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ONLINE = "https://cosmo-k-444.github.io/midi-lowtide-fm1/"        # (the offline editor's links)
+ONLINE = "https://cosmo-k-444.github.io/lowtide-fm1/"        # (the offline editor's links)
 
 
 def offline_editor(html):
