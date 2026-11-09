@@ -121,7 +121,7 @@ try {
 
   /* (2.7) a new build keeps the firmware's name: the copy the browser kept of the build before (a server that lets it
      keep one, no service worker) is not offered as "damaged": the installer asks the server first */
-  const fw = join(site, "firmware", "sloop-2.7.fwsc"), ix = join(site, "webapp", "installer", "index.html");
+  const fw = join(site, "firmware", "lowtide-2.7.fwsc"), ix = join(site, "webapp", "installer", "index.html");
   const fw0 = readFileSync(fw), ix0 = readFileSync(ix, "utf8");
   server = spawn("python3", ["-c", `import http.server, os
 class H(http.server.SimpleHTTPRequestHandler):

@@ -283,7 +283,7 @@ Nothing to download or compile. Your projects, user presets, samples and setting
 
 ### Other ways
 
-- **Python:** the `.fwsc` of a [release](../../releases) with `python tools/fm1_install.py sloop-2.4.fwsc` (needs `pip install mido python-rtmidi`).
+- **Python:** the `.fwsc` of a [release](../../releases) with `python tools/fm1_install.py lowtide-2.4.fwsc` (needs `pip install mido python-rtmidi`).
 - **Build it yourself:** see [Building and tests](#building-and-tests); on Windows, `INSTALL-LOWTIDE.bat` builds Lowtide and opens the installer locally.
 
 ### Going back

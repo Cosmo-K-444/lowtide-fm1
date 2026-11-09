@@ -11,7 +11,7 @@ Remove-Item Env:FELUCCA_SLICE -ErrorAction SilentlyContinue
 python tools/build_windows.py --distro MinUI-Build --toolchain /root/fm1-codex-deps/jieli/toolchain --sdk build/deps/ac79 --slice 0
 if ($LASTEXITCODE -ne 0) { throw "The build failed" }
 Write-Host "== Making the installer site" -ForegroundColor Cyan
-python web/make_site.py build/felucca.fwsc 2.8.5 build/lowtide-site
+python web/make_site.py build/lowtide.fwsc 2.8.5 build/lowtide-site
 if ($LASTEXITCODE -ne 0) { throw "make_site failed" }
 Write-Host ""
 Write-Host "Installer: http://localhost:8766/webapp/installer/  (Chrome or Edge, FM-1 on USB)" -ForegroundColor Green

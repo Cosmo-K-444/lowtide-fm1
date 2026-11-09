@@ -6,7 +6,7 @@ The build makes three files in `build/`:
 | --- | --- |
 | `felucca.bin` | the firmware app |
 | `loader/ota.bin` | the update loader |
-| `felucca.fwsc` | the installable package (app + loader) |
+| `lowtide.fwsc` | the installable package (app + loader) |
 
 ## Windows (WSL)
 
@@ -50,7 +50,7 @@ On Linux x86-64 the toolchain runs natively and Docker is not needed.
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
 `./build.sh --release 0.9-beta` makes a release build: the package identity becomes
-`FM-1_909` and the version string `0.9-BETA`; the package is `build/felucca-0.9-beta.fwsc`.
+`FM-1_909` and the version string `0.9-BETA`; the package is `build/lowtide-0.9-beta.fwsc`.
 
 Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`):
 
@@ -105,7 +105,7 @@ against the same adapter compiled for the host and verify sequencing, live mixer
 
 ```sh
 # Use a release package downloaded from isod89/sloop-fm1, or your own firmware build.
-python3 web/make_site.py build/releases/sloop-2.6.fwsc 2.6 build/site
+python3 web/make_site.py build/releases/lowtide-2.6.fwsc 2.6 build/site
 python3 -m http.server 8766 --bind 127.0.0.1 --directory build/site
 ```
 
@@ -123,7 +123,7 @@ On Windows, `INSTALL-LOWTIDE.bat` builds and opens the web installer (Chrome or 
 From the command line (needs `pip3 install mido python-rtmidi`):
 
 ```
-python3 tools/fm1_install.py build/felucca.fwsc
+python3 tools/fm1_install.py build/lowtide.fwsc
 python3 tools/fm1_install.py --info          # identity of the connected FM-1
 ```
 
@@ -131,8 +131,8 @@ Or, to install your own build from the web installer, make a local copy of the s
 (Web MIDI needs a secure context):
 
 ```
-python3 web/make_site.py build/felucca.fwsc dev /tmp/felucca-site
-cd /tmp/felucca-site && python3 -m http.server 8000
+python3 web/make_site.py build/lowtide.fwsc dev /tmp/lowtide-site
+cd /tmp/lowtide-site && python3 -m http.server 8000
 # open http://localhost:8000/webapp/installer/
 ```
 

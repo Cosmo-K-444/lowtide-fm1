@@ -208,7 +208,7 @@ window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault
 (async () => {
   if (!navigator.requestMIDIAccess) { sayK("nomidi"); return; }
   try {
-    /* (2.7) never the browser's old copy: a new build keeps the file's name (sloop-2.7.fwsc), and a copy kept from the
+    /* (2.7) never the browser's old copy: a new build keeps the file's name (lowtide-2.7.fwsc), and a copy kept from the
        build before is "damaged" here. no-cache asks the server first; a mismatch is fetched once more, bypassing the cache */
     const sha = async (pkg) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", pkg))].map((b) => b.toString(16).padStart(2, "0")).join("");
     const get = async (cache) => {
