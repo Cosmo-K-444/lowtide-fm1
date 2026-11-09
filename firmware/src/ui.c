@@ -1059,6 +1059,10 @@ static struct { uint8_t on, pick, kind, trk, id; } mlu;   /* kind: 0 a track par
 static uint8_t ml_exit_pending;   /* learn just exited: say so once the mapping message is gone */
 static int32_t preset_cc_last = -1;   /* PRESETS CC: the last value heard, so the knob steps by its move */
 static int32_t track_cc_last = -1;    /* ALGORITHM CC: the last value heard, so the knob steps by its move */
+static int32_t select_cc_last = -1;   /* (2.8.5) SELECT CC: the last value heard, so the knob steps by its move */
+static int32_t preset_acc = 0;        /* (2.8.5) a PRESETS CC's fractional steps, in quarter-steps (the learned speed) */
+static int32_t track_acc = 0;         /* (2.8.5) an ALGORITHM CC's fractional steps, in quarter-steps */
+static int32_t select_acc = 0;        /* (2.8.5) a SELECT CC's fractional BPM, in quarter-BPM */
 static int32_t follow_cc_last[4] = {-1, -1, -1, -1};   /* a follower CC: the last value heard per knob slot */
 static int32_t follow_acc[4] = {0, 0, 0, 0};          /* a follower CC's fractional detents, in quarter-detents
                                                          * (2.8.2: at a slow learned-knob speed a CC unit is less
@@ -1089,13 +1093,18 @@ UI_SMALL static uint32_t ml_learn_entry(uint32_t cc, uint32_t track, uint32_t co
     for (i = 0; i < ML_N; i++)
         if (!(ml_tab[i] >> 9)) {
             ml_put(i, cc | track << 7 | code << 9);
-            /* a (re-)learned PRESETS / ALGORITHM knob starts from the value it is sent next: the last value
-             * heard for the old CC would step from a stale baseline, so the new CC looked dead */
-            if (code == ML_KNOB_PRESET)
+            /* a (re-)learned PRESETS / ALGORITHM / SELECT knob starts from the value it is sent next: the last
+             * value heard for the old CC would step from a stale baseline, so the new CC looked dead */
+            if (code == ML_KNOB_PRESET) {
                 preset_cc_last = -1;
-            else if (code == ML_KNOB_ALGO)
+                preset_acc = 0;
+            } else if (code == ML_KNOB_ALGO) {
                 track_cc_last = -1;
-            else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u) {
+                track_acc = 0;
+            } else if (code == ML_KNOB_SEL) {
+                select_cc_last = -1;
+                select_acc = 0;
+            } else if (code >= ML_KNOB_FOLLOW && code < ML_KNOB_FOLLOW + 4u) {
                 follow_cc_last[code - ML_KNOB_FOLLOW] = -1;
                 follow_acc[code - ML_KNOB_FOLLOW] = 0;   /* (2.8.2: no stale fractional detent drives the new one) */
             }
@@ -1157,6 +1166,12 @@ UI_SMALL static int ml_clear_all(void)                    /* HOME > SYSTEM > LEA
         follow_acc[i] = 0;
         follow_cc_last[i] = -1;
     }
+    preset_cc_last = -1;                        /* (2.8.5: a cleared knob starts from no baseline and no fraction) */
+    preset_acc = 0;
+    track_cc_last = -1;
+    track_acc = 0;
+    select_cc_last = -1;
+    select_acc = 0;
     if (n || dm || sp)
         settings_later = 1;                      /* (saved when quiet) */
     return (n || dm || sp) != 0u;
@@ -1305,19 +1320,22 @@ UI_SMALL static void ml_poll(void)
     ml_exit_pending = 1;
     settings_later = 1;                          /* (saved when quiet) */
 }
-/* DRUM PAD LEARN (2.8.4): the pad hit the editor armed for, carried out in the main loop (the audio block
- * only recorded it). The hit must be on the drum channel (GLO > DRUMS > CH, 10 by default): any other
- * channel is refused, and the editor says only that channel is supported; a note outside the pad block
- * (36..51) is refused too. A good hit moves the lane to that note, true-move: its old pad goes quiet.
- * Saved when quiet, as the MIDI learn map is (settings_later); the editor re-reads the map, which is
- * already the new one. The device's note name is its own (60 = C4); the editor shows Ableton's (60 = C3). */
+/* DRUM PAD LEARN (2.8.4; 2.8.5: the learn swaps two pads' notes): the pad hit the editor armed for,
+ * carried out in the main loop (the audio block only recorded it). The hit must be on the drum channel
+ * (GLO > DRUMS > CH, 10 by default): any other channel is refused, and the editor says only that channel
+ * is supported; a note outside the pad block (36..51) is refused too. A good hit swaps the notes of the
+ * armed pad and the hit pad: the armed pad's sound takes the hit note, and the sound the hit note played
+ * takes the armed pad's note — the sounds stay on their pads (an empty pad stays empty, it has no sound
+ * to move; the tray has no pad, so its sound just moves). Saved when quiet, as the MIDI learn map is
+ * (settings_later); the editor re-reads the map, which is already the new one. The device's note name is
+ * its own (60 = C4); the editor shows Ableton's (60 = C3). */
 UI_SMALL static void dp_learn_poll(void)
 {
     uint32_t lane, note, ch, exp;
     char b[24];
-    if (dp_learn_lane < 0 || !dp_learn_heard)
+    if (dp_learn_lane == -1 || !dp_learn_heard)
         return;
-    lane = (uint32_t)dp_learn_lane;
+    lane = dp_learn_lane == -2 ? 255u : (uint32_t)dp_learn_lane;   /* 255: the pad is empty, it has no sound */
     note = dp_learn_heard - 1u;
     ch = dp_learn_heard_ch;                               /* 1..16, as the editor numbers channels */
     exp = song.g[G_DRCH];                                 /* 0 = the drum channel is OFF */
@@ -1339,16 +1357,31 @@ UI_SMALL static void dp_learn_poll(void)
     } else if (note < 36u || note >= 36u + DRUM_MAP_N) {
         dp_learn_state = 4;
         ml_message("NOTE 36-51 ONLY");
+    } else if (dp_learn_from >= 0 && (int32_t)note == dp_learn_from) {
+        dp_learn_state = 2;                               /* its own note: nothing to swap */
+        if (lane == 255u) {
+            ml_message("EMPTY PAD");
+        } else {
+            str_cpy(b, LANE_NAME[lane], 10);
+            str_cpy(b + str_len(b), " > ", 4);
+            note_name(b + str_len(b), note);
+            ml_message(b);
+        }
     } else {
-        drum_map_move(lane, note);
+        drum_map_learn(dp_learn_from < 0 ? 255u : (uint32_t)dp_learn_from, lane, note);
         dp_learn_state = 2;
-        str_cpy(b, LANE_NAME[lane], 10);
-        str_cpy(b + str_len(b), " > ", 4);
-        note_name(b + str_len(b), note);
-        ml_message(b);
+        if (lane == 255u) {
+            ml_message("EMPTY PAD");
+        } else {
+            str_cpy(b, LANE_NAME[lane], 10);
+            str_cpy(b + str_len(b), " > ", 4);
+            note_name(b + str_len(b), note);
+            ml_message(b);
+        }
         settings_later = 1;                               /* (saved when quiet) */
     }
     dp_learn_lane = -1;
+    dp_learn_from = -1;
 }
 /* MIDI LEARN (2.8-midilearn): the learned PRESETS / ALGORITHM CCs, carried out in the main loop (a flash read,
  * a sound loaded). Only when the scaled index moves, so a knob sweep loads one sound per step, not per CC */
@@ -1366,14 +1399,16 @@ UI_SMALL static void ml_knob_poll(void)
             int32_t kit = (int32_t)TDRUM->p[P_E0];
             if (preset_cc_last < 0)
                 preset_cc_last = (int32_t)((kit * 127) / (DRUM_KITS - 1));
-            d = (int32_t)v - preset_cc_last;
+            preset_acc += ((int32_t)v - preset_cc_last) * (int32_t)learn_speed_q;
+            preset_cc_last = (int32_t)v;
+            d = preset_acc / 4;
             if (d) {
                 int32_t nk = kit + d;
                 if (nk < 0) nk = 0;
                 if (nk >= (int32_t)DRUM_KITS) nk = (int32_t)DRUM_KITS - 1;
                 if (nk != kit)
                     TDRUM->p[P_E0] = (int16_t)nk;
-                preset_cc_last = (int32_t)v;
+                preset_acc -= d * 4;
             }
         } else {
             total = 0;
@@ -1385,7 +1420,9 @@ UI_SMALL static void ml_knob_poll(void)
                  * from the last value heard follows the same path as the knob and always moves. */
                 if (preset_cc_last < 0)
                     preset_cc_last = (int32_t)((cur * 127u) / (total > 1u ? total - 1u : 1u));
-                d = (int32_t)v - preset_cc_last;
+                preset_acc += ((int32_t)v - preset_cc_last) * (int32_t)learn_speed_q;
+                preset_cc_last = (int32_t)v;
+                d = preset_acc / 4;
                 if (d) {
                     int32_t ni = (int32_t)cur + d;
                     if (ni < 0) ni = 0;
@@ -1394,7 +1431,7 @@ UI_SMALL static void ml_knob_poll(void)
                         preset_last = (uint32_t)ni;
                         preset_go((uint32_t)ni);
                     }
-                    preset_cc_last = (int32_t)v;
+                    preset_acc -= d * 4;
                 }
             }
         }
@@ -1406,14 +1443,40 @@ UI_SMALL static void ml_knob_poll(void)
          * CC range to cross four tracks, so it felt slow. Stepping by the delta follows the knob. */
         if (track_cc_last < 0)
             track_cc_last = (int32_t)((song.sel * 127u) / (NTRK - 1u));
-        d = (int32_t)v - track_cc_last;
+        track_acc += ((int32_t)v - track_cc_last) * (int32_t)learn_speed_q;
+        track_cc_last = (int32_t)v;
+        d = track_acc / 4;
         if (d) {
             int32_t ni = (int32_t)song.sel + d;
             if (ni < 0) ni = 0;
             if (ni >= (int32_t)NTRK) ni = (int32_t)NTRK - 1;
             if ((uint32_t)ni != song.sel)
                 track_select((uint32_t)ni);
-            track_cc_last = (int32_t)v;
+            track_acc -= d * 4;
+        }
+    }
+    if (ml_select_cc) {
+        v = ml_select_cc - 1u;
+        ml_select_cc = 0;
+        /* (2.8.5) SELECT steps the tempo by the CC's move, scaled like the followers: the old code set the
+         * tempo absolutely from the CC, so a knob could only reach 40 BPM at CC 0 and 240 at CC 127 and
+         * jumped to the value the CC said. Stepping from the current tempo by the move keeps the knob's
+         * position and scales with the learned-knob speed: at 1x one CC unit moves one BPM, at 0.5x two
+         * move one, at 2x one moves two. At most 8 BPM a frame, the rest carried. */
+        if (select_cc_last < 0)
+            select_cc_last = (int32_t)((((int32_t)song.g[G_BPM] - (int32_t)GP[G_BPM].min) * 127)
+                / ((int32_t)GP[G_BPM].max - (int32_t)GP[G_BPM].min));
+        select_acc += ((int32_t)v - select_cc_last) * (int32_t)learn_speed_q;
+        select_cc_last = (int32_t)v;
+        d = select_acc / 4;
+        if (d > 8) d = 8;
+        else if (d < -8) d = -8;
+        if (d) {
+            int32_t nb = (int32_t)song.g[G_BPM] + d;
+            if (nb < (int32_t)GP[G_BPM].min) nb = (int32_t)GP[G_BPM].min;
+            if (nb > (int32_t)GP[G_BPM].max) nb = (int32_t)GP[G_BPM].max;
+            song.g[G_BPM] = (int16_t)nb;
+            select_acc -= d * 4;
         }
     }
     /* a knob follower (2.8-learnfix6): the CC's move turns the knob slot on the current page, as if the
@@ -1421,8 +1484,9 @@ UI_SMALL static void ml_knob_poll(void)
      * sweep does not jump the parameter in one go. (2.8.2) The learned-knob speed (seq.c learn_speed_q, in
      * quarters: 1 0.25x, 2 0.5x, 4 1x, 8 2x, 16 4x) scales the move through a fixed-point accumulator in
      * quarter-detents, so the fractions are kept at slow speeds: at 0.5x two CC units move one detent, at
-     * 2x one CC unit moves two. At 1x this is the old 1:1 move, remainder carried. PRESETS / ALGORITHM,
-     * VOLUME and SELECT are not scaled: they step through discrete presets, tracks, or a level. */
+     * 2x one CC unit moves two. At 1x this is the old 1:1 move, remainder carried. (2.8.5) PRESETS,
+     * ALGORITHM and SELECT scale the same way, through their own accumulators; VOLUME is not scaled — it
+     * sets the level absolutely, as its CC does. */
     for (k = 0; k < 4u; k++) {
         if (!ml_follow_cc[k])
             continue;

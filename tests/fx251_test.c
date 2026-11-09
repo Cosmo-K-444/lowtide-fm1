@@ -362,8 +362,10 @@ static void t_learn(void)
     cc_in(5, 21, 64);                                 /* VOLUME to mid */
     check(ed_master == (uint8_t)((64u * 126u / 127u) + 1u), "MIDI LEARN: CC 21 (learned) sets the master level");
     song.g[G_BPM] = 90;
-    cc_in(5, 22, 127);                                /* SELECT to the top: BPM 240 */
-    check(song.g[G_BPM] == 240, "MIDI LEARN: CC 22 (learned) sets the tempo to 240");
+    ml_select_cc = 0;
+    cc_in(5, 22, 127);                                /* SELECT: a request for the main loop (2.8.5: delta, not absolute) */
+    check(ml_select_cc == 128u && song.g[G_BPM] == 90,
+          "MIDI LEARN: CC 22 (learned) asks the main loop for a tempo step (the tempo moves in ml_knob_poll)");
     ml_preset_cc = 0, ml_track_cc = 0;
     cc_in(5, 23, 100);                                /* PRESETS: a request for the main loop */
     check(ml_preset_cc == 101u, "MIDI LEARN: CC 23 (learned) asks the main loop for a preset");
@@ -944,32 +946,107 @@ static void t_drmap_remap(void)
             check(pen_lane == 99u && !any, "DRUM REMAP: a silenced note's note-off is a no-op (no hit, no stuck voice)");
         }
     }
-    {   /* (2.8.4) DRUM PAD LEARN: drum_map_move — the lane moves to the note, its old pad goes quiet */
+    {   /* (2.8.5) DRUM PAD LEARN: drum_map_learn — the learn swaps two pads' notes; the sounds stay on
+         * their pads. Only the two pads change; a multi-note lane keeps its other pads. */
         setup();
         mi_r = mi_w;
         song.g[G_ROUTE] = 0;
         dch = (uint32_t)song.g[G_DRCH] - 1u;
         dm_clear();
         song.g[G_DRMAP] = 0;
-        drum_map_move(0, 48);                               /* KICK (lane 0) to pad 48 */
-        check(drum_map[0] == 0xFFu && drum_map[12] == 0u,
-              "DRUM PAD LEARN: drum_map_move puts the lane on its new note and clears the old one");
+        drum_map_learn(36, 0, 48);                            /* KICK (pad 36) learns note 48 (HI TOM) */
+        check(drum_map[0] == 10u && drum_map[12] == 0u && drum_map[11] == 10u && drum_map[14] == 10u,
+              "DRUM PAD LEARN: the learn swaps the two pads' notes, and HI TOM keeps its other pads");
         pen_lane = 99;
         note_in(dch, 48, 100);
         note_in(dch, 48, 0);
-        check(pen_lane == 0u, "DRUM PAD LEARN: the moved lane plays on its new pad (note 48 -> KICK)");
-        pen_lane = 99;                                      /* its old note goes silent */
+        check(pen_lane == 0u, "DRUM PAD LEARN: the armed pad's sound plays on its new note (note 48 -> KICK)");
+        pen_lane = 99;                                        /* the hit note's sound takes the old note */
         note_in(dch, 36, 100);
         note_in(dch, 36, 0);
-        check(pen_lane == 99u, "DRUM PAD LEARN: the moved lane no longer plays on its old pad (note 36 silent)");
-        drum_map[0] = 10; drum_map[12] = 10;                /* HI TOM on two pads (a deliberate copy) */
-        drum_map_move(10, 40);                              /* ... to pad 40: both old pads cleared */
-        check(drum_map[0] == 0xFFu && drum_map[12] == 0xFFu && drum_map[4] == 10u,
-              "DRUM PAD LEARN: drum_map_move clears every old pad of a copied lane");
-        drum_map_move(10, 40);                              /* the same note again: nothing changes */
-        check(drum_map[4] == 10u, "DRUM PAD LEARN: drum_map_move to the note it is already on keeps it");
-        drum_map_move(10, 60);                              /* outside the block: the lane leaves the map */
-        check(drum_map[4] == 0xFFu, "DRUM PAD LEARN: drum_map_move outside 36..51 sets no byte");
+        check(pen_lane == 10u, "DRUM PAD LEARN: the hit note's sound takes the armed pad's old note (note 36 -> HI TOM)");
+        dm_clear();                                           /* (a) the brief's tom case: G1 (LOW TOM) learns C1 */
+        drum_map_learn(43, 9, 36);
+        check(drum_map[0] == 9u && drum_map[7] == 0u && drum_map[5] == 9u && drum_map[9] == 9u,
+              "DRUM PAD LEARN: learning G1 (LOW TOM) to C1 leaves F1 and A1 playing LOW TOM");
+        pen_lane = 99;
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        check(pen_lane == 9u, "DRUM PAD LEARN: C1 plays LOW TOM after the learn");
+        pen_lane = 99;
+        note_in(dch, 43, 100);
+        note_in(dch, 43, 0);
+        check(pen_lane == 0u, "DRUM PAD LEARN: G1 plays KICK after the learn");
+        pen_lane = 99;
+        note_in(dch, 41, 100);
+        note_in(dch, 41, 0);
+        check(pen_lane == 9u, "DRUM PAD LEARN: F1 still plays LOW TOM after the learn");
+        pen_lane = 99;
+        note_in(dch, 45, 100);
+        note_in(dch, 45, 0);
+        check(pen_lane == 9u, "DRUM PAD LEARN: A1 still plays LOW TOM after the learn");
+        {   /* (b) an empty pad learns a note: the empty pad takes the note and stays empty; the sound from
+             * the hit note takes the empty pad's old note */
+            dm_clear();
+            drum_map[12] = 10;                                /* HI TOM on pad 48: pads 47 and 50 are empty */
+            drum_map_learn(47, 255, 48);
+            check(drum_map[11] == 10u && drum_map[12] == 0xFFu && drum_map[14] == 0xFFu,
+                  "DRUM PAD LEARN: an empty pad learns a note and stays empty, the hit sound takes its old note");
+            pen_lane = 99;
+            note_in(dch, 47, 100);
+            note_in(dch, 47, 0);
+            check(pen_lane == 10u, "DRUM PAD LEARN: the hit sound plays on the empty pad's old note (note 47 -> HI TOM)");
+            pen_lane = 99;                                    /* the empty pad's new note is silent */
+            note_in(dch, 48, 100);
+            note_in(dch, 48, 0);
+            check(pen_lane == 99u, "DRUM PAD LEARN: the empty pad's new note plays nothing (note 48 silent)");
+        }
+        {   /* (c) a filled pad learns an empty pad's note: the same swap, armed from the other side */
+            dm_clear();
+            drum_map[12] = 10;                                /* HI TOM on pad 48: pad 47 is empty */
+            drum_map_learn(48, 10, 47);
+            check(drum_map[11] == 10u && drum_map[12] == 0xFFu,
+                  "DRUM PAD LEARN: a filled pad learns an empty pad's note (the sound takes the empty note)");
+            pen_lane = 99;
+            note_in(dch, 47, 100);
+            note_in(dch, 47, 0);
+            check(pen_lane == 10u, "DRUM PAD LEARN: the filled pad's sound plays on the empty note (note 47 -> HI TOM)");
+            pen_lane = 99;
+            note_in(dch, 48, 100);
+            note_in(dch, 48, 0);
+            check(pen_lane == 99u, "DRUM PAD LEARN: the filled pad's old note is silent after the learn (note 48 silent)");
+        }
+        dm_clear();                                           /* its own note: nothing to swap */
+        drum_map_learn(36, 0, 36);
+        check(drum_map[0] == 0xFFu, "DRUM PAD LEARN: learning a pad to its own note changes nothing");
+        drum_map_learn(255, 15, 36);                          /* the tray (no pad): the sound just moves */
+        check(drum_map[0] == 15u, "DRUM PAD LEARN: a tray sound moves to the hit note");
+        pen_lane = 99;
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        check(pen_lane == 15u, "DRUM PAD LEARN: the tray sound plays on the hit note (note 36 -> COWBELL)");
+    }
+    {   /* (2.8.5) DRUM TRIG: a live MIDI drum hit is recorded for the editor (Last triggered, pad flash) */
+        setup();
+        mi_r = mi_w;
+        song.g[G_ROUTE] = 0;
+        dch = (uint32_t)song.g[G_DRCH] - 1u;
+        dm_clear();
+        song.g[G_DRMAP] = 0;
+        drum_trig_pending = 0;
+        note_in(dch, 36, 100);
+        note_in(dch, 36, 0);
+        check(drum_trig_pending == 1u && drum_trig_note == 36u && drum_trig_ch == 10u && drum_trig_vel == 100u && drum_trig_lane == 0u,
+              "DRUM TRIG: a live MIDI drum note is recorded with its note, channel, velocity and lane");
+        drum_trig_pending = 0;
+        note_in(dch, 36, 0);                                 /* a note-off records nothing */
+        check(drum_trig_pending == 0u, "DRUM TRIG: a note-off records nothing");
+        drum_map[0] = 10;                                    /* HI TOM on 36: note 50 (D2) is silent now */
+        drum_trig_pending = 0;
+        pen_lane = 99;
+        note_in(dch, 50, 100);
+        note_in(dch, 50, 0);
+        check(pen_lane == 99u && drum_trig_pending == 0u, "DRUM TRIG: a silent pad records nothing");
     }
     dm_clear();
     render(8);

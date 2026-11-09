@@ -491,11 +491,10 @@
   .dppad.empty .sound { color: var(--s3); font-weight: 400; }
   .dppad .sound { font-size: 17px; font-weight: 700; text-align: center; line-height: 1.15; padding: 0 4px; color: var(--c, var(--fg2)); text-transform: uppercase; }
   .dppad .note { font-size: 14px; color: var(--fg2); }
-  .dppad .midi { font-size: 12px; color: var(--dim); }
   .dppad.silent { border-style: dashed; }
   .dppad.silent .sound { color: var(--dim); font-weight: 400; }
   .dppad.playing { background: var(--c, var(--t4)); border-color: var(--c, var(--t4)); }
-  .dppad.playing .sound, .dppad.playing .note, .dppad.playing .midi { color: #000; }
+  .dppad.playing .sound, .dppad.playing .note { color: #000; }
   .dppad.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }
   .dppad.drop-target { outline: 2px solid var(--fg); outline-offset: -2px; }
   .dppad .dplearn { font-size: 11px; padding: 2px 8px; margin-top: 2px; }
@@ -1198,7 +1197,7 @@
           <option value="1">0.25×</option><option value="2">0.5×</option>
           <option value="4" selected>1×</option><option value="8">2×</option><option value="16">4×</option>
         </select>
-        <span class="dim">How fast a learned CC turns a K1–K4 knob follower. It does not affect Volume, Select, Presets or Algorithm.</span></p>
+        <span class="dim">How fast a learned CC turns a knob: K1–K4 knob followers, and the Select (tempo), Presets and Algorithm knobs. Volume is not affected — it sets the level absolutely, as its CC does.</span></p>
         <p class="dim" id="learnspeedstate"></p>
         <table id="learntable"></table>
         <p class="dim" id="learnmonitor">No CC heard yet.</p>
@@ -1286,7 +1285,8 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71,    /* v9 (SLOOP 2.4): the FM6 engine's patches (Felucca 1.0's numbers) */
   DSYN_LIST: 72, DSYN_GET: 73, DSYN_PUT: 74, DSYN_STORE: 75, DSYN_PLAY: 76,   /* v10 (SLOOP 2.5): the SYN drum kits */
   LIVE: 77,                                           /* v12 (SLOOP 2.7): the LIVE page (firmware editor_live.c) */
-  DP_LEARN: 78 };                                      /* v13 (Lowtide 2.8.4): the drum-pad MIDI learn */
+  DP_LEARN: 78,                                        /* v13 (Lowtide 2.8.4): the drum-pad MIDI learn */
+  DRUM_TRIG: 79 };                                      /* v14 (Lowtide 2.8.5): the last live drum hit */
 /* v12: LIVE ops (firmware editor_live.c) and the layers its keys reach (seq.c LY_*: 5 SEL, 6 GLO, 7 SAVE) */
 const LIVE = { STATE: 0, PLAY: 1, KEY: 2, FX: 3, REC: 4, UNDO: 5, LY_KEY: 5, LY_MIX: 6, LY_SONG: 7, NFX: 27,
   /* (2.7) the page's own (editor_live.c 6..12): ROLL and ERASE while held, the pattern's tools, a chain of sections, THROW,
@@ -1392,7 +1392,7 @@ const FC = { NORM: 0, FILL: 1, NOFILL: 2, NAMES: ["normal", "fill only", "no fil
 const fillGet = (bytes, i) => ((bytes[i >> 2] || 0) >> (2 * (i & 3))) & 3;
 const fillSet = (bytes, i, c) => { bytes[i >> 2] = (bytes[i >> 2] & ~(3 << (2 * (i & 3)))) | ((c & 3) << (2 * (i & 3))); };
 /* frames the device sends on its own (while WATCH is on); never replies */
-const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED]);
+const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED, CMD.DRUM_TRIG]);   /* (2.8.5) DRUM_TRIG only: DP_LEARN is a request/reply, polled by the editor — in this set its replies would be swallowed as pushes and every arm/poll would time out */
 /* user preset bank: name 1..12 printable ASCII, a 16-step pattern of (note, flags 1 acc 2 slide 4 tie) */
 const UP = { NAME_MAX: 12, PAT: 16, LIST_MAX: 16 };
 const F = { INT: 0, PCT: 1, BIPCT: 2, TIME: 3, LFOHZ: 4, CUTOFF: 5, DB: 6, SEMI: 7, ENUM: 8, BPM: 9, NOTE: 10, ONOFF: 11, OCT: 12, STEPS: 13,
@@ -1621,10 +1621,16 @@ const parse = {
   [CMD.DSYN_STORE](a) { return { rc: a[0] }; },
   [CMD.DSYN_PLAY](a) { return { k: a[0], lane: a[1], rc: a[2] }; },
   /* v13: the drum-pad MIDI learn (2.8.4): sub 0 arm (lane), 1 cancel, 2 query; result 0 idle, 1 waiting,
-     2 done, 3 wrong channel (or the drum channel OFF, expected 0), 4 note outside 36..51, 5 bad lane */
+     2 done, 3 wrong channel (or the drum channel OFF, expected 0), 4 note outside 36..51, 5 bad lane.
+     v14 (2.8.5): the arm carries the pad's note and the pad's sound [note, lane] (255: no pad / no sound) */
   [CMD.DP_LEARN](a) {
     const r = new Reader(a);
     return { sub: r.b(), result: r.b(), lane: r.b(), note: r.b(), ch: r.b(), expected: r.b() };
+  },
+  /* v14 (2.8.5): the last live drum hit (a push): note, channel, velocity, lane */
+  [CMD.DRUM_TRIG](a) {
+    const r = new Reader(a);
+    return { note: r.b(), ch: r.b(), vel: r.b(), lane: r.b() };
   },
 };
 
@@ -1710,8 +1716,11 @@ const req = {
   dsynPlay: (k, lane, vel = 110) => [CMD.DSYN_PLAY, [k & 0x7F, lane & 0x7F, Math.max(1, Math.min(127, vel | 0))]],
   /* v12: LIVE op [, args]: every reply is the live state (parse[CMD.LIVE]) */
   live: (op, ...args) => [CMD.LIVE, [op & 0x7F, ...(args.length ? args : [0]).map((x) => x & 0x7F)]],
-  /* v13: the drum-pad MIDI learn (2.8.4): sub 0 arm (lane), 1 cancel, 2 query */
-  dpLearn: (sub, lane) => [CMD.DP_LEARN, [sub & 0x7F, (lane ?? 0) & 0x7F]],
+  /* v13: the drum-pad MIDI learn (2.8.4): sub 0 arm (lane), 1 cancel, 2 query. v14 (2.8.5): the arm
+     * carries the pad's note and the pad's sound — dpLearn(0, note, lane); a v13 device still takes the
+     * old one-argument arm dpLearn(0, lane). A note of 127 means no pad (the tray); a lane of 127 means
+     * the pad is empty, it has no sound. */
+  dpLearn: (sub, a, b) => [CMD.DP_LEARN, b == null ? [sub & 0x7F, (a ?? 0) & 0x7F] : [sub & 0x7F, (a ?? 0) & 0x7F, (b ?? 0) & 0x7F]],
 };
 
 /* which reply belongs to which request (the device echoes these) */
@@ -3049,7 +3058,7 @@ function makeMockDevice(opt = {}) {
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
-  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : 13;   /* INFO's protocol */
+  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : 14;   /* INFO's protocol */
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -3231,7 +3240,7 @@ function makeMockDevice(opt = {}) {
     dsyn: null, dsynStored: null, dsynPlayed: [],  /* v10: the SYN kits (RAM, flash), the auditions heard */
     ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 32 x 2 bytes), null: none */
     drumMap: null,                                  /* the drum map + knob speed (object 12, 17 bytes), null: the default */
-    dpLearn: { lane: -1, laneR: 127, state: 0, note: 0, ch: 0, expected: 10 },   /* v13: the drum-pad MIDI learn */
+    dpLearn: { lane: -1, from: -1, laneR: 127, state: 0, note: 0, ch: 0, expected: 10 },   /* v13: the drum-pad MIDI learn; v14 (2.8.5) also arms the pad's note */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
     /* v12 (LIVE): the transport's start, the sections (A..D: playing, asked for at a time), song mode, SONG REC, fills,
@@ -3781,15 +3790,22 @@ function makeMockDevice(opt = {}) {
       }
       case CMD.DP_LEARN: {                              /* v13 (2.8.4): the drum-pad MIDI learn */
         if (mockProto < 13) return null;
-        const L = st.dpLearn, sub = a[0], lane = a.length > 1 ? a[1] : 127;
+        const L = st.dpLearn, sub = a[0];
         if (sub === 0) {
-          if (lane >= 16) { b(0); b(5); b(127); b(0); b(0); b(0); }
-          else {
-            L.lane = lane; L.laneR = lane; L.state = 1; L.note = 0; L.ch = 0; L.expected = st.g[24];
+          /* v14 (2.8.5): the arm carries the pad's note and the pad's sound [note, lane]; a v13 device
+           * still takes the old one-argument arm [lane]. An old editor's arm has no note to learn on.
+           * 127 is the sentinel (no pad / no sound): a SysEx data byte is 7 bit, so 255 never arrives. */
+          let note, lane;
+          if (mockProto >= 14) { note = a.length > 1 ? a[1] : 127; lane = a.length > 2 ? a[2] : 127; }
+          else { note = 127; lane = a.length > 1 ? a[1] : 127; }
+          if ((mockProto >= 14 && a.length < 3) || (note !== 127 && (note < 36 || note > 51)) || (lane !== 127 && lane >= 16)) {
+            b(0); b(5); b(127); b(0); b(0); b(0);
+          } else {
+            L.from = note === 127 ? -1 : note; L.lane = lane === 127 ? -2 : lane; L.laneR = lane; L.state = 1; L.note = 0; L.ch = 0; L.expected = st.g[24];
             b(0); b(1); b(lane); b(0); b(0); b(L.expected);
           }
         } else if (sub === 1) {
-          L.lane = -1; L.laneR = 127; L.state = 0; L.note = 0; L.ch = 0; L.expected = 0;
+          L.lane = -1; L.from = -1; L.laneR = 127; L.state = 0; L.note = 0; L.ch = 0; L.expected = 0;
           b(1); b(0); b(127); b(0); b(0); b(0);
         } else if (sub === 2) {
           b(2); b(L.state); b(L.laneR); b(L.note); b(L.ch); b(L.expected);
@@ -3938,6 +3954,24 @@ function makeMockDevice(opt = {}) {
     return true;
   }
   const reloadPush = () => push(CMD.RELOAD, opt.legacy ? [st.engine, st.preset] : [engOf(st.tracks[st.sel]), st.preset, st.sel]);
+  /* (2.8.5) the drum map as the editor shows it, in PAD_NOTES order (the firmware's midi_drum_lane), and
+   * back to map bytes (the editor's drumPadsSerialize): the mock's drum-pad learn and drum trigger need
+   * the same rule as the firmware, and the mock cannot see the editor's helpers (they live in the UI
+   * section, after this mock). */
+  const DP_NOTES = [48, 49, 50, 51, 44, 45, 46, 47, 40, 41, 42, 43, 36, 37, 38, 39];
+  const dpDef = (n) => st.g[46] ? (n - 36) & 15 : LANE_OF_GM[n - 35];
+  const dpEff = (map) => DP_NOTES.map((n) => {
+    const m = map[n - 36];
+    if (m !== 0xFF) return m;
+    const d = dpDef(n);
+    return [...map].includes(d) ? 255 : d;
+  });
+  const dpSerialize = (eff) => {
+    const b = new Uint8Array(16).fill(0xFF), moved = new Set(), need = new Set();
+    for (let i = 0; i < 16; i++) { const n = DP_NOTES[i], d = dpDef(n); if (eff[i] === 255) need.add(d); else if (eff[i] !== d) moved.add(eff[i]); }
+    for (let i = 0; i < 16; i++) { const n = DP_NOTES[i]; if (eff[i] !== 255 && (eff[i] !== dpDef(n) || moved.has(eff[i]) || need.has(eff[i]))) b[n - 36] = eff[i]; }
+    return b;
+  };
   /* things done on the device itself */
   const sim = {
     knob(id = [9, 33, 35, P_E0 + 4][Math.floor(Math.random() * 4)], dv = Math.random() < 0.5 ? -4 : 4) {
@@ -3989,25 +4023,47 @@ function makeMockDevice(opt = {}) {
     arm(i = st.sel) { st.rec ^= 1 << i; return (st.rec >> i) & 1; },
     /* a pad hit on the FM-1's MIDI in, while a drum-pad learn is armed (v13): the firmware's capture
        (seq.c events_block) + the main loop's move (ui.c dp_learn_poll). The hit's channel must be the
-       drum channel (GLO > DRUMS > CH, st.g[24], 10 by default); a good hit moves the lane to that note,
-       true-move, in the drum map (object 12). Returns the result (0 not armed, 1 waiting, 2 done,
+       drum channel (GLO > DRUMS > CH, st.g[24], 10 by default). (2.8.5, protocol v14) A good hit swaps
+       the two pads' notes — the armed pad's sound takes the hit note, the hit note's sound takes the
+       armed pad's note; an empty pad stays empty, and a tray sound just moves. On a v13 device the
+       old lane-move still applies. Returns the result (0 not armed, 1 waiting, 2 done,
        3 wrong channel, 4 outside 36..51). */
     dpLearnHit(note, ch = 10) {
       const L = st.dpLearn;
-      if (L.lane < 0 || L.state !== 1) return 0;
+      if (L.state !== 1) return 0;
       const exp = st.g[24];
       L.note = note & 0x7F; L.ch = ch; L.expected = exp;
       if (!exp || ch !== exp) L.state = 3;
       else if (note < 36 || note > 51) L.state = 4;
       else {
         if (!st.drumMap) { st.drumMap = new Uint8Array(17).fill(0xFF); st.drumMap[16] = 4; }
-        for (let k = 0; k < 16; k++) if (st.drumMap[k] === L.lane) st.drumMap[k] = 0xFF;
-        st.drumMap[note - 36] = L.lane;
+        if (mockProto >= 14) {
+          const eff = dpEff(st.drumMap);
+          const iP = L.from >= 36 ? DP_NOTES.indexOf(L.from) : -1, iX = DP_NOTES.indexOf(note);
+          if (iP >= 0 && iX >= 0) { const t = eff[iP]; eff[iP] = eff[iX]; eff[iX] = t; }
+          else if (iX >= 0) eff[iX] = L.lane === -2 ? 255 : L.lane;   /* the tray: the sound just moves */
+          st.drumMap.set(dpSerialize(eff), 0);
+        } else {
+          for (let k = 0; k < 16; k++) if (st.drumMap[k] === L.lane) st.drumMap[k] = 0xFF;
+          st.drumMap[note - 36] = L.lane;
+        }
         L.state = 2;
       }
-      L.laneR = L.lane;
-      L.lane = -1;
+      L.laneR = L.lane === -2 ? 255 : L.lane;
+      L.lane = -1; L.from = -1;
       return L.state;
+    },
+    /* (2.8.5, protocol v14) a live drum hit on the FM-1's MIDI in: the firmware pushes DRUM_TRIG while
+       the editor WATCHes. A v13 device never sends it (returns false). A silent pad sends nothing (the
+       firmware records nothing). The lane is the sound the note plays on the device as it is now. */
+    drumTrig(note, ch = 10, vel = 100) {
+      if (mockProto < 14) return false;
+      if (!st.drumMap) { st.drumMap = new Uint8Array(17).fill(0xFF); st.drumMap[16] = 4; }
+      let lane;
+      if (note >= 36 && note <= 51) lane = dpEff(st.drumMap)[DP_NOTES.indexOf(note)];
+      else { const d = LANE_OF_GM[note - 35]; lane = d == null || [...st.drumMap].includes(d) ? 255 : d; }
+      if (lane == null || lane === 255) return false;
+      return push(CMD.DRUM_TRIG, [note & 0x7F, ch & 0x7F, vel & 0x7F, lane]);
     },
     step(i = Math.floor(Math.random() * 16)) {
       const x = st.step[i];
@@ -8226,6 +8282,7 @@ function renderKits() {
     u.zip = el("button", { ic: "symbol_download", onclick: kitZip }, t("kitZip"));
     u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; renderKits(); } }, t("kitClear"));
     const grid = el("div", { class: "pads" });
+    u.grid = grid;   /* (2.8.5) the builder's grid, so renderKits can order it by the Drum Pads layout */
     for (let l = 0; l < 16; l++) {
       const pu = {};
       pu.box = el("div", { class: "pad", "data-l": l });
@@ -8297,6 +8354,11 @@ function renderKits() {
   setLabel(u.use, t("kitUse").replace("{x}", kitDest()));
   u.where.textContent = t("kitWhereFM1").replace("{x}", kitDest());
   for (let l = 0; l < 16; l++) kitPadUpdate(l);
+  /* (2.8.5) the sounds follow the Drum Pads layout: a sound sits at the position of the pad that plays
+     it, not in the original sound order — when a sound is remapped, the builder shows it at its new pad.
+     Only the order changes: the pads stay lane-bound (kitZones, the WAV drop, the click-to-load). */
+  u.grid.append(...[...Array(16).keys()].sort((a, b) => kitLaneGridPos(a) - kitLaneGridPos(b) || a - b)
+    .map((l) => u.pads[l].box));
   kitMeter();
 }
 function kitPadUpdate(l) {
@@ -8304,9 +8366,9 @@ function kitPadUpdate(l) {
   if (!pu) return;
   pu.empty.hidden = !!p;
   pu.cv.hidden = pu.fn.hidden = pu.ctrls.hidden = pu.acts.hidden = !p;
-  /* (2.8.4) the note that plays this sound, from the drum map — not its home note when it moved. The
-     pads stay in sound order (the builder assigns samples to sounds); only the note shown follows the
-     remap. The home note is the tooltip when the sound moved. */
+  /* (2.8.4) the note that plays this sound, from the drum map — not its home note when it moved. (2.8.5)
+     the pads also follow the Drum Pads layout (renderKits orders them by kitLaneGridPos); the home note
+     is the tooltip when the sound moved. */
   pu.key.textContent = kitLaneLabel(l);
   const home = DRUM_LANES[l];
   pu.key.title = kitLaneNotes(l).join() === home.join() ? ""
@@ -9134,6 +9196,10 @@ function onPush(f) {
       else if (c.id === P.LEVEL && !drumTrack(c.track)) { if (!mixTouched("lv", c.track)) x.level = c.value; }
       else return;
       updateStrip(c.track);
+    } else if (f.cmd === CMD.DRUM_TRIG) {           /* v14 (2.8.5): a live drum hit (MIDI or a device key) */
+      const c = parse[CMD.DRUM_TRIG](f.a);
+      drumPadsTriggered({ ch: c.ch, note: c.note, vel: c.vel, lane: c.lane });
+      drumPadsFlash(c.note, c.lane);
     }
   } catch (e) { console.warn("bad push", f, e); }
 }
@@ -9934,7 +10000,7 @@ const DRUMPADS = { OBJ: 12, LEN: 17, SILENT: 255, SPEED_DEF: 4,
 const drumPads = { obj: DRUMPADS.defaultObj(), map: new Uint8Array(16).fill(0xFF), loaded: false, dirty: false,
   picked: null, justPicked: false, dragging: false, statusMsg: "", ui: null,
   kit: -1, kitNamesUsed: null, kitNamesTried: false, trigMsg: "",
-  learn: -1, learnTimer: null, learnAt: 0 };   /* (2.8.4) the drum-pad MIDI learn: the lane armed, its poll timer */
+  learn: -1, learnFrom: -1, learnTimer: null, learnAt: 0 };   /* (2.8.4) the drum-pad MIDI learn: the lane armed, its poll timer; (2.8.5) learnFrom: the armed pad's note, -1 = no pad (the tray) */
 const dpLearnOk = () => !!dev && !!dev.info && dev.info.proto >= 13;   /* the drum-pad MIDI learn needs protocol v13 */
 /* DR MAP on (the device's GLO > MIDI 3 setting, as the editor last read it): lanes 1-16 in order from note 36 */
 function drumPadsDrMapOn() {
@@ -9957,18 +10023,54 @@ function drumPadsEff() {
     return drumPads.map.includes(d) ? DRUMPADS.SILENT : d;
   });
 }
-/* the pads as shown -> the map bytes: a pad whose sound is its default needs no byte (0xFF); a silent pad
-   needs none either (its sound lives on another pad). Bytes are per note, as the device stores them. */
+/* the pads as shown -> the map bytes: a pad whose sound is not its default needs a byte; a silent pad
+   needs none (its sound lives on another pad). A pad whose sound IS its default needs a byte too when
+   that sound sits on another pad as well (a multi-note lane: the tom's other pads) or when some silent
+   pad needs the sound taken to stay silent — otherwise the firmware's true-move rule silences a pad
+   that should still play, or a silent pad starts playing its sound again. Bytes are per note, as the
+   device stores them. The firmware's drum_map_from_eff follows the same rule, so both write the same
+   bytes for the same layout. */
 function drumPadsSerialize(eff) {
   const b = new Uint8Array(16).fill(0xFF);
+  const moved = new Set(), need = new Set();   /* lanes on a non-default pad / lanes a silent pad needs taken */
+  for (let i = 0; i < 16; i++) {
+    const n = DRUMPADS.PAD_NOTES[i], d = drumPadsDefaultLane(n);
+    if (eff[i] === DRUMPADS.SILENT) need.add(d);
+    else if (eff[i] !== d) moved.add(eff[i]);
+  }
   for (let i = 0; i < 16; i++) {
     const n = DRUMPADS.PAD_NOTES[i];
-    if (eff[i] !== DRUMPADS.SILENT && eff[i] !== drumPadsDefaultLane(n)) b[n - 36] = eff[i];
+    if (eff[i] !== DRUMPADS.SILENT && (eff[i] !== drumPadsDefaultLane(n) || moved.has(eff[i]) || need.has(eff[i])))
+      b[n - 36] = eff[i];
   }
   return b;
 }
 function drumPadsNotesOfLane(lane) {
   return drumPadsEff().map((l, i) => (l === lane ? DRUMPADS.PAD_NOTES[i] : -1)).filter((n) => n >= 0);
+}
+/* the drum pad mapping as a file: 16 entries in PAD_NOTES order, each the sound and the note it plays.
+ * The note is the MIDI number in the file (the number is gone from the pads and the triggered line, but
+ * a file needs it); the sound name is informational — the lane number decides. The speed is not in the
+ * file: it is the Knob speed select's, not the mapping's. */
+function drumPadsExportData() {
+  const eff = drumPadsEff();
+  return { firmware: dev && dev.info ? dev.info.version : "", exported: new Date().toISOString(),
+    entries: DRUMPADS.PAD_NOTES.map((note, i) => ({ note, lane: eff[i] === DRUMPADS.SILENT ? 255 : eff[i],
+      sound: eff[i] === DRUMPADS.SILENT ? "—" : DRUM_LANES[eff[i]][1] })) };
+}
+/* a drum pad file back into the map bytes: each entry's note must be a pad note 36..51 and its lane a
+ * lane 0..15 or 255 (silent); a bad entry is rejected on its own (that pad keeps its sound) and named
+ * in the returned list. A note the file does not mention keeps its sound. */
+function drumPadsParseImport(j) {
+  if (!j || !Array.isArray(j.entries)) throw new Error("not a drum pad file");
+  const eff = drumPadsEff(), bad = [];
+  for (const x of j.entries) {
+    const note = x && Number.isInteger(x.note) ? x.note : -1;
+    const lane = x && Number.isInteger(x.lane) ? x.lane : -1;
+    if (note < 36 || note > 51 || (lane !== 255 && (lane < 0 || lane > 15))) { bad.push(x && x.note != null ? x.note : "?"); continue; }
+    eff[DRUMPADS.PAD_NOTES.indexOf(note)] = lane === 255 ? DRUMPADS.SILENT : lane;
+  }
+  return { map: drumPadsSerialize(eff), bad };
 }
 /* the notes that play a lane, for the kit builder (2.8.4): the pads it sits on, or — if it sits on
    none — the home notes it still answers. A home note inside the block answers it only when the map
@@ -9984,6 +10086,14 @@ function kitLaneNotes(lane) {
 function kitLaneLabel(lane) {
   const notes = kitLaneNotes(lane);
   return notes.length ? notes.map((n) => `${DRUMPADS.ableton(n)} (${n})`).join(", ") : "—";
+}
+/* (2.8.5) where a lane sits in the Drum Pads grid: the first pad (in PAD_NOTES order) that plays it — a
+ * multi-note lane (a tom) sits at its topmost pad. A lane on no pad (off the grid, or silent) goes after
+ * the grid, in lane order. */
+function kitLaneGridPos(lane) {
+  const notes = kitLaneNotes(lane).filter((n) => n >= 36 && n <= 51);
+  if (!notes.length) return 100 + lane;
+  return Math.min(...notes.map((n) => DRUMPADS.PAD_NOTES.indexOf(n)));
 }
 /* the sound each pad plays on the FM-1 as it is now (the map as last read, drumPads.obj — not the local,
    possibly unwritten, map): the same resolution as the firmware's midi_drum_lane for notes 36..51 — the
@@ -10007,24 +10117,44 @@ function drumPadsHearNote(lane) {
   const home = DRUM_LANES[lane][0];
   return (home < 36 || home > 51) ? home : -1;
 }
-/* the "last triggered" line: a note (its channel, MIDI note number — what Kramer calls its CC — Ableton
-   note name and drum sound) or a genuine CC message (its channel, CC number and value). The lane is the
-   sound the note plays; a silent pad, or a note no pad plays, has no sound. */
+/* the "last triggered" line: a note (its channel, Ableton note name, drum sound and velocity) — no MIDI
+ * note number, and no CC: a CC has no note name and no sound, so it leaves the line alone (see
+ * drumPadsMidiIn). The lane is the sound the note plays; a silent pad, or a note no pad plays, has no
+ * sound. The velocity is the note's (editor taps send 100, the firmware reports the hit's); a trigger
+ * with no velocity known (the learn's reply) leaves the velocity off. */
 function drumPadsTriggeredLine(t) {
-  if (t.cc != null) return `Last triggered: Ch ${t.ch} · CC ${t.cc} = ${t.value}`;
   const nm = DRUMPADS.ableton(t.note);
   let sound = "—";
   if (t.lane != null && t.lane !== DRUMPADS.SILENT) sound = DRUM_LANES[t.lane][1];
-  return `Last triggered: Ch ${t.ch} · Note ${t.note} (${nm}) · ${sound}`;
+  return `Last triggered: Ch ${t.ch} · ${nm} · ${sound}` + (t.vel != null ? ` · Vel ${t.vel}` : "");
 }
 function drumPadsTriggered(t) {
   drumPads.trigMsg = drumPadsTriggeredLine(t);
   const u = drumPads.ui;
   if (u && u.trig) u.trig.textContent = drumPads.trigMsg;
 }
-/* a MIDI note or CC arriving on the FM-1's input: the last triggered line. A note on the drum channel
-   (GLO > MIDI: CH4, 10 by default) is a pad — its lane from the map as shown, or its home lane outside the
-   block; other channels are synth notes, not pads. A genuine CC shows its CC number. */
+/* (2.8.5) flash the pad a trigger hit, briefly: the note's own pad when the note is in the block, else
+ * the grid pad holding the lane — for 140 ms, the same highlight a tap uses (drumPadsHear). A re-trigger
+ * restarts the flash. A sound on no pad (off the grid) flashes nothing. */
+const drumPadsFlashTimers = new Map();
+function drumPadsFlash(note, lane) {
+  const u = drumPads.ui;
+  if (!u || !u.grid) return;
+  let i = -1;
+  if (note >= 36 && note <= 51) i = DRUMPADS.PAD_NOTES.indexOf(note);
+  else if (lane != null && lane !== DRUMPADS.SILENT) i = drumPadsEff().indexOf(lane);
+  if (i < 0) return;
+  const pad = u.grid.children[i];
+  if (!pad) return;
+  clearTimeout(drumPadsFlashTimers.get(i));
+  pad.classList.add("playing");
+  drumPadsFlashTimers.set(i, setTimeout(() => { const p = u.grid.children[i]; if (p) p.classList.remove("playing"); drumPadsFlashTimers.delete(i); }, 140));
+}
+/* a MIDI note arriving on the FM-1's input through the browser's Web MIDI (not the controller on DIN —
+ * that one reaches the editor through the firmware's DRUM_TRIG push): the last triggered line and the
+ * pad flash. A note on the drum channel (GLO > MIDI: CH4, 10 by default) is a pad — its lane from the
+ * map as shown, or its home lane outside the block; other channels are synth notes, not pads. A CC has
+ * no note name and no sound, so it leaves the line alone. */
 function drumPadsMidiIn(data) {
   if (!dev || !dev.dump || !data || data.length < 3) return;
   const st = data[0] & 0xF0, ch = (data[0] & 0x0F) + 1;
@@ -10037,9 +10167,8 @@ function drumPadsMidiIn(data) {
       const i = DRUMPADS.PAD_NOTES.indexOf(note);
       if (i >= 0) lane = drumPadsEff()[i];
     } else { const h = DRUM_LANES.findIndex((l) => l[0] === note); if (h >= 0) lane = h; }
-    drumPadsTriggered({ ch, note, lane });
-  } else if (st === 0xB0) {
-    drumPadsTriggered({ ch, cc: data[1] & 127, value: data[2] });
+    drumPadsTriggered({ ch, note, vel: data[2], lane });
+    drumPadsFlash(note, lane);
   }
 }
 /* the drum preset (kit) on the FM-1: its names, from the device when known (dev.kitNames, or the KIT
@@ -10167,18 +10296,22 @@ async function drumPadsWriteSpeed(v) {
   drumPadsRender();
   $("learnspeedstate").textContent = `Knob speed ${DRUMPADS.SPEED_LABEL[v]} saved to the FM-1.`;
 }
-/* ---- DRUM PAD MIDI LEARN (2.8.4): a button on each pad arms a learn for that sound on the firmware
-   (DP_LEARN, protocol v13). The firmware listens: the editor cannot hear a controller on the FM-1's
-   DIN MIDI IN, and the firmware does not echo notes back over USB. While armed, the editor polls the
-   state about 4 times a second. A good hit moves the lane to that note — a true move, saved in flash
-   when quiet — and the mapping takes effect at once: it does NOT wait for "Write map to FM-1", because
-   the hit already happened on the FM-1 and the map on the device is already the new one. The editor
-   re-reads object 12 after a done result so the grid follows at once. A hit on another channel, or
-   outside 36..51, is refused with the reason. */
+/* ---- DRUM PAD MIDI LEARN (2.8.4): a button on each pad arms a learn for that pad on the firmware
+   (DP_LEARN, protocol v13; v14 arms the pad's note, so a lane on several pads learns the pad pressed).
+   The firmware listens: the editor cannot hear a controller on the FM-1's DIN MIDI IN, and the firmware
+   does not echo notes back over USB. While armed, the editor polls the state about 4 times a second. A
+   good hit swaps the two pads' notes — the armed pad's sound takes the hit note, and the sound the hit
+   note played takes the armed pad's note; the sounds stay on their pads, and an empty pad stays empty.
+   The swap is saved in flash when quiet and takes effect at once: it does NOT wait for "Write map to
+   FM-1", because the hit already happened on the FM-1 and the map on the device is already the new one.
+   The editor applies the same swap to its local map (so the grid follows even when it holds an unsaved
+   drag) and re-reads object 12 after a done result. A hit on another channel, or outside 36..51, is
+   refused with the reason. */
 const DP_LEARN_POLL_MS = 250, DP_LEARN_TIMEOUT_MS = 60000;
 function drumPadsLearnStop(msg) {
   if (drumPads.learnTimer) { clearInterval(drumPads.learnTimer); drumPads.learnTimer = null; }
   drumPads.learn = -1;
+  drumPads.learnFrom = -1;
   if (msg) drumPadsStatus(msg);
   drumPadsRender();
 }
@@ -10196,12 +10329,45 @@ async function drumPadsLearnPoll() {
     drumPadsLearnStop("Learn timed out — no pad hit heard. Press Learn on a pad to try again.");
     return;
   }
-  const name = DRUM_LANES[lane][1];
+  const name = lane === DRUMPADS.SILENT ? "Empty pad" : DRUM_LANES[lane][1];
+  const from = drumPads.learnFrom;
   drumPadsLearnStop();   /* the timer ends; the status below replaces the waiting line */
   if (r.result === 2) {
+    /* (2.8.5) the learn swaps the two pads' notes on the FM-1 — apply the same swap to the local map,
+     * even when it is dirty (an unsaved drag would otherwise make the re-read below look ignored): the
+     * pad at `from` takes the hit note's sound, the hit note's pad takes the armed pad's sound. A tray
+     * sound has no pad, so it just moves to the hit note. The map bytes are re-derived from the pads
+     * (drumPadsSerialize), so a multi-note lane keeps its other pads. */
+    const preEff = drumPadsEff();
+    const iX = DRUMPADS.PAD_NOTES.indexOf(r.note);
+    if (from >= 36 && from <= 51 && r.note >= 36 && r.note <= 51 && from !== r.note) {
+      const eff = drumPadsEff(), iP = DRUMPADS.PAD_NOTES.indexOf(from);
+      if (iP >= 0 && iX >= 0) {
+        const t = eff[iP]; eff[iP] = eff[iX]; eff[iX] = t;
+        const after = drumPadsSerialize(eff);
+        if (after.join() !== drumPads.map.join()) { drumPads.map = after; drumPads.dirty = true; }
+        drumPadsRender();
+      }
+    } else if (from === -1 && r.note >= 36 && r.note <= 51 && iX >= 0) {
+      const eff = drumPadsEff();
+      eff[iX] = lane;
+      const after = drumPadsSerialize(eff);
+      if (after.join() !== drumPads.map.join()) { drumPads.map = after; drumPads.dirty = true; }
+      drumPadsRender();
+    }
     try { await drumPadsRead(); } catch (e) { report(e); }
-    drumPadsTriggered({ ch: r.ch, note: r.note, lane });
-    drumPadsStatus(`${name} moved to ${DRUMPADS.ableton(r.note)} (${r.note}) — hit on channel ${r.ch}.`);
+    const trigLane = lane === DRUMPADS.SILENT && iX >= 0 ? preEff[iX] : lane;
+    drumPadsTriggered({ ch: r.ch, note: r.note, lane: trigLane });
+    if (lane === DRUMPADS.SILENT) {
+      const other = (iX >= 0 && preEff[iX] !== DRUMPADS.SILENT) ? DRUM_LANES[preEff[iX]][1] : "—";
+      drumPadsStatus(`Empty pad swapped with ${DRUMPADS.ableton(r.note)} — ${other} is now on ${DRUMPADS.ableton(from)}, and the pad stays empty.`);
+    } else if (from === -1) {
+      drumPadsStatus(`${name} moved to ${DRUMPADS.ableton(r.note)} — hit on channel ${r.ch}.`);
+    } else if (from === r.note) {
+      drumPadsStatus(`${name} is already on ${DRUMPADS.ableton(r.note)} — hit on channel ${r.ch}.`);
+    } else {
+      drumPadsStatus(`${name} is now on ${DRUMPADS.ableton(r.note)} (swapped with the pad there) — hit on channel ${r.ch}.`);
+    }
   } else if (r.result === 3) {
     drumPadsStatus(`Learn refused: ${r.expected === 0
       ? "the drum channel is OFF (GLO > DRUMS > CH) — turn it on (channel 10 by default)"
@@ -10211,21 +10377,30 @@ async function drumPadsLearnPoll() {
   }
   try { await rq(req.dpLearn(1), { timeout: 2000, retries: 0 }); } catch (e) { /* already idle */ }
 }
-async function drumPadsLearnArm(lane) {
+async function drumPadsLearnArm(lane, note) {
   if (!dev || !dev.info || !dpLearnOk()) return;
-  if (drumPads.learn === lane) {   /* armed already: this is the cancel */
+  const from = (note == null) ? -1 : note;   /* the pad's note (36..51), or -1 for a sound off the grid (the tray) */
+  if (drumPads.learn === lane && drumPads.learnFrom === from) {   /* armed already: this is the cancel */
     try { await rq(req.dpLearn(1), { timeout: 2000, retries: 0 }); } catch (e) { /* already idle */ }
     drumPadsLearnStop("Learn cancelled.");
     return;
   }
+  if (lane === DRUMPADS.SILENT && dev.info.proto < 14) {   /* an empty pad learns only on protocol v14 */
+    drumPadsStatus("Empty-pad learn needs Lowtide 2.8.5 or later.");
+    return;
+  }
   let r;
   try {
-    r = parse[CMD.DP_LEARN](await rq(req.dpLearn(0, lane), { timeout: 2000, retries: 0 }));
+    /* v14 (2.8.5): the arm carries the pad's note and the pad's sound; a v13 device still takes the
+     * old one-argument arm (the lane), which cannot tell one tom pad from another. */
+    r = parse[CMD.DP_LEARN](await rq(dev.info.proto >= 14 ? req.dpLearn(0, from === -1 ? 127 : from, lane === DRUMPADS.SILENT ? 127 : lane)
+      : req.dpLearn(0, lane), { timeout: 2000, retries: 0 }));
   } catch (e) { report(e); return; }
   if (r.result === 5) { drumPadsStatus("Learn refused: not a drum sound."); return; }
   if (r.result !== 1) { drumPadsStatus("Learn did not arm. Try again."); return; }
-  const name = DRUM_LANES[lane][1];
+  const name = lane === DRUMPADS.SILENT ? "Empty pad" : DRUM_LANES[lane][1];
   drumPads.learn = lane;
+  drumPads.learnFrom = from;
   drumPads.learnAt = Date.now();
   if (drumPads.learnTimer) clearInterval(drumPads.learnTimer);
   drumPads.learnTimer = setInterval(() => { drumPadsLearnPoll().catch(() => {}); }, DP_LEARN_POLL_MS);
@@ -10252,11 +10427,9 @@ function drumPadsHear(note) {
   const tok = "dp:" + send, km = LV.kmode;
   LV.kmode = "play";                                    /* always heard: not the LIVE page's roll / erase */
   try { lvNoteOn(tok, 3, send, 100); } catch (e) { /* unplugged */ } finally { LV.kmode = km; }
-  if (LV.held && LV.held.has(tok)) { const h = LV.held.get(tok); drumPadsTriggered({ ch: h.ch + 1, note: send, lane }); }
+  if (LV.held && LV.held.has(tok)) { const h = LV.held.get(tok); drumPadsTriggered({ ch: h.ch + 1, note: send, vel: 100, lane }); }
   setTimeout(() => lvNoteOff(tok), 180);
-  const u = drumPads.ui;
-  const d = u && u.grid.querySelector(`[data-note="${note}"]`);
-  if (d) { d.classList.add("playing"); setTimeout(() => d.classList.remove("playing"), 140); }
+  drumPadsFlash(note, lane);   /* the tapped pad flashes, not the pad of the note sent */
 }
 function drumPadsMarkPicked() {
   const u = drumPads.ui;
@@ -10327,6 +10500,25 @@ function drumPadsRender() {
     u.kit = el("select", { onchange: (e) => { const v = +e.target.value; if (v !== drumPads.kit) op(async () => { try { await drumPadsKitWrite(v); } catch (err) { report(err); drumPadsKitRender(); } }); } });
     u.kitNow = el("span", { class: "dim" });
     u.trig = el("p", { class: "dim", text: "Last triggered: —" });
+    u.export = el("button", { type: "button", text: "Export JSON",
+      onclick: () => download("lowtide-drum-pads.json", drumPadsExportData()) });
+    u.import = el("button", { type: "button", text: "Import JSON",
+      onclick: () => u.file.click() });
+    u.file = el("input", { type: "file", accept: ".json,application/json", hidden: true });
+    u.file.addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try {
+        const j = JSON.parse(await f.text());
+        const r = drumPadsParseImport(j);
+        if (r.map.join() !== drumPads.map.join()) { drumPads.map = r.map; drumPads.dirty = true; }
+        drumPadsStatus(r.bad.length
+          ? `Imported — ${r.bad.length} ${r.bad.length === 1 ? "entry" : "entries"} rejected (${r.bad.join(", ")}). Press “Write map to FM-1” to save it.`
+          : "Imported. Press “Write map to FM-1” to save it.");
+        drumPadsRender();
+      } catch (err) { report(err); }
+      e.target.value = "";
+    });
     const card = el("div", { class: "card" },
       el("h2", { text: "Drum Pads" }),
       el("p", { class: "dim", text: "Which drum sound each MIDI note 36–51 plays: the bottom row is the lowest notes. A pad with no entry plays its usual sound. Drag a sound to another pad to swap them; a sound put on a pad moves there — it no longer plays on its usual note, and a pad whose usual sound moved away is silent. On touch, press and hold a pad to pick it up, then tap where it goes. Tap a pad once to hear it. Applies to every kit: sample kits and drum synth kits. The sounds come from the drum preset (kit) currently selected on the drum track — tapping a pad plays that preset's sound." }),
@@ -10338,7 +10530,8 @@ function drumPadsRender() {
       el("h3", { text: "Off the grid" }),
       el("p", { class: "dim", text: "Sounds on no pad of the block. Each still plays on its usual note outside the block. Drag one onto a pad, or tap it and then tap a pad." }),
       u.tray,
-      el("p", { class: "bar" }, u.refresh, u.write, u.reset),
+      el("p", { class: "bar" }, u.refresh, u.write, u.reset, u.export, u.import),
+      u.file,
       u.status,
       el("h3", { text: "Current mapping" }),
       u.table);
@@ -10353,16 +10546,17 @@ function drumPadsRender() {
       "data-note": note });
     if (!silent) d.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
     d.append(el("div", { class: "sound", text: silent ? "—" : DRUM_LANES[lane][1] }),
-      el("div", { class: "note", text: DRUMPADS.ableton(note) }),
-      el("div", { class: "midi", text: "MIDI " + note }));
-    /* (2.8.4) the per-pad Learn button: arms the drum-pad MIDI learn for this sound (protocol v13).
-       A silent pad has no sound to move. The button's own gestures stop here, so they never pick the
-       pad up, drag it, or play it. */
-    if (!silent && dpLearnOk()) {
-      const listening = drumPads.learn === lane;
+      el("div", { class: "note", text: DRUMPADS.ableton(note) }));
+    /* (2.8.4) the per-pad Learn button: arms the drum-pad MIDI learn for this pad (protocol v13; v14
+       arms the pad's note, so a lane on several pads learns the pad pressed). (2.8.5) Every pad has
+       one, including a silent one: learning on an empty pad still arms and awaits a note — no sound is
+       played and no sound moves into it (an empty pad needs protocol v14). The button's own gestures
+       stop here, so they never pick the pad up, drag it, or play it. */
+    if (dpLearnOk()) {
+      const listening = drumPads.learn === lane && drumPads.learnFrom === note;
       const lb = el("button", { type: "button", class: "dplearn" + (listening ? " listening" : ""),
         text: listening ? "Cancel" : "Learn",
-        onclick: (e) => { e.stopPropagation(); op(async () => { await drumPadsLearnArm(lane); }); } });
+        onclick: (e) => { e.stopPropagation(); op(async () => { await drumPadsLearnArm(lane, note); }); } });
       lb.addEventListener("pointerdown", (e) => e.stopPropagation());
       lb.addEventListener("dragstart", (e) => { e.preventDefault(); e.stopPropagation(); });
       d.append(lb);
@@ -10417,9 +10611,10 @@ function drumPadsRender() {
     c.style.setProperty("--c", DRUMPADS.KIND_COLOR[DRUMPADS.KIND[lane]]);
     c.textContent = `${name} · ${DRUMPADS.ableton(DRUM_LANES[lane][0])} (${DRUM_LANES[lane][0]})`;
     c.draggable = true;
-    /* (2.8.4) a sound off the grid can be learned onto a pad too: the same per-sound Learn button */
+    /* (2.8.4) a sound off the grid can be learned onto a pad too: the same per-sound Learn button.
+       It has no pad, so the arm carries no note (the firmware moves it, as 2.8.4 did). */
     if (dpLearnOk()) {
-      const listening = drumPads.learn === lane;
+      const listening = drumPads.learn === lane && drumPads.learnFrom === -1;
       const lb = el("button", { type: "button", class: "dplearn" + (listening ? " listening" : ""),
         text: listening ? "Cancel" : "Learn",
         onclick: (e) => { e.stopPropagation(); op(async () => { await drumPadsLearnArm(lane); }); } });

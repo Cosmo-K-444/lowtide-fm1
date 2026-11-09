@@ -1862,14 +1862,74 @@ static void drum_map_clear(void)                /* all pads unmapped, the learne
         drum_map[i] = 0xFFu;
     learn_speed_q = LEARN_SPEED_DEF;
 }
-static void drum_map_move(uint32_t lane, uint32_t note)  /* (2.8.4) a learned pad: the lane moves to the note */
+static uint32_t midi_drum_lane(uint32_t note);
+/* (2.8.5) a drum-pad learn swaps two pads' notes; the sounds stay on their pads. The map bytes for an
+ * effective pad layout (eff[n - 36]: the lane the note plays, DRUM_LANE_NONE when it plays nothing):
+ * a pad whose sound is not its default needs its byte; a pad whose sound IS its default needs its byte
+ * too when that sound sits on another pad as well (a multi-note lane: the tom's other pads) or when some
+ * silent pad needs the sound taken to stay silent — otherwise the fallback plays it, or the true-move
+ * rule silences a pad that should still play. A silent pad needs no byte. The editor's drumPadsSerialize
+ * follows the same rule, so the firmware and the editor write the same bytes for the same layout. */
+static uint32_t drum_map_default(uint32_t note)
 {
-    uint32_t i;
-    for (i = 0; i < DRUM_MAP_N; i++)
-        if (drum_map[i] == (uint8_t)lane)
-            drum_map[i] = 0xFFu;                          /* (true move: the sound plays only on its new pad) */
-    if (note >= 36u && note < 36u + DRUM_MAP_N)
-        drum_map[note - 36u] = (uint8_t)lane;
+    return song.g[G_DRMAP] ? (note - 36u) % 16u : lane_of_note(note);
+}
+static void drum_map_from_eff(const uint8_t eff[DRUM_MAP_N])
+{
+    uint32_t n, def, nondef = 0, need = 0;
+    for (n = 0; n < DRUM_MAP_N; n++) {
+        if (eff[n] == DRUM_LANE_NONE) {
+            need |= 1u << drum_map_default(36u + n);   /* this pad is silent only while its sound is taken */
+            continue;
+        }
+        if (eff[n] != drum_map_default(36u + n))
+            nondef |= 1u << eff[n];
+    }
+    for (n = 0; n < DRUM_MAP_N; n++) {
+        if (eff[n] == DRUM_LANE_NONE) {
+            drum_map[n] = 0xFFu;
+            continue;
+        }
+        def = drum_map_default(36u + n);
+        drum_map[n] = (eff[n] != def || (nondef & (1u << eff[n])) || (need & (1u << eff[n])))
+            ? eff[n] : 0xFFu;
+    }
+}
+static void drum_map_learn(uint32_t from, uint32_t lane, uint32_t note)
+                    /* (2.8.5) a drum-pad learn: the pad at `from` and the pad at `note` swap notes.
+                     * from 36..51: the pad's sound (lane, 255 = no sound) takes `note`, and the sound
+                     * `note` played takes `from`; every other pad is untouched — a multi-note lane keeps
+                     * its other pads (the tom's F1/A1 when G1 is re-noted). from 255: no pad (the editor's
+                     * tray): the sound just moves to `note`, and the note's old sound falls back to its
+                     * usual note, as 2.8.4 did. */
+{
+    uint8_t eff[DRUM_MAP_N];
+    uint32_t n;
+    for (n = 0; n < DRUM_MAP_N; n++)
+        eff[n] = (uint8_t)midi_drum_lane(36u + n);
+    if (from >= 36u && from < 36u + DRUM_MAP_N) {
+        uint32_t lp = lane >= DRUM_LANES ? DRUM_LANE_NONE : lane;   /* the armed pad's sound (255: none) */
+        uint32_t lx = (note >= 36u && note < 36u + DRUM_MAP_N) ? midi_drum_lane(note) : DRUM_LANE_NONE;
+        eff[from - 36u] = (uint8_t)lx;
+        if (note >= 36u && note < 36u + DRUM_MAP_N)
+            eff[note - 36u] = (uint8_t)lp;
+    } else if (note >= 36u && note < 36u + DRUM_MAP_N && lane < DRUM_LANES) {
+        eff[note - 36u] = (uint8_t)lane;
+    }
+    drum_map_from_eff(eff);
+}
+/* DRUM TRIG (2.8.5): the last live drum hit, for the editor's Drum Pads (the Last triggered line and the pad
+ * flash). Recorded on a live MIDI note-on that plays a drum lane (events_block) and on an on-device drum key
+ * (key_down); the sequencer and rolls do not report. The main loop (editor.c ed_sync) pushes it while the
+ * editor WATCHes; the pending flag stays up when the ring is full, so the hit is retried, not lost. */
+static volatile uint8_t drum_trig_note, drum_trig_ch, drum_trig_vel, drum_trig_lane, drum_trig_pending;
+static void drum_trig_record(uint32_t note, uint32_t ch, uint32_t vel, uint32_t lane)
+{
+    drum_trig_note = (uint8_t)note;
+    drum_trig_ch = (uint8_t)ch;
+    drum_trig_vel = (uint8_t)vel;
+    drum_trig_lane = (uint8_t)lane;
+    drum_trig_pending = 1;
 }
 static uint32_t drum_lane_taken(uint32_t lane)  /* (2.8.3) true move: the lane sits on some pad */
 {
@@ -2348,6 +2408,9 @@ static void key_down(uint32_t k)
         }
         kb_kind[k] = KS_DRUM;
         drum_input(lane, lvl, 0, 1);
+        /* (2.8.5) the editor's Drum Pads follow the key too: the drum channel (10 when it is OFF), the
+         * velocity the key sends out over MIDI */
+        drum_trig_record(LANE_NOTE[lane], song.g[G_DRCH] ? (uint32_t)song.g[G_DRCH] : 10u, lvl_vel(lvl, 100), lane);
         mc = trk_midi_ch(sel);
         midi_out_note(mc, (uint32_t)LANE_NOTE[lane], lvl_vel(lvl, 100));
         return;
@@ -3097,8 +3160,10 @@ static volatile uint8_t ml_arm, ml_heard;  /* the UI waits for a CC; the CC that
 static volatile int8_t dp_learn_lane = -1;
 static volatile uint8_t dp_learn_heard, dp_learn_heard_ch;
 static uint8_t dp_learn_state, dp_learn_lane_r = 127u, dp_learn_note, dp_learn_ch, dp_learn_expected;
+static volatile int8_t dp_learn_from = -1;   /* (2.8.5) the pad the learn was armed on: its note 36..51, -1 = no pad (the tray) */
 static volatile uint8_t ml_preset_cc;      /* a learned PRESETS CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_track_cc;       /* a learned ALGORITHM CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
+static volatile uint8_t ml_select_cc;      /* (2.8.5) a learned SELECT CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static volatile uint8_t ml_follow_cc[4];   /* a learned knob-follower CC heard: its value + 1 (0 none; ui.c ml_knob_poll) */
 static int ml_code_ok(uint32_t code)       /* a code this firmware stores (project.c) */
 {
@@ -3139,9 +3204,10 @@ static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
     if (d->max > d->min)
         t->p[id % P_COUNT] = (int16_t)(d->min + ((int32_t)(value & 127u) * (d->max - d->min) + 63) / 127);
 }
-/* a learned knob CC: drive the knob (2.8-midilearn). VOLUME and SELECT (BPM) are plain assignments, safe here;
- * PRESETS and ALGORITHM load a sound / change the engine (flash reads), so they are requests the main loop
- * (ui.c ml_knob_poll) carries out */
+/* a learned knob CC: drive the knob (2.8-midilearn). VOLUME is a plain assignment, safe here; SELECT,
+ * PRESETS and ALGORITHM are requests the main loop (ui.c ml_knob_poll) carries out — SELECT so the learned
+ * speed can scale its move like the followers (2.8.5), PRESETS and ALGORITHM because they load a sound /
+ * change the engine (flash reads) */
 static void ml_knob_cc(uint32_t code, uint32_t value)
 {
     uint32_t v = value & 127u;
@@ -3150,8 +3216,8 @@ static void ml_knob_cc(uint32_t code, uint32_t value)
         ed_master = (uint8_t)((v * 126u / 127u) + 1u);
         ed_master_k = 0xFFFFu;
         break;
-    case ML_KNOB_SEL:   /* SELECT: the tempo (BPM) */
-        song.g[G_BPM] = (int16_t)(GP[G_BPM].min + (int32_t)((v * (uint32_t)(GP[G_BPM].max - GP[G_BPM].min) + 63u) / 127u));
+    case ML_KNOB_SEL:   /* SELECT: the tempo (BPM) — the main loop steps it by the CC's move */
+        ml_select_cc = (uint8_t)(v + 1u);
         break;
     case ML_KNOB_PRESET: /* PRESETS: the selected track's preset (the main loop loads it) */
         ml_preset_cc = (uint8_t)(v + 1u);
@@ -3580,7 +3646,7 @@ static void events_block(uint32_t n)
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
         }
-        if (dp_learn_lane >= 0 && !dp_learn_heard && st == 0x90u && d2) {
+        if (dp_learn_lane != -1 && !dp_learn_heard && st == 0x90u && d2) {
             /* (2.8.4) DRUM PAD LEARN: the next pad hit, on any channel (the UI checks it is the drum
              * channel and moves the lane; a hit on another channel is refused, not ignored, so the editor
              * can say only the drum channel is supported). The note still plays as before, through the
@@ -3680,8 +3746,10 @@ static void events_block(uint32_t n)
         if (is_drum(t)) {
             if (st == 0x90u && d2) {
                 uint32_t lane = midi_drum_lane(d1);   /* (2.8.3) DRUM_LANE_NONE: the sound moved away */
-                if (lane != DRUM_LANE_NONE)
+                if (lane != DRUM_LANE_NONE) {
                     drum_input(lane, vel_lvl(d2), 0, 1);
+                    drum_trig_record(d1, ch + 1u, d2, lane);   /* (2.8.5) the editor's Drum Pads follow the hit */
+                }
             }
         } else if (st == 0x90u && d2) {
             if (t == TSEL) {                          /* the SEQ layer's pen: this note, or the chord held (2.6) */

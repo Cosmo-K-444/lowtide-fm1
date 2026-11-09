@@ -30,7 +30,7 @@ A request is `F0 7D 46 4C <cmd> <args...> F7`:
 
 Every request gets exactly one reply, with the same header and the same `<cmd>`. Requests
 the device does not understand get no reply. Every data byte is 7 bit. While the editor
-watches (v2, `WATCH`), the device also sends push frames (cmds 23, 24, 26) at any time.
+watches (v2, `WATCH`), the device also sends push frames (cmds 23, 24, 26, and 79 from v14) at any time.
 
 | Item | Encoding |
 | --- | --- |
@@ -493,6 +493,36 @@ effect at once and is saved to flash when quiet, as the MIDI learn map is; the e
 12 after a done result so the grid follows at once. The on-device MIDI learn (GLO + F#3, the 32-slot
 map) is untouched; this is a separate mode. A device before 2.8.4 does not answer `DP_LEARN`: the
 editor hides the per-pad Learn buttons.
+
+## v14: drum triggers and the drum-pad learn's pad model (Lowtide 2.8.5)
+
+`INFO` ends with 14. Two changes:
+
+**`DRUM_TRIG` (command 79)** — a push the firmware sends while the editor WATCHes, whenever a live
+drum hit plays: a note-on on the drum channel (DIN or USB MIDI in) that plays a drum lane, or an
+on-device drum key. The push is `[note, channel, velocity, lane]` — the note that was hit, its channel
+(1..16), the velocity, and the lane that played (0..15). The sequencer and rolls do not push. The
+editor's Drum Pads tab uses it for the Last triggered line (`Ch 10 · C1 · KICK · Vel 100` — channel,
+Ableton note name, sound, velocity; no MIDI note number) and to flash the pad that was hit for 140 ms.
+A silent pad (its sound moved away) pushes nothing. A device before 2.8.5 never sends it.
+
+**`DP_LEARN` (command 78), the arm changed** — the learn now swaps the two pads' notes: the armed
+pad's sound takes the hit note, and the sound the hit note played takes the armed pad's note. The
+sounds stay on their pads (an empty pad stays empty — it has no sound to move; a sound off the grid,
+the tray, has no pad, so it just moves to the hit note). The arm must therefore identify the PAD, not
+just the lane — a lane can sit on several pads (the tom lanes) — so the arm is now
+`sub 0 [note, lane]`: the pad's note 36..51 (127: no pad, the tray) and the pad's sound 0..15
+(127: the pad is empty). 127 is the sentinel: a SysEx data byte is 7 bit, so 255 never arrives
+(it is masked to 127 on the wire). The reply is unchanged (`sub, result, lane, note, channel, drum channel`);
+`lane` in the reply is the armed pad's sound (127 when the pad is empty). Result 5 is now a bad arm
+(a note or a lane the FM-1 does not know, or an old editor's one-argument arm, which has no note to
+learn on). The editor sends the new arm to a v14 device and the old one-argument arm (`sub 0 [lane]`)
+to a v13 device; a v13 device refuses the new arm (result 5), and a v14 device refuses the old one.
+An empty pad learns only on a v14 device: the editor says so on a v13 device. The other sub-ops
+(1 cancel, 2 query) and the results are as v13. The map bytes for the swap are re-derived from the
+pads as shown (the firmware's `drum_map_from_eff`, the editor's `drumPadsSerialize`): a pad whose
+sound is not its default needs a byte; a pad whose sound IS its default needs one too when that
+sound sits on another pad as well, or when some silent pad needs the sound taken to stay silent.
 
 ## Notes for the editor
 

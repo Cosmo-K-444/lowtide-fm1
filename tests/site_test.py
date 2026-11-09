@@ -67,6 +67,10 @@ try:
         h = (app / page / "index.html").read_text(encoding="utf-8")
         check(f"{page}: links the manifest, registers ../sw.js, an install button",
               'href="../lowtide.webmanifest"' in h and 'register("../sw.js")' in h and "beforeinstallprompt" in h)
+    inst = (app / "installer" / "index.html").read_text(encoding="utf-8")
+    check("installer: shows the version it is about to install (Lowtide 9.9 · FM-1_900) before INSTALL",
+          'id="ver"' in inst and '"version": "9.9"' in inst and '"product": "FM-1_900"' in inst
+          and "Lowtide ${meta.version} · ${meta.product}" in inst)
     stamp = sw.split('const STAMP = "')[1].split('"')[0]
     (tmp / "site2").mkdir()
     make_site.main(tmp / "p.fwsc", "9.9", tmp / "site2")

@@ -30,6 +30,7 @@
   .tile b { display: block; font-size: 22px; font-weight: 600; color: var(--c); line-height: 1.1; }
   .tile span { display: block; font-size: 12px; color: var(--dim); text-transform: lowercase; margin-top: 4px; }
   p { margin: 0 0 14px; }
+  .ver { font-size: 17px; font-weight: 600; margin: 0 0 14px; }   /* (2.8.5) the version it is about to install */
   button#go { font: 600 15px/1 inherit; font-family: inherit; background: var(--orange); color: #000; border: 0;
               padding: 16px 0; width: 100%; cursor: pointer; letter-spacing: .08em; text-transform: uppercase; }
   button#go:disabled { background: var(--tile); color: var(--dim); cursor: default; }
@@ -68,6 +69,7 @@
   </div>
   <p data-t="intro"></p>
   <p data-t="warn"></p>
+  <p class="ver" id="ver"></p>
   <p><button id="go" disabled data-t="install"></button></p>
   <progress id="bar" max="100" value="0"></progress>
   <p id="status"></p>
@@ -197,6 +199,7 @@ const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
 const meta = /*META*/;
+$("ver").textContent = `Lowtide ${meta.version} · ${meta.product}`;   /* (2.8.5) the version it is about to install, before INSTALL is pressed — set at once, so it shows even when the package fails to load */
 
 let writing = false;
 const lockAll = (on) => {

@@ -1803,6 +1803,83 @@ int main(int argc, char **argv)
             follow_acc[0] = 7;                        /* (re-)learning the follower resets its accumulator */
             check(ml_learn_entry(75, 0, ML_KNOB_FOLLOW) == 1u && follow_acc[0] == 0 && follow_cc_last[0] == -1,
                   "LEARN SPEED: (re-)learning a follower resets its accumulator and baseline");
+            {   /* (2.8.5) the learned-knob speed now scales PRESETS, ALGORITHM and SELECT too, through
+                 * their own quarter-step accumulators. At 1x they step exactly as before. */
+                int32_t k0, base;
+                ml_learn_entry(30, 0, ML_KNOB_PRESET);   /* PRESETS -> CC 30, on the drum track (its kits) */
+                song.sel = TRK_DRUM; go_home(); frames(4);
+                TDRUM->p[P_E0] = 20;
+                learn_speed_q = 4;                    /* 1x: a delta of 3 steps 3 kits, as before */
+                k0 = TDRUM->p[P_E0];
+                base = (int32_t)((k0 * 127) / (DRUM_KITS - 1));
+                preset_cc_last = -1; preset_acc = 0;
+                midi_cc(&trk[0], 30, (uint32_t)base); ml_knob_poll();   /* the baseline: no move */
+                midi_cc(&trk[0], 30, (uint32_t)(base + 3)); ml_knob_poll();
+                check(TDRUM->p[P_E0] == k0 + 3 && preset_acc == 0, "LEARN SPEED 1x: PRESETS steps 1 kit per CC unit (unchanged)");
+                learn_speed_q = 2;                    /* 0.5x: two CC units step one kit */
+                k0 = TDRUM->p[P_E0];
+                base = (int32_t)((k0 * 127) / (DRUM_KITS - 1));
+                preset_cc_last = -1; preset_acc = 0;
+                midi_cc(&trk[0], 30, (uint32_t)base); ml_knob_poll();
+                midi_cc(&trk[0], 30, (uint32_t)(base + 1)); ml_knob_poll();
+                check(TDRUM->p[P_E0] == k0 && preset_acc == 2, "LEARN SPEED 0.5x: PRESETS takes two CC units per kit, the half carried");
+                midi_cc(&trk[0], 30, (uint32_t)(base + 2)); ml_knob_poll();
+                check(TDRUM->p[P_E0] == k0 + 1 && preset_acc == 0, "LEARN SPEED 0.5x: PRESETS steps one kit on the second unit");
+                learn_speed_q = 8;                    /* 2x: one CC unit steps two kits */
+                k0 = TDRUM->p[P_E0];
+                base = (int32_t)((k0 * 127) / (DRUM_KITS - 1));
+                preset_cc_last = -1; preset_acc = 0;
+                midi_cc(&trk[0], 30, (uint32_t)base); ml_knob_poll();
+                midi_cc(&trk[0], 30, (uint32_t)(base + 1)); ml_knob_poll();
+                check(TDRUM->p[P_E0] == k0 + 2 && preset_acc == 0, "LEARN SPEED 2x: PRESETS steps two kits per CC unit");
+                song.sel = 0;
+                ml_learn_entry(31, 0, ML_KNOB_ALGO);   /* ALGORITHM -> CC 31 */
+                learn_speed_q = 4;                    /* 1x: a delta of 1 selects the next track, as before */
+                song.sel = 0; track_cc_last = -1; track_acc = 0;
+                midi_cc(&trk[0], 31, 0); ml_knob_poll();   /* the baseline: track 0 maps to CC 0 */
+                midi_cc(&trk[0], 31, 1); ml_knob_poll();
+                check(song.sel == 1u && track_acc == 0, "LEARN SPEED 1x: ALGORITHM selects the next track per CC unit (unchanged)");
+                learn_speed_q = 2;                    /* 0.5x: two CC units select one track */
+                song.sel = 0; track_cc_last = -1; track_acc = 0;
+                midi_cc(&trk[0], 31, 0); ml_knob_poll();
+                midi_cc(&trk[0], 31, 1); ml_knob_poll();
+                check(song.sel == 0u && track_acc == 2, "LEARN SPEED 0.5x: ALGORITHM takes two CC units per track, the half carried");
+                midi_cc(&trk[0], 31, 2); ml_knob_poll();
+                check(song.sel == 1u && track_acc == 0, "LEARN SPEED 0.5x: ALGORITHM selects the next track on the second unit");
+                learn_speed_q = 8;                    /* 2x: one CC unit selects two tracks */
+                song.sel = 0; track_cc_last = -1; track_acc = 0;
+                midi_cc(&trk[0], 31, 0); ml_knob_poll();
+                midi_cc(&trk[0], 31, 1); ml_knob_poll();
+                check(song.sel == 2u && track_acc == 0, "LEARN SPEED 2x: ALGORITHM selects two tracks per CC unit");
+                ml_learn_entry(45, 0, ML_KNOB_SEL);   /* SELECT -> CC 45 */
+                song.g[G_BPM] = 90;
+                learn_speed_q = 4;                    /* 1x: one CC unit moves one BPM */
+                select_cc_last = -1; select_acc = 0;
+                midi_cc(&trk[0], 45, 31); ml_knob_poll();   /* the baseline: BPM 90 maps to CC 31 */
+                midi_cc(&trk[0], 45, 32); ml_knob_poll();
+                check(song.g[G_BPM] == 91 && select_acc == 0, "LEARN SPEED 1x: SELECT steps one BPM per CC unit");
+                learn_speed_q = 2;                    /* 0.5x: two CC units move one BPM */
+                select_cc_last = -1; select_acc = 0;
+                midi_cc(&trk[0], 45, 32); ml_knob_poll();   /* BPM 91 maps to CC 32 */
+                midi_cc(&trk[0], 45, 33); ml_knob_poll();
+                check(song.g[G_BPM] == 91 && select_acc == 2, "LEARN SPEED 0.5x: SELECT takes two CC units per BPM, the half carried");
+                midi_cc(&trk[0], 45, 34); ml_knob_poll();
+                check(song.g[G_BPM] == 92 && select_acc == 0, "LEARN SPEED 0.5x: SELECT steps one BPM on the second unit");
+                learn_speed_q = 8;                    /* 2x: one CC unit moves two BPM */
+                select_cc_last = -1; select_acc = 0;
+                midi_cc(&trk[0], 45, 33); ml_knob_poll();   /* BPM 92 maps to CC 33 */
+                midi_cc(&trk[0], 45, 34); ml_knob_poll();
+                check(song.g[G_BPM] == 94 && select_acc == 0, "LEARN SPEED 2x: SELECT steps two BPM per CC unit");
+                preset_acc = 7; track_acc = 7; select_acc = 7;   /* (re-)learning resets the accumulators */
+                ml_learn_entry(30, 0, ML_KNOB_PRESET);
+                ml_learn_entry(31, 0, ML_KNOB_ALGO);
+                ml_learn_entry(45, 0, ML_KNOB_SEL);   /* (CC 32 is reserved: not learnable) */
+                check(preset_acc == 0 && track_acc == 0 && select_acc == 0
+                      && preset_cc_last == -1 && track_cc_last == -1 && select_cc_last == -1,
+                      "LEARN SPEED: (re-)learning PRESETS, ALGORITHM and SELECT resets their accumulators and baselines");
+                ml_preset_cc = 0; ml_track_cc = 0; ml_select_cc = 0;
+                song.g[G_BPM] = 90; song.sel = 0;
+            }
             drum_map[0] = 2; learn_speed_q = 8;       /* (LEARN CLEAR clears the drum map and the speed too) */
             check(ml_clear_all() && drum_map_count() == 0u && learn_speed_q == LEARN_SPEED_DEF,
                   "LEARN CLEAR: OCT+ also clears the drum pad remap and the learned-knob speed");
@@ -1810,35 +1887,45 @@ int main(int argc, char **argv)
             follow_acc[0] = 0; follow_cc_last[0] = -1; ml_follow_cc[0] = 0;
             enc_inject[EN_K1] = 0; learn_speed_q = LEARN_SPEED_DEF; settings_later = 0;
         }
-        {   /* DRUM PAD LEARN (2.8.4): arm a lane, hit a pad — the lane moves to that note (true move).
-             * The arm is set here as the editor's DP_LEARN does it (editor.c is not in this harness);
-             * the capture (events_block) and the move (dp_learn_poll) are the firmware's own. */
+        {   /* DRUM PAD LEARN (2.8.5): arm a pad, hit a pad — the two pads swap notes; the sounds stay on
+             * their pads. The arm is set here as the editor's DP_LEARN does it (editor.c is not in this
+             * harness); the capture (events_block) and the move (dp_learn_poll) are the firmware's own. */
             #define DPN(c, n, v) (midi_in_q[mi_w++ % MQ] = ((v) ? 0x09u | (0x90u | (c)) << 8 : 0x08u | (0x80u | (c)) << 8) | \
                                   (uint32_t)(n) << 16 | (uint32_t)(v) << 24)
             uint32_t dch = (uint32_t)song.g[G_DRCH] - 1u;   /* the drum channel (10), 0-based */
             song.g[G_DRCH] = 10; song.g[G_ROUTE] = 0; song.rec = 0; settings_later = 0;
             for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
             go_home(); frames(4);
-            dp_learn_lane = 0; dp_learn_state = 1; dp_learn_heard = 0;   /* arm KICK */
+            drum_trig_pending = 0;
+            dp_learn_lane = 0; dp_learn_from = 36; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 36 (KICK) */
             DPN(dch, 48, 100); DPN(dch, 48, 0); frames(2);   /* a pad hit on note 48 (C2), channel 10 */
-            check(dp_learn_state == 2u && drum_map[12] == 0u && drum_map[0] == 0xFFu,
-                  "DRUM PAD LEARN: a pad hit on channel 10 moves KICK to that note (48), its old pad cleared");
+            check(dp_learn_state == 2u && drum_map[12] == 0u && drum_map[0] == 10u && drum_map[11] == 10u && drum_map[14] == 10u,
+                  "DRUM PAD LEARN: a pad hit on channel 10 swaps the two pads' notes (KICK to 48, HI TOM to 36)");
             check(settings_later == 1u, "DRUM PAD LEARN: the move is saved when quiet (settings_later)");
             check(!strcmp(ui.msg, "KICK > C3"), "DRUM PAD LEARN: the device shows the lane and note (its own octave: 48 is C3)");
-            settings_later = 0;
-            dp_learn_lane = 15; dp_learn_state = 1; dp_learn_heard = 0;   /* arm COWBELL */
+            check(drum_trig_pending == 1u && drum_trig_note == 48u && drum_trig_ch == 10u && drum_trig_vel == 100u && drum_trig_lane == 10u,
+                  "DRUM TRIG: the learn hit is recorded for the editor (note 48, channel 10, velocity 100, lane 10)");
+            settings_later = 0; drum_trig_pending = 0;
+            dp_learn_lane = 15; dp_learn_from = -1; dp_learn_state = 1; dp_learn_heard = 0;   /* arm COWBELL (the tray) */
             DPN(dch, 56, 100); DPN(dch, 56, 0); frames(2);   /* outside the block (56): refused */
             check(dp_learn_state == 4u && drum_map[12] == 0u,
                   "DRUM PAD LEARN: a note outside 36..51 is refused, the map unchanged");
-            dp_learn_lane = 2; dp_learn_state = 1; dp_learn_heard = 0;   /* arm SNARE */
+            dp_learn_lane = 2; dp_learn_from = 38; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 38 (SNARE) */
             DPN(0, 40, 100); DPN(0, 40, 0); frames(2);   /* channel 1, not the drum channel: refused */
             check(dp_learn_state == 3u && dp_learn_expected == 10u && drum_map[4] == 0xFFu,
                   "DRUM PAD LEARN: a pad hit on another channel is refused, the map unchanged");
-            dp_learn_lane = 2; dp_learn_state = 1; dp_learn_heard = 0;   /* arm SNARE again */
-            DPN(dch, 40, 100); DPN(dch, 40, 0); frames(2);   /* channel 10, note 40: SNARE moves there */
-            check(dp_learn_state == 2u && drum_map[4] == 2u,
-                  "DRUM PAD LEARN: the next good hit moves the lane (SNARE to 40)");
-            dp_learn_lane = -1; dp_learn_state = 0; dp_learn_heard = 0; settings_later = 0;
+            dp_learn_lane = 2; dp_learn_from = 38; dp_learn_state = 1; dp_learn_heard = 0;   /* arm pad 38 (SNARE) again */
+            DPN(dch, 40, 100); DPN(dch, 40, 0); frames(2);   /* channel 10, note 40: the pads swap */
+            check(dp_learn_state == 2u && drum_map[4] == 2u && drum_map[2] == 8u,
+                  "DRUM PAD LEARN: the next good hit swaps the pads (SNARE to 40, SNARE 2 to 38)");
+            for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
+            drum_map[12] = 10;   /* HI TOM on pad 48: pads 47 and 50 are empty */
+            dp_learn_lane = -2; dp_learn_from = 47; dp_learn_state = 1; dp_learn_heard = 0;   /* arm the empty pad 47 */
+            DPN(dch, 48, 100); DPN(dch, 48, 0); frames(2);   /* HI TOM is on 48: the empty pad takes it */
+            check(dp_learn_state == 2u && drum_map[11] == 10u && drum_map[12] == 0xFFu && drum_map[14] == 0xFFu,
+                  "DRUM PAD LEARN: an empty pad learns a note and stays empty (HI TOM to 47, 48 and 50 silent)");
+            check(!strcmp(ui.msg, "EMPTY PAD"), "DRUM PAD LEARN: the device shows EMPTY PAD for an empty pad");
+            dp_learn_lane = -1; dp_learn_from = -1; dp_learn_state = 0; dp_learn_heard = 0; settings_later = 0;
             for (w = 0; w < DRUM_MAP_N; w++) drum_map[w] = 0xFFu;
             #undef DPN
         }

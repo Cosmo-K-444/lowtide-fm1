@@ -36,7 +36,8 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v12 (SLOOP 2.7): LIVE = 77, editor_live.c: the LIVE page (transport, sections, mix keys, punch-in FX, REC, undo) */
 /* v13 (Lowtide 2.8.4): DP_LEARN = 78, below: the drum-pad MIDI learn (a pad hit moves a lane) */
 #define ED_DP_LEARN 78u
-#define ED_PROTO 13u                                   /* the protocol version INFO ends with */
+#define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
+#define ED_PROTO 14u                                   /* the protocol version INFO ends with */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -368,6 +369,20 @@ UI_SMALL static void ed_sync(void)                                /* main loop *
         n++;
         ed_w.tpos = k + 1u;
     }
+    /* (2.8.5) the last live drum hit: note, channel, velocity, lane — for the editor's Drum Pads (the Last
+     * triggered line and the pad flash). No room: leave it pending for the next pass, not lost; a fast
+     * burst keeps only the newest hit (one pending slot). */
+    if (drum_trig_pending && ed_w.on) {
+        if (!ed_room())
+            return;
+        ed_begin(ED_DRUM_TRIG);
+        ed_b(drum_trig_note);
+        ed_b(drum_trig_ch);
+        ed_b(drum_trig_vel);
+        ed_b(drum_trig_lane);
+        ed_send();
+        drum_trig_pending = 0;
+    }
 }
 
 /* descriptor of parameter id of track t: the engine parameters of the engine it asked for
@@ -697,19 +712,26 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
 
 #include "editor_live.c"                              /* v12: the LIVE page (77) */
 
-/* ---- drum-pad MIDI learn (2.8.4, protocol v13): the editor arms a lane; the FM-1 listens for the next
- * pad hit on its MIDI in (DIN or USB — the editor cannot hear a controller on DIN, the firmware does not
- * echo notes back). sub 0 arm (lane), 1 cancel, 2 query. Reply: sub, result, lane, note, channel, drum
- * channel. result: 0 idle, 1 waiting, 2 done, 3 wrong channel (or the drum channel OFF), 4 note outside
- * 36..51, 5 bad lane. The capture is seq.c (events_block); the move is ui.c (dp_learn_poll). */
+/* ---- drum-pad MIDI learn (2.8.4, protocol v13; 2.8.5, protocol v14: the arm carries the PAD, not the
+ * lane): the editor arms a pad; the FM-1 listens for the next pad hit on its MIDI in (DIN or USB — the
+ * editor cannot hear a controller on DIN, the firmware does not echo notes back). sub 0 arm (note, lane),
+ * 1 cancel, 2 query. Reply: sub, result, lane, note, channel, drum channel. result: 0 idle, 1 waiting,
+ * 2 done, 3 wrong channel (or the drum channel OFF), 4 note outside 36..51, 5 a bad arm. The capture is
+ * seq.c (events_block); the move is ui.c (dp_learn_poll). */
 UI_SMALL static int ed_dp_learn(const uint8_t *a, uint32_t na)
 {
-    uint32_t sub = na >= 1u ? a[0] : 99u, lane = na >= 2u ? a[1] : 127u, res;
+    uint32_t sub = na >= 1u ? a[0] : 99u, note = na >= 2u ? a[1] : 127u, lane = na >= 3u ? a[2] : 127u, res;
     if (sub == 0u) {
-        if (lane >= DRUM_LANES) {
+        /* the arm (v14): [note, lane] — the pad's note 36..51 (127: no pad, the editor's tray) and the
+         * pad's sound 0..15 (127: the pad is empty, it has no sound). 127 is the sentinel: a SysEx
+         * data byte is 7 bit, so 255 never arrives (the editor masks it to 127 on the wire). An old
+         * editor's [lane] arm has no note to learn on, so it is refused (result 5) — a lane can sit
+         * on several pads. */
+        if ((note != 127u && (note < 36u || note >= 36u + DRUM_MAP_N)) || (lane != 127u && lane >= DRUM_LANES)) {
             res = 5;
         } else {
-            dp_learn_lane = (int8_t)lane;
+            dp_learn_from = (note == 127u) ? -1 : (int8_t)note;
+            dp_learn_lane = (lane == 127u) ? -2 : (int8_t)lane;  /* -2: the pad is empty, no sound moves */
             dp_learn_heard = 0;
             dp_learn_heard_ch = 0;
             dp_learn_state = 1;
@@ -722,6 +744,7 @@ UI_SMALL static int ed_dp_learn(const uint8_t *a, uint32_t na)
         }
     } else if (sub == 1u) {
         dp_learn_lane = -1;
+        dp_learn_from = -1;
         dp_learn_heard = 0;
         dp_learn_heard_ch = 0;
         dp_learn_state = 0;
