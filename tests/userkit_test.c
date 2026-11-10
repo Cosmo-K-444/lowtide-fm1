@@ -149,6 +149,99 @@ int main(void)
         check(drum_voice_on(DZ_USR + 3 * 16 + 0), "USR4 alone: its SNARE");
         quiet();
     }
+    {   /* 2.8.8: the kit slices (backup object 13): a voice starts at the slice, with the ADPCM state there,
+         * and ends at the slice end; without one it plays the zone whole */
+        uint8_t part[KIT_SLICE_PART_N], back[KIT_SLICE_PART_N];
+        uint32_t i;
+        int32_t s3a, s3b;
+        memset(part, 0, sizeof part);
+        check(kit_slice_default(part), "slices: an all-zero part is the default");
+        /* KICK (slot 0, lane 0): start 2000, end 4000, pred 0, idx 0 */
+        part[0] = 2000 & 0xFF; part[1] = (2000 >> 8) & 0xFF;
+        part[4] = 4000 & 0xFF; part[5] = (4000 >> 8) & 0xFF;
+        check(!kit_slice_default(part), "slices: a part with one slice is not the default");
+        kit_slice_read(part, sizeof part);
+        check(kit_slice[0][0].start == 2000u && kit_slice[0][0].end == 4000u && kit_slice[0][0].pred == 0 && kit_slice[0][0].idx == 0,
+              "slices: the part reads into the slot/lane table");
+        kit_slice_fill(back);
+        check(!memcmp(back, part, sizeof part), "slices: fill writes the part back as read");
+        TDRUM->p[P_E0] = (int16_t)DRUM_USR;              /* USR1 */
+        quiet(); drum_on(36, 110);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        check(i < NDRUM && drums.v[i].ph[0] == 2001u && drums.v[i].s[6] == 4000,
+              "slices: KICK starts at 2000 (ph 2001 primed) and ends at 4000");
+        s3a = drums.v[i].s[3];
+        quiet();
+        /* the same slice with pred 12000: the first sample is 12000 higher, exactly (the state is the slice's) */
+        part[8] = 12000 & 0xFF; part[9] = (12000 >> 8) & 0xFF;
+        kit_slice_read(part, sizeof part);
+        quiet(); drum_on(36, 110);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        s3b = drums.v[i].s[3];
+        check(i < NDRUM && s3b - s3a == 12000, "slices: the first sample follows the slice's predictor");
+        /* the sliced voice ends after its 2000 samples (~4000 output samples, 125 blocks); the whole
+         * zone (8000 samples) is still sounding then */
+        run_peak(140);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        check(i < NDRUM && !drums.v[i].active, "slices: the voice ends at the slice end");
+        memset(part, 0, sizeof part);
+        kit_slice_read(part, sizeof part);
+        quiet(); drum_on(36, 110);
+        run_peak(140);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        check(i < NDRUM && drums.v[i].active, "slices: without one, the same voice is still sounding then");
+        quiet();
+        /* a slice past the zone end clamps to the zone; one starting past it is ignored */
+        part[0] = 7000 & 0xFF; part[1] = (7000 >> 8) & 0xFF;
+        part[4] = 9000 & 0xFF; part[5] = (9000 >> 8) & 0xFF;
+        kit_slice_read(part, sizeof part);
+        quiet(); drum_on(36, 110);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        check(i < NDRUM && drums.v[i].s[6] == 8000, "slices: an end past the zone clamps to the zone");
+        quiet();
+        part[0] = 9000 & 0xFF; part[1] = (9000 >> 8) & 0xFF;
+        kit_slice_read(part, sizeof part);
+        quiet(); drum_on(36, 110);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].s[4] == DZ_USR + 0)
+                break;
+        check(i < NDRUM && drums.v[i].s[6] == 0, "slices: a start past the zone is ignored");
+        quiet();
+        /* a bad entry (start past end, or a step index over 88) reads as off */
+        part[4] = 2000 & 0xFF; part[5] = (2000 >> 8) & 0xFF;
+        kit_slice_read(part, sizeof part);
+        check(kit_slice[0][0].end == 0, "slices: start past end reads as off");
+        part[0] = 1000 & 0xFF; part[1] = (1000 >> 8) & 0xFF;
+        part[4] = 2000 & 0xFF; part[5] = (2000 >> 8) & 0xFF;
+        part[10] = 89;
+        kit_slice_read(part, sizeof part);
+        check(kit_slice[0][0].end == 0, "slices: a step index over 88 reads as off");
+        /* USR3+4: the slice is the slot the lane's sound is in (KICK is in USR3) */
+        memset(part, 0, sizeof part);
+        part[2 * 16 * 12 + 0] = 1000 & 0xFF; part[2 * 16 * 12 + 1] = (1000 >> 8) & 0xFF;
+        part[2 * 16 * 12 + 4] = 2000 & 0xFF; part[2 * 16 * 12 + 5] = (2000 >> 8) & 0xFF;
+        kit_slice_read(part, sizeof part);
+        TDRUM->p[P_E0] = (int16_t)DRUM_PAIR;
+        quiet(); drum_on(36, 110);
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].s[4] == DZ_USR + 2 * 16 + 0)
+                break;
+        check(i < NDRUM && drums.v[i].ph[0] == 1001u && drums.v[i].s[6] == 2000,
+              "slices: USR3+4 KICK takes the USR3 slice");
+        quiet();
+        memset(part, 0, sizeof part);
+        kit_slice_read(part, sizeof part);               /* (the table back to no slices, for the tests after) */
+    }
     {   /* the sequencer: KICK on 1, SNARE on 5 */
         uint32_t j;
         TDRUM->p[P_E0] = (int16_t)DRUM_USR;

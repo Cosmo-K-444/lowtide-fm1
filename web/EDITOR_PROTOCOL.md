@@ -524,6 +524,26 @@ pads as shown (the firmware's `drum_map_from_eff`, the editor's `drumPadsSeriali
 sound is not its default needs a byte; a pad whose sound IS its default needs one too when that
 sound sits on another pad as well, or when some silent pad needs the sound taken to stay silent.
 
+## v15: drum-pad learn removed, single-note toms (Lowtide 2.8.6)
+
+`INFO` ends with 15. `DP_LEARN` (command 78) is gone: the firmware no longer answers it, and the editor
+hides the per-pad Learn buttons. The drum-pad learn is removed entirely (the 32-slot MIDI Learn card is
+untouched). The toms are single-note now: LOW TOM answers only G1 (43), HI TOM only C2 (48); the other
+tom notes (F1 41, A1 45, B1 47, D2 50) play nothing — a GM note with no lane. The drum map is written to
+the FM-1 immediately on a drag, import or reset (editor-side; the "Write map to FM-1" button is gone).
+
+## v16: kit slices (Lowtide 2.8.8)
+
+`INFO` ends with 16. Backup object **13**: the kit slices — 768 bytes, per user slot (0..3) and lane
+(0..15), 12 bytes each: start (u32, baked samples), end (u32, exclusive), pred (i16, the ADPCM state at
+the start), idx (u8, the step index at the start), 0. All zero = no slice: the voice plays the zone
+whole. Listed only while not the default (all zero), like object 12. A sliced drum voice starts at the
+slice start with that ADPCM state and ends at the slice end (clamped to the zone). The markers live
+apart from the sample data — a fifth part of the settings object — so the editor rewrites object 13
+without re-uploading the audio; uploading a kit to a slot writes that slot's markers with it, and
+uploading a sample set to a slot clears that slot's markers. The SAMPLE engine does not read them:
+they apply to drum-kit voices only.
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.

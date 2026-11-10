@@ -110,6 +110,54 @@ static const uint8_t LANE_OF_GM[81 - 35 + 1] = {
 #define DRUM_DEC_MAX 3
 static int8_t drum_tune[DRUM_LANES], drum_dec[DRUM_LANES];
 static const uint8_t DK_SMP[4] = {47, 60, 74, 87};   /* a sample's DECAY -4 .. -1: -60 dB in 60, 120, 250, 500 ms */
+/* (2.8.8) the kit slices: per user slot (0..3) and lane (0..15), the start and end of the sample (baked
+ * samples, end exclusive) and the ADPCM state at the start (pred, idx), so a sliced voice starts there
+ * without decoding from the sample start. Stored apart from the sample data — a fifth part of the settings
+ * object, backup object 13 — so the editor rewrites them without re-uploading the audio. All zero = no
+ * slice: the voice plays the zone whole, as before. */
+typedef struct { uint32_t start, end; int16_t pred; uint8_t idx, rsv; } kit_slice_t;
+#define KIT_SLICE_PART_N (4u * 16u * 12u)           /* the settings part / backup object 13: 768 bytes */
+static kit_slice_t kit_slice[4][16];
+/* the part bytes, little-endian (12 per entry: start, end, pred, idx, 0) */
+static void kit_slice_fill(uint8_t *b)
+{
+    uint32_t k, l, o = 0;
+    for (k = 0; k < 4u; k++)
+        for (l = 0; l < 16u; l++) {
+            const kit_slice_t *s = &kit_slice[k][l];
+            b[o++] = (uint8_t)s->start; b[o++] = (uint8_t)(s->start >> 8); b[o++] = (uint8_t)(s->start >> 16); b[o++] = (uint8_t)(s->start >> 24);
+            b[o++] = (uint8_t)s->end; b[o++] = (uint8_t)(s->end >> 8); b[o++] = (uint8_t)(s->end >> 16); b[o++] = (uint8_t)(s->end >> 24);
+            b[o++] = (uint8_t)s->pred; b[o++] = (uint8_t)(s->pred >> 8); b[o++] = s->idx; b[o++] = 0;
+        }
+}
+static int kit_slice_default(const uint8_t *b)
+{
+    uint32_t i;
+    for (i = 0; i < KIT_SLICE_PART_N; i++)
+        if (b[i])
+            return 0;
+    return 1;
+}
+/* n: KIT_SLICE_PART_N; every entry checked (an off entry is all zero; a set one starts before it ends, its
+ * step index 0..88, its end inside the slot's data). A bad entry reads as off, never as a wild slice. */
+static void kit_slice_read(const uint8_t *b, uint32_t n)
+{
+    uint32_t k, l, o = 0;
+    if (n != KIT_SLICE_PART_N)
+        return;
+    for (k = 0; k < 4u; k++)
+        for (l = 0; l < 16u; l++) {
+            kit_slice_t *s = &kit_slice[k][l];
+            s->start = (uint32_t)b[o] | (uint32_t)b[o + 1] << 8 | (uint32_t)b[o + 2] << 16 | (uint32_t)b[o + 3] << 24;
+            s->end = (uint32_t)b[o + 4] | (uint32_t)b[o + 5] << 8 | (uint32_t)b[o + 6] << 16 | (uint32_t)b[o + 7] << 24;
+            s->pred = (int16_t)((uint32_t)b[o + 8] | (uint32_t)b[o + 9] << 8);
+            s->idx = b[o + 10];
+            s->rsv = 0;
+            o += 12;
+            if (s->end && (s->start >= s->end || s->idx > 88u || s->end > 2u * SMP_USER_SIZE))
+                *s = (kit_slice_t){0, 0, 0, 0, 0};
+        }
+}
 #define DRUM_CLICK(n) ((n) == 76u || (n) == 77u)    /* (the click's wood block: no lane, never tuned) */
 static uint32_t lane_of_note(uint32_t note);
 static int drum_tweaked(void)
@@ -297,11 +345,13 @@ static void drum_on(uint32_t note, uint32_t vel)
     const smp_set_t *set;
     voice_t *v = &drums.v[0];
     uint32_t i, zi = 0xFFFFu, kit = drum_kit();
+    uint32_t lane = DRUM_LANE_NONE, uslot = 0;      /* (2.8.8) the lane hit, and the user slot it plays from */
     int32_t zid = -1;
     if (lane_of_note(note) == DRUM_LANE_NONE)
         return;                                     /* a note with no lane plays nothing */
+    lane = lane_of_note(note);
     if (note != 76u && note != 77u)                 /* the pads and key LEDs (not the click's wood block) */
-        drums.hits |= (uint16_t)(1u << lane_of_note(note));
+        drums.hits |= (uint16_t)(1u << lane);
     if (note == 35u || note == 36u)
         drums.kick = 1;                             /* (DUCK) */
     if (kit >= DRUM_SYN) {                          /* SYN1..SYN4: your synthesised kit */
@@ -312,13 +362,17 @@ static void drum_on(uint32_t note, uint32_t vel)
     if (kit >= DRUM_USR) {                          /* a user kit: the lane's sound, as its note (the hat choke) */
         if (note == 76u || note == 77u)
             return;                                 /* (the click's wood block: not a lane) */
-        note = LANE_NOTE[lane_of_note(note)];
+        note = LANE_NOTE[lane];
         if (kit == DRUM_PAIR) {                     /* USR3+4: the lane's sound in USR3, else in USR4 */
             zid = drum_usr_zone(2, note);
-            if (zid < 0)
+            uslot = 2;
+            if (zid < 0) {
                 zid = drum_usr_zone(3, note);
+                uslot = 3;
+            }
         } else {
-            zid = drum_usr_zone(kit - DRUM_USR, note);
+            uslot = kit - DRUM_USR;
+            zid = drum_usr_zone(uslot, note);
         }
         if (zid < 0)
             return;                                 /* (an empty slot, or no sound on this lane) */
@@ -354,8 +408,20 @@ static void drum_on(uint32_t note, uint32_t vel)
     v->s[4] = zid;
     v->ph[0] = v->ph[1] = 0;
     v->s[0] = v->s[1] = v->s[2] = 0;
+    v->s[6] = 0;                                    /* (2.8.8) the slice end, 0 = the zone whole */
     {
         const smp_zone_t *z = drum_zone_of(v);
+        /* (2.8.8) a sliced user-kit voice starts at the slice, with the ADPCM state there, and ends at
+         * its end (clamped to the zone: a slice past the zone plays to the zone's end) */
+        if (kit >= DRUM_USR && lane < DRUM_LANES) {
+            const kit_slice_t *sl = &kit_slice[uslot][lane];
+            if (sl->end && sl->start < z->n) {
+                v->ph[0] = sl->start;
+                v->s[0] = sl->pred;
+                v->s[1] = sl->idx;
+                v->s[6] = (int32_t)(sl->end < z->n ? sl->end : z->n);
+            }
+        }
         v->s[3] = sample_next(z, v, 0);
         /* (after 2.8.3) clamped: a user kit zone's root is not checked (a typed root of 300 shifted by 2^20) */
         v->s[5] = (int32_t)((pow2_q16(clamp((int32_t)note * 16 - z->root16, -1536, 2047)) >> 8) * (z->rate >> 8));
@@ -447,7 +513,7 @@ static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dl
             while (frac >= 65536u) {
                 frac -= 65536u;
                 v->s[2] = v->s[3];
-                if (v->ph[0] >= z->n) {
+                if (v->ph[0] >= (v->s[6] ? (uint32_t)v->s[6] : z->n)) {   /* (2.8.8) a slice ends at its end */
                     v->active = 0;
                     break;
                 }

@@ -35,8 +35,10 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v11 (SLOOP 2.7): backup object 11 = your theme (gfx.c theme_t), the editor's Theme page */
 /* v12 (SLOOP 2.7): LIVE = 77, editor_live.c: the LIVE page (transport, sections, mix keys, punch-in FX, REC, undo) */
 /* v13 (Lowtide 2.8.4): DP_LEARN = 78, the drum-pad MIDI learn — removed in 2.8.6 (the learn is gone) */
+/* v15 (Lowtide 2.8.6): the drum-pad learn is gone, single-note toms */
+/* v16 (Lowtide 2.8.8): backup object 13 = the kit slices (drums.c kit_slice) */
 #define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
-#define ED_PROTO 15u                                   /* the protocol version INFO ends with (2.8.6: the drum-pad learn is gone, single-note toms) */
+#define ED_PROTO 16u                                   /* the protocol version INFO ends with (2.8.8: the kit slices, backup object 13) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -424,6 +426,7 @@ _Static_assert(sizeof proj_tmp >= sizeof(project_t) && sizeof proj_tmp >= sizeof
 static persist_t ed_bk_set;                             /* LIST's snapshot of the settings */
 static uint8_t ed_bk_ml[MIDI_PART];                     /* .. and of the MIDI part (2.6, object 10: project.c) */
 static uint8_t ed_bk_dm[DRUM_MAP_PART_N];               /* .. and of the drum map + learned-knob speed (2.8.2, object 12) */
+static uint8_t ed_bk_ks[KIT_SLICE_PART_N];               /* .. and of the kit slices (2.8.8, object 13) */
 static uint8_t ed_bk_valid, ed_bk_put, ed_bk_id;
 static uint32_t ed_bk_len, ed_bk_crc, ed_bk_pos, ed_bk_ms;
 UI_SMALL static void ed_bk_u32(uint32_t v) { uint32_t i; for (i = 0; i < 5u; i++) ed_b((v >> (7u * i)) & 127u); }
@@ -486,6 +489,15 @@ UI_SMALL static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no
             *len = sizeof ed_bk_dm;
         return ed_bk_dm;
     }
+    if (id == 13u) {                                      /* 2.8.8: the kit slices (drums.c kit_slice, 768 bytes:
+                                                         * per user slot and lane, the start / end and the ADPCM
+                                                         * state at the start): listed only while it is not the
+                                                         * default (a backup without it stays one an older editor
+                                                         * reads; its restore leaves them as they are) */
+        if (!kit_slice_default(ed_bk_ks))
+            *len = sizeof ed_bk_ks;
+        return ed_bk_ks;
+    }
     if (id >= 32u && id < 32u + SMP_USER_SLOTS) {
         const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(id - 32u);
         if (h->magic == SMP_USER_MAGIC && h->version == 1u && h->nz && h->nz <= 16u &&
@@ -495,8 +507,8 @@ UI_SMALL static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no
     }
     return 0;
 }
-static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 32, 33, 34, 35};   /* 11: your theme (2.7), */   /* 35: USR4 (2.4), 9: SYN kits (2.5),
-                                                                                      * 10: MIDI LEARN (2.6), 12: the drum map (2.8.2) */
+static const uint8_t ED_BK_IDS[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 32, 33, 34, 35};   /* 11: your theme (2.7), */   /* 35: USR4 (2.4), 9: SYN kits (2.5),
+                                                                                      * 10: MIDI LEARN (2.6), 12: the drum map (2.8.2), 13: the kit slices (2.8.8) */
 
 /* a flash erase silences the audio for ~50 ms and stalls USB: only while stopped (as the panel) */
 UI_SMALL static uint32_t ed_flash_busy(void) { return song.playing || transport_req; }
@@ -577,6 +589,20 @@ UI_SMALL static uint32_t ed_bk_commit(void)
         persist_saved = p;
         return 0;
     }
+    if (id == 13u) {                                      /* 2.8.8: the kit slices, written with the settings
+                                                         * (the whole 768-byte part, as listed) */
+        persist_t p;
+        if (ed_flash_busy())
+            return 3;
+        if (n != KIT_SLICE_PART_N)
+            return 2;
+        kit_slice_read(raw, n);                           /* (every entry checked: a bad one reads as off) */
+        persist_fill(&p);
+        if (!flash_ok || settings_write(&p))
+            return 4;
+        persist_saved = p;
+        return 0;
+    }
     if (id == 11u) {                                      /* SLOOP 2.7: your theme (n 0: none), written with the settings;
                                                          * sent, it is shown (MENU > COLOR on it) */
         persist_t p;
@@ -619,16 +645,18 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
             persist_fill(&ed_bk_set);
             midi_part_fill(ed_bk_ml);
             drum_part_fill(ed_bk_dm);
+            kit_slice_fill(ed_bk_ks);
             ed_bk_valid = 1;
             ed_bk_put = 0;
         }
         ed_b(rc);
         ed_b(rc ? 0u : (uint32_t)sizeof ED_BK_IDS - (ed_bk_obj(10u, &len) && !len ? 1u : 0u) -
-                           (ed_bk_obj(11u, &len) && !len ? 1u : 0u) - (ed_bk_obj(12u, &len) && !len ? 1u : 0u));
+                           (ed_bk_obj(11u, &len) && !len ? 1u : 0u) - (ed_bk_obj(12u, &len) && !len ? 1u : 0u) -
+                           (ed_bk_obj(13u, &len) && !len ? 1u : 0u));
         for (i = 0; !rc && i < sizeof ED_BK_IDS; i++) {
             p = ed_bk_obj(ED_BK_IDS[i], &len);
-            if ((ED_BK_IDS[i] == 10u || ED_BK_IDS[i] == 11u || ED_BK_IDS[i] == 12u) && !len)
-                continue;                                 /* (nothing learned / no theme / the default drum map: not in the list) */
+            if ((ED_BK_IDS[i] == 10u || ED_BK_IDS[i] == 11u || ED_BK_IDS[i] == 12u || ED_BK_IDS[i] == 13u) && !len)
+                continue;                                 /* (nothing learned / no theme / the default drum map / no slices: not in the list) */
             ed_b(ED_BK_IDS[i]);
             ed_bk_u32(len);
             ed_bk_u32(st_crc32(p, len));
@@ -655,7 +683,7 @@ UI_SMALL static int ed_backup(uint32_t cmd, const uint8_t *a, uint32_t na)   /* 
         rc = 1;
         if (!flash_ok) {
             rc = 4;
-        } else if (op == 0u && na == 12u && (id <= 12u)) {  /* begin: id, length (5), CRC-32 (5) */
+        } else if (op == 0u && na == 12u && (id <= 13u)) {  /* begin: id, length (5), CRC-32 (5) */
             len = ed_bk_r32(a + 2);
             if (id >= 2u || len) {                        /* (the working project and the settings are never empty) */
                 if (len <= sizeof proj_tmp) {
@@ -762,7 +790,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone) */
+        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices) */
         break;
     }
     case ED_GET:
