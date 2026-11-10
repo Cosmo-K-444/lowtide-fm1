@@ -4163,6 +4163,7 @@ const kitRoom = () => SMP.MAX_DATA - 64;                 /* (a slot, less a marg
    keeps a mirror of the FM-1 store (kitSliceDev) and rewrites object 13 when markers change, after a kit upload,
    or clears a slot's markers when that slot is replaced from the Samples page. An all-zero entry is no slice. */
 const KITSLICE = { OBJ: 13, LEN: 768, ENTRY: 12 };
+const KIT_MIN_CHOP = Math.round(SMP.RATE * 0.12);   /* (2.8.12) minimum chop, 120 ms in samples: 2646 — the Start and End markers can never be closer than this (#9 workaround, decided 11 Nov 2026) */
 let kitSliceDev = new Uint8Array(KITSLICE.LEN);   /* the FM-1's marker store, as last read */
 let kitSliceLoaded = false;                       /* false until read once (or the FM-1 has no object 13) */
 const kitSliceOff = (slot, lane) => (slot * 16 + lane) * KITSLICE.ENTRY;
@@ -4183,14 +4184,12 @@ function kitSliceRange(p) {   /* the baked samples to play: the slice, clamped t
   if (!s) return { start: 0, end: n };
   return { start: Math.max(0, Math.min(n, s.start)), end: Math.max(0, Math.min(n, s.end)) };
 }
-function kitSliceSlotFor(lane, dest, pads) {   /* the slot a lane's zone goes to for a kit in `dest` */
-  if (dest === KIT_PAIR) { const sp = kitSplit(pads, kitRoom()); return sp && sp[1].includes(lane) ? 3 : 2; }
-  return dest;
-}
 /* (2.8.11) kitSliceSlot / kitSliceRead / kitSliceWrite / kitSliceSyncFromDraft / kitSliceSyncPads /
-   kitSliceClearSlot live inside the UI's IIFE now, next to kitSliceCommit: they use kitDraft, dev
-   and rq, which are declared there — defined here, every marker commit threw "kitDraft is not
-   defined" and every marker read "dev is not defined", so the markers never landed (2.8.8–2.8.10). */
+   kitSliceClearSlot / kitSliceSlotFor live inside the UI's IIFE now, next to kitSliceCommit: they use
+   kitDraft, dev, rq and KIT_PAIR, which are declared there — defined here, every marker commit threw
+   "kitDraft is not defined" and every marker read "dev is not defined", so the markers never landed
+   (2.8.8–2.8.10); kitSliceSlotFor was missed by the 2.8.11 move and still threw "KIT_PAIR is not
+   defined" on every marker write (2.8.11, #29). */
 /* a pad as it goes to the slot: tuned (played faster or slower, as a sampler does), cut, faded out, its gain */
 function kitPad(p) {
   let x = Array.from(p.s);
@@ -8559,7 +8558,12 @@ function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a 
   if (!p) return;
   const n = kitLen(p);
   start = Math.max(0, Math.min(n - 1, Math.round(start)));
-  end = Math.max(start + 1, Math.min(n, Math.round(end)));
+  end = Math.max(0, Math.min(n, Math.round(end)));
+  if (end - start < KIT_MIN_CHOP) {   /* (2.8.12) the 120 ms minimum chop (#9): no caller (drag, nudge, or anything future) can make a shorter chop */
+    if (n <= KIT_MIN_CHOP) { start = 0; end = n; }   /* a sample shorter than 120 ms: the whole sample, i.e. no slice */
+    else if (start + KIT_MIN_CHOP <= n) end = start + KIT_MIN_CHOP;
+    else start = end - KIT_MIN_CHOP;
+  }
   if (start === 0 && end === n) delete p.slice;
   else p.slice = { start, end };
   kitSliceRender();
@@ -8568,6 +8572,10 @@ function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a 
    kitDraft/dev/rq — before 2.8.11 they were defined in the protocol section, where those three are
    out of scope, so every marker commit threw "kitDraft is not defined" and every marker read threw
    "dev is not defined", and the markers never landed on the FM-1 (2.8.8–2.8.10). */
+function kitSliceSlotFor(lane, dest, pads) {   /* (2.8.12) the slot a lane's zone goes to for a kit in `dest` — inside the IIFE: it reads KIT_PAIR, which lives here (#29) */
+  if (dest === KIT_PAIR) { const sp = kitSplit(pads, kitRoom()); return sp && sp[1].includes(lane) ? 3 : 2; }
+  return dest;
+}
 function kitSliceSlot(lane) {   /* the slot a lane's zone goes to in the current draft */
   return kitSliceSlotFor(lane, kitDraft.slot, kitDraft.pads);
 }
@@ -8806,7 +8814,7 @@ function renderKits() {
     u.fit = el("button", { onclick: () => { if (kitFit(kitDraft.pads, kitRoom(), kitSlots().length)) { kitWriteNow(); renderKits(); } } }, t("kitFit"));
     u.match = el("button", { ic: "symbol_audio", onclick: kitMatch }, t("matchLevels"));
     u.add = el("button", { ic: "symbol_folder_open", onclick: () => { u.want = -1; u.file.click(); } }, t("kitAdd"));
-    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; kitWriteNow(); renderKits(); } }, t("kitClear"));
+    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; kitDraft.name = ""; kitWriteNow(); renderKits(); } }, t("kitClear"));   /* (2.8.12) Clear all resets the kit name too (#32) */
     /* (2.8.8) import / export the whole kit (name, per-pad settings, slicing markers) as a ZIP */
     u.exp = el("button", { ic: "symbol_download", onclick: kitExport }, t("kitExport"));
     u.imp = el("button", { ic: "symbol_folder_open", onclick: () => u.kitFile.click() }, t("kitImport"));
@@ -8865,8 +8873,8 @@ function renderKits() {
       const p = kitDraft.pads[kitDraft.sel];
       if (!p) return;
       const r = u.sliceCv.getBoundingClientRect(), n = kitLen(p), rng = kitSliceRange(p);
-      if (kitSliceDrag.which === "start") kitSliceSet(kitDraft.sel, kitSliceDrag.toSample(e.clientX - r.left), rng.end);
-      else if (kitSliceDrag.which === "end") kitSliceSet(kitDraft.sel, rng.start, kitSliceDrag.toSample(e.clientX - r.left));
+      if (kitSliceDrag.which === "start") kitSliceSet(kitDraft.sel, Math.min(kitSliceDrag.toSample(e.clientX - r.left), rng.end - KIT_MIN_CHOP), rng.end);   /* (2.8.12) Start stops 120 ms short of End (#9) */
+      else if (kitSliceDrag.which === "end") kitSliceSet(kitDraft.sel, rng.start, Math.max(kitSliceDrag.toSample(e.clientX - r.left), rng.start + KIT_MIN_CHOP));   /* (2.8.12) End stops 120 ms past Start (#9) */
       else {   /* pan: shift the view window by the pointer delta, clamped to the pad */
         const w = kitSliceDrag.b0 - kitSliceDrag.a0, shift = Math.round((kitSliceDrag.x0 - e.clientX) / r.width * w);
         kitSliceView.a = Math.max(0, Math.min(n - w, kitSliceDrag.a0 + shift));
@@ -9152,6 +9160,7 @@ async function kitEraseSlot(k) {   /* erase one slot (a pair part the kit leaves
     try { await kitSliceClearSlot(k); } catch (e) { report(e); }
     await smpInfo();
     done = true;
+    kitSlotKinds = null;   /* (2.8.12) the slot's kind may have changed: read again on the next render (#31) */
   } catch (e) { if (e.message !== "closed") report(e); } finally { busy--; }
   return done;
 }
@@ -9277,7 +9286,7 @@ async function kitZipParse(f) {
     if (!blob || blob.data.length < Math.ceil(len / 2)) { bad.push(e.file || "?"); continue; }
     const p = { s: imaDecode(blob.data, len), adpcm: blob.data, fname: e.file || blob.name, tune: 0, gain: 0, len: 0 };
     if (e.slice && typeof e.slice.start === "number" && typeof e.slice.end === "number") {
-      const st = Math.max(0, Math.min(len - 1, Math.round(e.slice.start))), en = Math.max(st + 1, Math.min(len, Math.round(e.slice.end)));
+      const st = Math.max(0, Math.min(len - 1, Math.round(e.slice.start))), en = Math.min(len, Math.max(st + KIT_MIN_CHOP, Math.min(len, Math.round(e.slice.end))));   /* (2.8.12) an imported slice is clamped to the 120 ms minimum chop (#9), where the sample allows it */
       if (st !== 0 || en !== len) p.slice = { start: st, end: en };   /* a full range is no slice */
     }
     pads[l] = p;
@@ -9313,6 +9322,7 @@ async function kitUploadPads(pads, name, dest) {
     done = await smpUpload(k, kitProg(), false, { name: name || "KIT", files: kitZones(sub) }, true);
   }
   if (done) {
+    kitSlotKinds = null;   /* (2.8.12) the slot's kind may have changed: read again on the next render (#31) — covers kitWriteNow, kitImportSlot and kitImport */
     try { await kitSliceSyncPads(pads, dest); }
     catch (e) {
       if (e && e.code === "bkStop") { kitSlicePending = true; bkReport(e); }   /* the song plays: the samples landed, the markers wait */
@@ -9472,6 +9482,7 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = fals
     sayK("smpDone", `${k + 1}  ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     smpSentSig[k] = null;   /* (2.8.9) the slot changed: a preview must re-check its draft */
     chopSentSig[k] = null;   /* (2.8.9) the slot changed: a chop audition must re-check its chops */
+    kitSlotKinds = null;   /* (2.8.12) the slot's kind may have changed (an instrument may have replaced a kit, or vice versa): read again on the next render (#31) */
     done = true;
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);

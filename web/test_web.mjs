@@ -36,7 +36,7 @@ const E = vm.runInNewContext(proto + `
    CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore, crc32,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, GM_DRUM, drumName, parseNotes, fmtValue, F, DRUM_LANES, LV_NAMES, emptyDrum, lockable, MICRO, FC, fillGet, fillSet, pack7, unpack7,
-   loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaDecode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, bkWriteObj, bkReadObj })`,
+   loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaDecode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, KIT_MIN_CHOP, bkWriteObj, bkReadObj })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 
 async function editorMock() {
@@ -1390,7 +1390,7 @@ async function editorKitSlices() {
   const exBox = { console, TextEncoder, TextDecoder, File, Blob, Response,
     DRUM_LANES: E.DRUM_LANES, KIT: E.KIT, kitLen: E.kitLen, kitPad: E.kitPad, wavFile: E.wavFile,
     imaEncode: E.imaEncode, imaDecode: E.imaDecode, kitWriteNow: () => {},   /* (2.8.9) the export is ADPCM now, and the import writes at once */
-    zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample,
+    zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample, KIT_MIN_CHOP: E.KIT_MIN_CHOP,
     normalize: E.normalize, rootFromName: E.rootFromName, SMP: E.SMP, LOOP: E.LOOP,
     fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch",
     sayK: () => {}, renderKits: () => {}, t: (k) => k };
@@ -1417,10 +1417,10 @@ async function editorKitSlices() {
   await X.kitImport(new File([exported.bytes], "mykit-kit.zip"));
   const ip = exBox.kitDraft.pads;
   ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav" && ip[0].s.length === 8000 && ip[0].adpcm && ip[0].adpcm.length === 4000
-    && ip[0].slice && ip[0].slice.start === 2000 && ip[0].slice.end === 4000
+    && ip[0].slice && ip[0].slice.start === 2000 && ip[0].slice.end === 2000 + E.KIT_MIN_CHOP
     && ip[2] && ip[2].tune === 0 && ip[2].gain === 0 && ip[2].len === 0 && ip[2].s.length === baked2 && !ip[2].slice
-    && ip[5] && ip[5].tune === 0 && ip[5].gain === 0 && ip[5].len === 0 && ip[5].s.length === 4410 && ip[5].slice && ip[5].slice.start === 100 && ip[5].slice.end === 500,
-    "kit import: the kit comes back with its samples (ADPCM decoded), baked settings and slices");
+    && ip[5] && ip[5].tune === 0 && ip[5].gain === 0 && ip[5].len === 0 && ip[5].s.length === 4410 && ip[5].slice && ip[5].slice.start === 100 && ip[5].slice.end === 100 + E.KIT_MIN_CHOP,
+    "kit import: the kit comes back with its samples (ADPCM decoded), baked settings and slices (a sub-120 ms slice is widened to the 120 ms minimum on import)");
   await X.kitImport(new File([E.zipStore([{ name: "x.wav", data: new Uint8Array(10) }])], "bad.zip"));
   ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav", "kit import: a ZIP without kit.json is rejected, the kit stays");
   /* (2.8.9) a v1 (WAV) kit is refused with the old-version message, and the kit stays; a future
@@ -1584,7 +1584,7 @@ async function editorKit289() {
        draft is only replaced when the slot imported into is the one picked for editing */
     const impSrc = html.slice(html.indexOf("async function kitZipParse"), html.indexOf("async function kitUploadPads"));
     const ups = [];
-    const impBox = { console, TextEncoder, TextDecoder, File, Blob, zipRead: E.zipRead, imaDecode: E.imaDecode,
+    const impBox = { console, TextEncoder, TextDecoder, File, Blob, zipRead: E.zipRead, imaDecode: E.imaDecode, KIT_MIN_CHOP: E.KIT_MIN_CHOP,
       kitUploadPads: async (pads, name, dest) => { ups.push({ pads, name, dest }); return true; },
       kitSlotKinds: null, kitDraft: { name: "", slot: null, pads: Array(16).fill(null), sel: -1, sent: true }, kitWrittenSlot: null,
       renderKits: () => {}, sayK: () => {}, t: (k) => k };
@@ -1732,7 +1732,7 @@ async function editorKit2810() {
   const said = [];
   const exBox = { console, TextEncoder, TextDecoder, File, Blob, Response,
     DRUM_LANES: E.DRUM_LANES, KIT: E.KIT, kitLen: E.kitLen, kitPad: E.kitPad, wavFile: E.wavFile,
-    imaEncode: E.imaEncode, imaDecode: E.imaDecode, zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample,
+    imaEncode: E.imaEncode, imaDecode: E.imaDecode, zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample, KIT_MIN_CHOP: E.KIT_MIN_CHOP,
     normalize: E.normalize, rootFromName: E.rootFromName, SMP: E.SMP, LOOP: E.LOOP,
     fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch",
     sayK: (k) => { said.push(k); }, renderKits: () => {}, t: (k) => k,
@@ -1800,11 +1800,11 @@ async function editorKit2810() {
 
   /* #4: a slice can never be written with end == 0 (kitSliceSet clamps the end past the start; the marker sync skips a degenerate range) */
   const setSrc = html.slice(html.indexOf("function kitSliceSet"), html.indexOf("async function kitSliceCommit"));
-  const setBox = { console, kitDraft: { pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 }] }, kitLen: E.kitLen, kitSliceRender: () => {} };
+  const setBox = { console, kitDraft: { pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 }] }, kitLen: E.kitLen, kitSliceRender: () => {}, KIT_MIN_CHOP: E.KIT_MIN_CHOP };
   const ST = vm.runInNewContext(setSrc + `\n;({ kitSliceSet })`, setBox);
   ST.kitSliceSet(0, 100, 0);
-  ok(setBox.kitDraft.pads[0].slice.end === 101 && setBox.kitDraft.pads[0].slice.start === 100,
-    "slice end==0: kitSliceSet clamps the end past the start (never end == 0 with start > 0)");
+  ok(setBox.kitDraft.pads[0].slice.end === 100 + E.KIT_MIN_CHOP && setBox.kitDraft.pads[0].slice.start === 100,
+    "slice end==0: kitSliceSet clamps the end to the 120 ms minimum chop past the start (never end == 0 with start > 0)");
   ST.kitSliceSet(0, 0, 8000);
   ok(!setBox.kitDraft.pads[0].slice, "slice end==0: a full range is no slice");
   ok(/if \(s\.end <= s\.start\) return;/.test(html.slice(html.indexOf("function kitSliceSyncPads"), html.indexOf("function kitSliceClearSlot"))),
@@ -1848,7 +1848,7 @@ async function editorKit2811() {
      declared only inside the IIFE. */
   const iifeAt = html.indexOf('if (typeof document !== "undefined") (() => {');
   const pwaAt = html.indexOf("/*PWA*/");
-  const sliceHelpers = ["kitSliceSlot", "kitSliceRead", "kitSliceWrite", "kitSliceSyncFromDraft", "kitSliceSyncPads", "kitSliceClearSlot"];
+  const sliceHelpers = ["kitSliceSlot", "kitSliceRead", "kitSliceWrite", "kitSliceSyncFromDraft", "kitSliceSyncPads", "kitSliceClearSlot", "kitSliceSlotFor"];
   const proto = html.slice(0, iifeAt);
   ok(iifeAt > 0 && pwaAt > iifeAt
     && sliceHelpers.every((h) => { const i = html.indexOf(`function ${h}(`); return i > iifeAt && i < pwaAt; })
@@ -1863,7 +1863,8 @@ async function editorKit2811() {
     const LINE0 = html.slice(0, scriptStart).split("\n").length - 1;   /* file line = acorn line + LINE0 */
     const ast = acorn.parse(script, { ecmaVersion: 2024, locations: true, sourceType: "script" });
     const GLOBALS = new Set(["document", "window", "navigator", "location", "console", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame", "performance", "fetch", "URL", "Blob", "FileReader", "TextEncoder", "TextDecoder", "Uint8Array", "Int8Array", "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Float32Array", "Float64Array", "DataView", "ArrayBuffer", "Promise", "JSON", "Math", "Error", "TypeError", "ReferenceError", "RangeError", "Object", "Array", "String", "Number", "Boolean", "Symbol", "Map", "Set", "WeakMap", "Date", "RegExp", "isNaN", "isFinite", "parseInt", "parseFloat", "encodeURIComponent", "decodeURIComponent", "alert", "confirm", "indexedDB", "localStorage", "sessionStorage", "crypto", "WebAssembly", "AudioContext", "webkitAudioContext", "history", "screen", "event", "CustomEvent", "Event", "KeyboardEvent", "PointerEvent", "DragEvent", "ClipboardEvent", "File", "FileList", "DataTransfer", "DOMParser", "XMLSerializer", "MutationObserver", "ResizeObserver", "IntersectionObserver", "Worker", "SharedWorker", "BroadcastChannel", "MessageChannel", "Image", "Option", "Proxy", "Reflect", "Generator", "AsyncGenerator", "BigInt", "BigInt64Array", "BigUint64Array", "Atomics", "globalThis", "undefined", "NaN", "Infinity"]);
-    const TARGETS = new Set(["kitDraft", "dev", "rq", "kitSlicePending", "kitSliceReadP"]);
+    const TARGETS = new Set(["kitDraft", "dev", "rq", "kitSlicePending", "kitSliceReadP", "KIT_PAIR", "kitSliceDev", "kitSlotKinds", "t"]);   /* (2.8.12) KIT_PAIR is what the 2.8.11 walk missed (#29): kitSliceSlotFor referenced it from outside the IIFE */
+    let guarded = new Set();   /* (2.8.12) names a `typeof` guard on the left of && protects on the right (lockable, editor.html:1422) */
     const scopes = [{ names: new Set(), kind: "top", line: 1 }];
     const problems = [];
     const declare = (name) => { scopes[scopes.length - 1].names.add(name); };
@@ -1896,7 +1897,17 @@ async function editorKit2811() {
           const fnName = node.id ? node.id.name : "(anon)";
           scopes.push({ names: new Set(), kind: "fn", line: node.loc.start.line, fnName });
           if (node.id && node.type !== "FunctionDeclaration") scopes[scopes.length - 1].names.add(node.id.name);
-          for (const p of node.params) declarePattern(p);
+          /* (2.8.12) parameter default values are expressions too: walk them, so a default that
+             reaches for an IIFE-only variable is caught (the walk missed `dev` in lockable's default
+             at editor.html:1422 until now) */
+          const walkDefaults = (pat) => {
+            if (!pat) return;
+            if (pat.type === "AssignmentPattern") { walk(pat.right, node); walkDefaults(pat.left); }
+            else if (pat.type === "ObjectPattern") for (const pr of pat.properties) walkDefaults(pr.type === "RestElement" ? pr.argument : pr.value);
+            else if (pat.type === "ArrayPattern") for (const e of pat.elements) if (e) walkDefaults(e.type === "RestElement" ? e.argument : e);
+            else if (pat.type === "RestElement") walkDefaults(pat.argument);
+          };
+          for (const p of node.params) { declarePattern(p); walkDefaults(p); }
           walk(node.body, node);
           scopes.pop();
           return;
@@ -1930,18 +1941,67 @@ async function editorKit2811() {
           scopes.pop();
           return;
         }
+        case "ConditionalExpression": {
+          /* (2.8.12) the consequent only runs when the test is truthy: a `typeof x !== "undefined"`
+             conjunct in the test means x is declared there (lockable's `... ? dev.info.pe0 : 63`,
+             editor.html:1422) */
+          const guardedHere = new Set();
+          const findNeqTypeof = (n) => {
+            if (!n || typeof n.type !== "string") return;
+            if (n.type === "BinaryExpression" && (n.operator === "!==" || n.operator === "!=")
+              && n.left && n.left.type === "UnaryExpression" && n.left.operator === "typeof"
+              && n.left.argument && n.left.argument.type === "Identifier") guardedHere.add(n.left.argument.name);
+            else if (n.type === "LogicalExpression" && n.operator === "&&") { findNeqTypeof(n.left); findNeqTypeof(n.right); }
+          };
+          findNeqTypeof(node.test);
+          walk(node.test, node);
+          if (guardedHere.size) {
+            const prev = guarded;
+            guarded = new Set([...prev, ...guardedHere]);
+            walk(node.consequent, node);
+            guarded = prev;
+          } else walk(node.consequent, node);
+          walk(node.alternate, node);
+          return;
+        }
         case "Identifier": {
           const isPropKey = parent && ((parent.type === "MemberExpression" && parent.property === node && !parent.computed)
             || ((parent.type === "Property" || parent.type === "PropertyDefinition") && parent.key === node && !parent.computed && parent.value !== node)
             || (parent.type === "ObjectPattern" && parent.key === node));
           const isDecl = parent && ((parent.type === "VariableDeclarator" && parent.id === node)
             || (parent.type === "FunctionDeclaration" && parent.id === node) || (parent.type === "FunctionExpression" && parent.id === node));
-          if (!isPropKey && !isDecl && TARGETS.has(node.name) && !visible(node.name)) {
+          const isTypeof = parent && parent.type === "UnaryExpression" && parent.operator === "typeof";   /* (2.8.12) `typeof x` never throws on an undeclared name: the deliberate guard in lockable (editor.html:1422) is safe by construction */
+          if (!isPropKey && !isDecl && !isTypeof && !guarded.has(node.name) && TARGETS.has(node.name) && !visible(node.name)) {
             problems.push({ name: node.name, line: node.loc.start.line + LINE0, fn: currentFn() });
           }
           return;
         }
         default: {
+          if (node.type === "LogicalExpression" && node.operator === "&&") {
+            /* (2.8.12) a `typeof x` guard on the left of && protects the right: `typeof dev !==
+               "undefined" && dev && dev.info` never evaluates `dev` when it is undeclared, so the
+               bare references on the right are safe (lockable, editor.html:1422) */
+            const guardedHere = new Set();
+            const findTypeof = (n) => {
+              if (!n || typeof n.type !== "string") return;
+              if (n.type === "UnaryExpression" && n.operator === "typeof" && n.argument && n.argument.type === "Identifier") guardedHere.add(n.argument.name);
+              for (const k of Object.keys(n)) {
+                if (k === "type" || k === "loc" || k === "start" || k === "end") continue;
+                const v = n[k];
+                if (Array.isArray(v)) v.forEach(findTypeof);
+                else findTypeof(v);
+              }
+            };
+            findTypeof(node.left);
+            walk(node.left, node);
+            if (guardedHere.size) {
+              const prev = guarded;
+              guarded = new Set([...prev, ...guardedHere]);
+              walk(node.right, node);
+              guarded = prev;
+            } else walk(node.right, node);
+            return;
+          }
           for (const k of Object.keys(node)) {
             if (k === "type" || k === "loc" || k === "start" || k === "end") continue;
             const v = node[k];
@@ -2191,7 +2251,7 @@ async function editorKit2811() {
 
   /* the pair split: the marker slot follows the upload split (kitRoom), so a lane the upload puts
      in USR4 has its markers in USR4 too */
-  const slotForSrc = html.slice(html.indexOf("function kitSliceSlotFor"), html.indexOf("/* a pad as it goes to the slot"));
+  const slotForSrc = html.slice(html.indexOf("function kitSliceSlotFor"), html.indexOf("function kitSliceSlot("));   /* (2.8.12) kitSliceSlotFor lives inside the IIFE now, next to kitSliceSlot (#29) */
   const SF = vm.runInNewContext(slotForSrc + `\n;({ kitSliceSlotFor })`, { console, KIT_PAIR: 4, kitSplit: E.kitSplit, kitRoom: () => E.SMP.MAX_DATA - 64 });
   const pairPads = Array(16).fill(null);
   pairPads[0] = { s: s(162600), tune: 0, gain: 0, len: 0 };   /* 81300 bytes: fills one slot, with 44 bytes to spare */
@@ -2230,6 +2290,30 @@ async function editorKit2811() {
   const protoDoc = readFileSync(join(HERE, "EDITOR_PROTOCOL.md"), "utf8");
   ok(/object 13 answers rc 3\s+while the song plays/i.test(protoDoc) && !/end == 0 is no slice/i.test(protoDoc) && !/## v19/.test(protoDoc),
     "protocol doc: object-13 commits answer rc 3 while the song plays; no stale pre-v18 'end == 0 is no slice'; no v19 (no protocol change)");
+
+  /* Lowtide 2.8.12: the 120 ms minimum chop (#9), the kit-name reset on Clear all (#32),
+     and the kitSlotKinds cache invalidated on every slot write (#31) */
+  ok(E.KIT_MIN_CHOP === 2646, "2.8.12 #9: KIT_MIN_CHOP is 2646 samples — 120 ms at 22050 Hz");
+  const setSrc12 = html.slice(html.indexOf("function kitSliceSet"), html.indexOf("async function kitSliceCommit"));
+  const setBox12 = { console, kitDraft: { pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 }, { s: s(1000), fname: "short.wav", tune: 0, gain: 0, len: 0 }] }, kitLen: E.kitLen, kitSliceRender: () => {}, KIT_MIN_CHOP: E.KIT_MIN_CHOP };
+  const ST12 = vm.runInNewContext(setSrc12 + `\n;({ kitSliceSet })`, setBox12);
+  ST12.kitSliceSet(0, 100, 200);
+  ok(setBox12.kitDraft.pads[0].slice.end === 100 + E.KIT_MIN_CHOP && setBox12.kitDraft.pads[0].slice.start === 100,
+    "2.8.12 #9: a sub-120 ms chop is widened to the 120 ms minimum (end pushed out)");
+  ST12.kitSliceSet(0, 7800, 8000);
+  ok(setBox12.kitDraft.pads[0].slice.start === 8000 - E.KIT_MIN_CHOP && setBox12.kitDraft.pads[0].slice.end === 8000,
+    "2.8.12 #9: a chop ending at the sample end is widened by pulling the start back (end never passes the sample)");
+  ST12.kitSliceSet(1, 100, 900);
+  ok(!setBox12.kitDraft.pads[1].slice,
+    "2.8.12 #9: a sample shorter than 120 ms keeps the whole sample (no slice)");
+  ok(/rng\.end - KIT_MIN_CHOP/.test(html) && /rng\.start \+ KIT_MIN_CHOP/.test(html),
+    "2.8.12 #9: the drag handler clamps the moving marker 120 ms from the other one");
+  ok(/kitDraft\.name = ""/.test(html.slice(html.indexOf('u.clear = el("button"'), html.indexOf('u.exp = el("button"'))),
+    "2.8.12 #32: Clear all resets the kit name as well as the pads and the selection");
+  const eraseSrc12 = html.slice(html.indexOf("async function kitEraseSlot"), html.indexOf("async function kitPickSlot"));
+  const smpUpSrc12 = html.slice(html.indexOf("async function smpUpload"), html.indexOf("async function smpErase"));
+  ok(/kitSlotKinds = null;/.test(upSrc) && /kitSlotKinds = null;/.test(eraseSrc12) && /kitSlotKinds = null;/.test(smpUpSrc12),
+    "2.8.12 #31: the kitSlotKinds cache is invalidated after a kit upload, an instrument upload and an erase");
 }
 
 async function editor25() {
