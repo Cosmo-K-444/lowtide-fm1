@@ -296,8 +296,9 @@ static voice_t *drum_pick(uint32_t note)
     }
     return v ? v : &drums.v[0];
 }
-/* a synthesised voice: note on the 16 sounds snd (a factory kit, SYN1..4), the oldest voice stolen */
-static void __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel, uint32_t kit, const dsnd_t *snd, uint32_t crush,
+/* a synthesised voice: note on the 16 sounds snd (a factory kit, SYN1..4), the oldest voice stolen.
+ * Returns the drum voice it plays on (2.8.9: kits mode tracks its voice per lane). */
+static uint32_t __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel, uint32_t kit, const dsnd_t *snd, uint32_t crush,
                                                     int tweak)
 {
     voice_t *v = &drums.v[0];
@@ -324,6 +325,7 @@ static void __attribute__((noinline)) drum_synth_on(uint32_t note, uint32_t vel,
         tweak = tweak && !DRUM_CLICK(note);
         ds_on(&drums.ds[i], snd, crush, note, vel, tweak ? drum_tune[ln] * 16 : 0, tweak ? (uint32_t)(drum_dec[ln] + 4) : 4u);
     }
+    return i;
 }
 /* the editor's audition (editor_dsyn.c DSYN_PLAY): queued, played by the audio ISR (drum_audition_poll) */
 static volatile uint8_t dsu_aud_k, dsu_aud_lane, dsu_aud_vel;
@@ -339,16 +341,21 @@ static void drum_audition_poll(void)
     }
 }
 
-static void drum_on(uint32_t note, uint32_t vel)
+/* A drum hit on the selected preset's kit (drum_on), or on a forced kit (drum_on_kit: kits mode forces
+ * the user kit being edited). Returns the drum voice it plays on, or -1 when nothing plays (a note with
+ * no lane, an empty slot, no sound on the lane). The sequencer and live hits both come through here
+ * (voice.c trk_note_on); kits mode does not change this function, it only forces the kit for live hits
+ * (drum_kit_on below, called from drum_input instead of trk_note_on). */
+static int drum_on_kit(uint32_t note, uint32_t vel, int32_t kit_force)
 {
     int32_t si = drum_set();
     const smp_set_t *set;
     voice_t *v = &drums.v[0];
-    uint32_t i, zi = 0xFFFFu, kit = drum_kit();
+    uint32_t i, zi = 0xFFFFu, kit = kit_force >= 0 ? (uint32_t)kit_force : drum_kit();
     uint32_t lane = DRUM_LANE_NONE, uslot = 0;      /* (2.8.8) the lane hit, and the user slot it plays from */
     int32_t zid = -1;
     if (lane_of_note(note) == DRUM_LANE_NONE)
-        return;                                     /* a note with no lane plays nothing */
+        return -1;                                  /* a note with no lane plays nothing */
     lane = lane_of_note(note);
     if (note != 76u && note != 77u)                 /* the pads and key LEDs (not the click's wood block) */
         drums.hits |= (uint16_t)(1u << lane);
@@ -356,12 +363,11 @@ static void drum_on(uint32_t note, uint32_t vel)
         drums.kick = 1;                             /* (DUCK) */
     if (kit >= DRUM_SYN) {                          /* SYN1..SYN4: your synthesised kit */
         const dsu_kit_t *u = dsu_kit(kit - DRUM_SYN);
-        drum_synth_on(note, vel, kit, u->s, u->crush, 1);
-        return;
+        return (int)drum_synth_on(note, vel, kit, u->s, u->crush, 1);
     }
     if (kit >= DRUM_USR) {                          /* a user kit: the lane's sound, as its note (the hat choke) */
         if (note == 76u || note == 77u)
-            return;                                 /* (the click's wood block: not a lane) */
+            return -1;                              /* (the click's wood block: not a lane) */
         note = LANE_NOTE[lane];
         if (kit == DRUM_PAIR) {                     /* USR3+4: the lane's sound in USR3, else in USR4 */
             zid = drum_usr_zone(2, note);
@@ -375,20 +381,19 @@ static void drum_on(uint32_t note, uint32_t vel)
             zid = drum_usr_zone(uslot, note);
         }
         if (zid < 0)
-            return;                                 /* (an empty slot, or no sound on this lane) */
+            return -1;                              /* (an empty slot, or no sound on this lane) */
     } else if (kit >= DRUM_SAMPLED) {               /* synthesised kit */
-        drum_synth_on(note, vel, kit, DS_KITS[kit - DRUM_SAMPLED].s, DS_KITS[kit - DRUM_SAMPLED].crush, 1);
-        return;
+        return (int)drum_synth_on(note, vel, kit, DS_KITS[kit - DRUM_SAMPLED].s, DS_KITS[kit - DRUM_SAMPLED].crush, 1);
     }
     if (zid < 0) {                                  /* the GM sample kit */
         if (si < 0)
-            return;
+            return -1;
         set = &SMP_SETS[si];
         for (i = 0; i < set->nz; i++)
             if (note >= SMP_ZONES[set->z0 + i].lo && note <= SMP_ZONES[set->z0 + i].hi)
                 zi = set->z0 + i;
         if (zi == 0xFFFFu)
-            return;
+            return -1;
         zid = (int32_t)zi;
     }
     if (note == 42u || note == 44u)                 /* hi-hat choke */
@@ -442,6 +447,74 @@ static void drum_on(uint32_t note, uint32_t vel)
             v->s[5] = (int32_t)((pow2_q16(clamp((int32_t)note * 16 + shift - z->root16, -1536, 2047)) >> 8) * (z->rate >> 8));
         }
     }
+    return (int)(v - drums.v);
+}
+static void drum_on(uint32_t note, uint32_t vel) { (void)drum_on_kit(note, vel, -1); }   /* the preset's kit */
+
+/* (2.8.9) KITS MODE (protocol v17): while the editor's Kits tab is active it sends KITS_MODE with the
+ * slot being edited (1..4 USR1..USR4, 5 USR3+4); live drum hits then play that user kit instead of the
+ * selected preset (drum_input, seq.c), with the chop markers (kit_slice) as a preset kit would. The
+ * sequencer never goes through here (it calls trk_note_on, voice.c), so its playback keeps the preset.
+ * Per-lane voice tracking (kit_voice / kit_age) is for KITS_STOP: a lane's voice is the drum voice that
+ * started its sample, found again by its age (a stolen or restarted voice has another age, so a stop
+ * never silences a preset sound that took the voice). A second hit on a sounding lane restarts it the
+ * way drum_on always has: drum_pick takes its own voice again and its last output fades through
+ * drums.tail, so the sample starts from silence (cf. voice.c 2.8.3, the SAMPLE / SLICE retrigger rule:
+ * a sample played again on a voice still sounding fades it out first and starts from silence). */
+static uint8_t kits_mode;                 /* 0 off, 1..4 the user slot, 5 the USR3+4 pair */
+static int8_t kit_voice[DRUM_LANES] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+static uint32_t kit_age[DRUM_LANES];
+static uint32_t kits_kit(void) { return kits_mode == 5u ? DRUM_PAIR : DRUM_USR + kits_mode - 1u; }
+/* stop one lane's kit voice (0..15) or all of them (0xFF; on the wire 127: a SysEx data byte is 7 bit,
+ * as DP_LEARN's 127 sentinel). The voice is cut the way the hi-hat choke cuts one: its last output
+ * joins the tail and it goes inactive, so there is no click. A lane whose voice ended or was stolen is
+ * already gone (its age moved on): nothing to stop. Call with the audio IRQ off, or from the audio ISR. */
+static void kit_stop_locked(uint32_t lane)
+{
+    uint32_t l, all = lane == 0xFFu || lane == 127u, from = all ? 0u : lane, n = all ? DRUM_LANES : lane + 1u;
+    if (!all && lane >= DRUM_LANES)
+        return;
+    for (l = from; l < n; l++) {
+        int vi = kit_voice[l];
+        kit_voice[l] = -1;
+        if (vi < 0 || vi >= (int)NDRUM)
+            continue;
+        if (drums.v[vi].active && drums.v[vi].age == kit_age[l] && !drums.synth[vi]) {
+            drums.tail += drums.v[vi].s[7];
+            drums.v[vi].active = 0;
+        }
+    }
+}
+static int drum_kit_on(uint32_t lane, uint32_t vel)   /* a live hit in kits mode: the slot's sound for the lane, or nothing */
+{
+    int vi;
+    if (!kits_mode || lane >= DRUM_LANES)
+        return -1;
+    /* a second hit while the lane's voice still sounds restarts it: cut the old voice first (its last
+     * output fades through the tail) and start from silence, as a SAMPLE / SLICE note played again on
+     * its voice (voice.c 2.8.3) — drum_pick would otherwise take a free voice and layer a second copy */
+    kit_stop_locked(lane);
+    vi = drum_on_kit(LANE_NOTE[lane], vel, (int32_t)kits_kit());
+    if (vi < 0)
+        return -1;                                  /* (an empty box: play nothing) */
+    kit_voice[lane] = (int8_t)vi;
+    kit_age[lane] = drums.v[vi].age;
+    return vi;
+}
+static void drum_kit_stop(uint32_t lane)   /* the editor's KITS_STOP (main loop): the audio IRQ off around the cut */
+{
+    fm1_irq_off();
+    kit_stop_locked(lane);
+    fm1_irq_on();
+}
+static void kits_mode_set(uint32_t mode)   /* the editor's KITS_MODE (main loop): 0 off, 1..4 a slot, 5 the pair */
+{
+    if (mode > 5u || mode == kits_mode)
+        return;                                     /* (the same mode again: a playing preview is not cut) */
+    fm1_irq_off();
+    kits_mode = (uint8_t)mode;
+    kit_stop_locked(0xFFu);                         /* a voice from the old slot must not outlive the mode */
+    fm1_irq_on();
 }
 
 /* adds the drums into the dry mix and the reverb and delay sends; mono != 0: into mono instead, before
@@ -553,6 +626,12 @@ static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *dl
                 dly[i] += mulq15(s, dsend);
         }
         v->ph[1] = frac;
+    }
+    {   /* (2.8.9) kits mode: forget the lanes whose voice ended or was stolen (its age moved on) */
+        uint32_t l;
+        for (l = 0; l < DRUM_LANES; l++)
+            if (kit_voice[l] >= 0 && (!drums.v[kit_voice[l]].active || drums.v[kit_voice[l]].age != kit_age[l]))
+                kit_voice[l] = -1;
     }
     drums.peak = pk;
 }

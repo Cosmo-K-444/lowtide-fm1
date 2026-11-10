@@ -2068,7 +2068,12 @@ static void input_off_now(track_t *t, uint32_t note)
 }
 
 /* a drum hit from a key, MIDI or a roll: lane, level; rat: its ratchet when recorded (rolls); rec: it
- * may be recorded (a roll records one hit a step) */
+ * may be recorded (a roll records one hit a step). (2.8.9) in kits mode the hit plays the user kit
+ * being edited instead of the selected preset (drum_kit_on, drums.c: the slot's sound for the lane,
+ * or nothing when the box is empty); the recording still takes the lane, so the sequencer plays it
+ * back from the preset. The sequencer itself never comes through here (it calls trk_note_on), so its
+ * playback keeps the preset. A muted drum track stays silent either way (trk_note_on's rule, and the
+ * mix's mute fade for a kit voice). */
 static void drum_input(uint32_t lane, uint32_t lvl, uint32_t rat, int rec)
 {
     track_t *t = TDRUM;
@@ -2079,7 +2084,11 @@ static void drum_input(uint32_t lane, uint32_t lvl, uint32_t rat, int rec)
         ft_note_on(lane, lvl);
     if (rec && ((song.rec >> TRK_DRUM) & 1u) && song.playing)
         rec_hit(t, lane, lvl, rat);
-    trk_note_on(t, LANE_NOTE[lane], lvl_vel(lvl, 100));
+    if (kits_mode) {
+        if (!trk_silent(t))
+            drum_kit_on(lane, lvl_vel(lvl, 100));
+    } else
+        trk_note_on(t, LANE_NOTE[lane], lvl_vel(lvl, 100));
 }
 
 /* -------------------------------------------------------------- roll --- */

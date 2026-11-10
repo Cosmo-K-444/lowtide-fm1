@@ -34,7 +34,7 @@ const E = vm.runInNewContext(proto + `
    CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore, crc32,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, GM_DRUM, drumName, parseNotes, fmtValue, F, DRUM_LANES, LV_NAMES, emptyDrum, lockable, MICRO, FC, fillGet, fillSet, pack7, unpack7,
-   loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, bkWriteObj, bkReadObj })`,
+   loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaDecode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, bkWriteObj, bkReadObj })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 
 async function editorMock() {
@@ -570,7 +570,7 @@ async function editorV9() {
   /* the device: FM6_LIST / GET / PUT / ERASE */
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 16 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 16 (v16 includes v9), FM6 is engine 9");
+  ok(info.proto === 17 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 17 (v17 includes v9), FM6 is engine 9");
   const L = E.parse[C.FM6_LIST](await rq(E.req.fm6List()));
   if (!(L.factory === 8 && L.bank === 27 && L.slots.length === 35)) console.log("  FM6_LIST", L.factory, L.bank, L.slots.length, js(L.slots.slice(0, 10)));
   ok(L.factory === 8 && L.bank === 27 && L.slots.length === 35 && L.slots[0].used, "v9: FM6_LIST: 8 factory patches, 27 bank slots");
@@ -705,8 +705,8 @@ async function editorDrumMap() {
   /* (2.8.6) the drum-pad MIDI learn is gone: DP_LEARN (78) is no command any more — the editor has
      no dpLearn request and no parser for 78, the mock does not answer it, and the protocol is v15.
      DRUM_TRIG (79) stays. */
-  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 16,
-    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v16)");
+  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 17,
+    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v17)");
   await put12(def);   /* the default map: every pad plays its GM sound */
   const unanswered = await rq([78, [0]], { timeout: 250, retries: 0 }).then(() => "answered", (e) => e.message);
   ok(/^timeout/.test(unanswered) && !(await list()).items.some((x) => x.id === 12),
@@ -740,11 +740,13 @@ async function editorDrumMap() {
   ok(D.drumPadsEff().join() === [0, 11, 15, 12, 6, 13, 5, 14, 8, 1, 4, 9, 10, 7, 2, 3].join()
     && eq(D.drumPadsSerialize(D.drumPadsEff()), D.drumPads.map),
     "drum map: true moves: a KICK/HI TOM swap shows on the right pads and round-trips");
-  /* (2.8.6) the kit builder shows no note or MIDI info: each sound's pad shows the sound only — the
-     kitPadUpdate clears the note label and its tooltip, and the pad is created with no note text */
-  ok(!/kitLaneLabel/.test(ed) && !/KEY_OF_LANE/.test(ed)
-    && /pu\.key\.textContent = ""/.test(ed) && /pu\.key\.title = ""/.test(ed),
-    "drum pads: the kit builder shows no note or MIDI info (no kitLaneLabel, no key name, empty note label)");
+  /* (2.8.9, item 13) the kit builder shows the position's note name next to the sound (C1 at the
+     bottom-left, name only, no MIDI number): renderKits sets each pad's key label from its grid
+     position, and the tooltip stays empty */
+  ok(/pu\.key\.textContent = DRUMPADS\.ableton\(DRUMPADS\.PAD_NOTES\[i\]\)/.test(ed) && /pu\.key\.title = ""/.test(ed)
+    && !/pu\.key\.textContent = ""/.test(ed)
+    && D.DRUMPADS.ableton(36) === "C1" && D.DRUMPADS.ableton(48) === "C2" && D.DRUMPADS.ableton(51) === "D#2",
+    "drum pads: the kit builder shows the position note name next to the sound (C1, C2, D#2 — name only, no MIDI number)");
   /* (2.8.3) PREVIEW: the note that plays a lane on the FM-1 as it is now (its map as last read, obj): with
      the default device map, HI TOM is heard on 48 (its first pad), KICK on 36, COWBELL on D2 (50, its
      default pad since 2.8.7); with HI TOM moved to 36 on the device, it is heard on 36 — and KICK, on no pad
@@ -1057,7 +1059,7 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 16 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v16: INFO ends with the protocol version (16: the kit slices); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  ok(info.proto === 17 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v17: INFO ends with the protocol version (17: KITS_MODE / KITS_STOP); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
   /* (2.8.3) the device's INFO version is LOWTIDE, never FELUCCA: editor.c builds "LOWTIDE " + the version,
      and uses the default as-is when it already starts with LOWTIDE (ui.c: "LOWTIDE 2.8.5") */
   const ecVer = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
@@ -1074,11 +1076,11 @@ async function editorV5() {
     && names.indexOf("ED_MICRO_GET") + 1 === C.MICRO_GET && names.indexOf("ED_MICRO_SET") + 1 === C.MICRO_SET
     && names.indexOf("ED_FILL_GET") + 1 === C.FILL_GET && names.indexOf("ED_FILL_SET") + 1 === C.FILL_SET
     && /ED_FM6_GET = 68, ED_FM6_PUT, ED_FM6_LIST, ED_FM6_ERASE/.test(ec) && C.FM6_GET === 68 && C.FM6_ERASE === 71
-    && /#define ED_PROTO 16u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
+    && /#define ED_PROTO 17u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
     && !/ED_DP_LEARN/.test(ec) && C.DP_LEARN === undefined
     && /#define ED_DRUM_TRIG 79u/.test(ec) && C.DRUM_TRIG === 79
     && /enum \{ ED_DSYN_LIST = 72, ED_DSYN_GET, ED_DSYN_PUT, ED_DSYN_STORE, ED_DSYN_PLAY \};/.test(readFileSync(join(HERE, "../firmware/src/editor_dsyn.c"), "utf8"))
-    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v16: command numbers and INFO == editor.c / editor_dsyn.c");
+    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v17: command numbers and INFO == editor.c / editor_dsyn.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -1146,7 +1148,7 @@ async function editorV7() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 16, "v7: INFO ends with 16 (v16 includes v7)");
+  ok(info.proto === 17, "v7: INFO ends with 17 (v17 includes v7)");
   /* the lockable set == seq.c p_lockable (the ids as core.h names them) */
   const sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8"), ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8");
   const ids = {}; let n = 0;
@@ -1211,7 +1213,7 @@ async function editorV8() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 16, "v8: INFO ends with 16 (v16 includes v8)");
+  ok(info.proto === 17, "v8: INFO ends with 17 (v17 includes v8)");
   /* the condition codes == core.h FC_*; the bit layout of a 2-bit step field */
   const ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8"), sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8");
   ok(/enum \{ FC_NORM, FC_FILL, FC_NOFILL \}/.test(ch) && /uint8_t fill\[NSTEP \/ 4\];/.test(ch)
@@ -1364,7 +1366,7 @@ async function editorKitSlices() {
   ok(E.kitSliceRange(p).end === 8000, "kit slices: a slice past the pad's end is clamped");
   /* kitPadDrop: a swap when the target has a sample, a move when it is empty (the pad object moves whole) */
   const dropSrc = html.slice(html.indexOf("function kitPadDrop"), html.indexOf("/* ---- the slicing panel"));
-  const dropBox = { console };
+  const dropBox = { console, kitWriteNow: () => {} };   /* (2.8.9) the drop writes to the FM-1 at once; the test only checks the swap / move */
   const K = vm.runInNewContext(dropSrc + `\n;({ kitPadDrop })`, dropBox);
   const A = { s: s(1000), fname: "kick.wav", tune: 2, gain: -3, len: 500, slice: { start: 100, end: 400 } };
   const B = { s: s(2000), fname: "snare.wav", tune: -1, gain: 0, len: 0 };
@@ -1385,35 +1387,54 @@ async function editorKitSlices() {
   const decSrc = html.slice(html.indexOf("async function decodeFile"), html.indexOf("/* ---- the Samples page"));
   const exBox = { console, TextEncoder, TextDecoder, File, Blob, Response,
     DRUM_LANES: E.DRUM_LANES, KIT: E.KIT, kitLen: E.kitLen, kitPad: E.kitPad, wavFile: E.wavFile,
+    imaEncode: E.imaEncode, imaDecode: E.imaDecode, kitWriteNow: () => {},   /* (2.8.9) the export is ADPCM now, and the import writes at once */
     zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample,
     normalize: E.normalize, rootFromName: E.rootFromName, SMP: E.SMP, LOOP: E.LOOP,
     fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch",
     sayK: () => {}, renderKits: () => {}, t: (k) => k };
-  const X = vm.runInNewContext(exSrc + "\n" + decSrc + `\n;({ kitExport, kitImport })`, exBox);
+  const X = vm.runInNewContext(exSrc + "\n" + decSrc + `\n;({ kitExport, kitImport, kitZipParse })`, exBox);
   let exported = null;
   exBox.downloadBytes = (name, bytes) => { exported = { name, bytes }; };
   exBox.kitDraft = { name: "MYKIT", slot: 4, pads: Array(16).fill(null), sel: -1, sent: false };
   exBox.kitDraft.pads[0] = { s: s(8000), fname: "kick.wav", tune: 0, gain: 0, len: 0, slice: { start: 2000, end: 4000 } };
   exBox.kitDraft.pads[2] = { s: s(6000), fname: "snare.wav", tune: 3, gain: -6, len: 0 };
   exBox.kitDraft.pads[5] = { s: s(12000), fname: "oh.wav", tune: 0, gain: 0, len: 4410, slice: { start: 100, end: 500 } };
+  const baked2 = E.kitPad(exBox.kitDraft.pads[2]).length;   /* (2.8.9) v2 bakes the settings into the audio */
   X.kitExport();
   ok(exported && exported.bytes.length > 1000, "kit export: a ZIP is downloaded");
   const kj = JSON.parse(new TextDecoder().decode((await E.zipRead(exported.bytes)).find((x) => x.name === "kit.json").data));
-  ok(kj.format === "lowtide-drum-kit" && kj.version === 1 && kj.name === "MYKIT" && kj.pads.length === 3
-    && kj.pads[0].lane === 0 && kj.pads[0].slice.start === 2000 && kj.pads[0].slice.end === 4000
-    && kj.pads[1].lane === 2 && kj.pads[1].tune === 3 && kj.pads[1].gain === -6
-    && kj.pads[2].lane === 5 && kj.pads[2].len === 4410 && kj.pads[2].slice.start === 100,
-    "kit export: kit.json holds the name, per-pad settings and slices");
+  const zNames = (await E.zipRead(exported.bytes)).map((x) => x.name);
+  ok(kj.format === "lowtide-drum-kit" && kj.version === 2 && kj.name === "MYKIT" && kj.pads.length === 3
+    && kj.pads[0].lane === 0 && kj.pads[0].adpcm === "01 KICK.adpcm" && kj.pads[0].tune === 0 && kj.pads[0].gain === 0 && kj.pads[0].len === 8000
+    && kj.pads[0].slice.start === 2000 && kj.pads[0].slice.end === 4000
+    && kj.pads[1].lane === 2 && kj.pads[1].adpcm === "03 SNARE.adpcm" && kj.pads[1].tune === 0 && kj.pads[1].gain === 0 && kj.pads[1].len === baked2
+    && kj.pads[2].lane === 5 && kj.pads[2].adpcm === "06 OPEN HAT.adpcm" && kj.pads[2].tune === 0 && kj.pads[2].gain === 0 && kj.pads[2].len === 4410
+    && kj.pads[2].slice.start === 100 && !kj.pads.some((p) => "wav" in p) && zNames.every((n) => n === "kit.json" || n.endsWith(".adpcm")),
+    "kit export: kit.json v2 holds the name, the adpcm field, baked settings (tune 0, gain 0, len = the sample count) and slices; no WAV");
   exBox.kitDraft.pads = Array(16).fill(null); exBox.kitDraft.name = "";
   await X.kitImport(new File([exported.bytes], "mykit-kit.zip"));
   const ip = exBox.kitDraft.pads;
-  ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav" && ip[0].s.length === 8000
+  ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav" && ip[0].s.length === 8000 && ip[0].adpcm && ip[0].adpcm.length === 4000
     && ip[0].slice && ip[0].slice.start === 2000 && ip[0].slice.end === 4000
-    && ip[2] && ip[2].tune === 3 && ip[2].gain === -6 && !ip[2].slice
-    && ip[5] && ip[5].len === 4410 && ip[5].slice && ip[5].slice.start === 100 && ip[5].slice.end === 500,
-    "kit import: the kit comes back with its samples, settings and slices");
+    && ip[2] && ip[2].tune === 0 && ip[2].gain === 0 && ip[2].len === 0 && ip[2].s.length === baked2 && !ip[2].slice
+    && ip[5] && ip[5].tune === 0 && ip[5].gain === 0 && ip[5].len === 0 && ip[5].s.length === 4410 && ip[5].slice && ip[5].slice.start === 100 && ip[5].slice.end === 500,
+    "kit import: the kit comes back with its samples (ADPCM decoded), baked settings and slices");
   await X.kitImport(new File([E.zipStore([{ name: "x.wav", data: new Uint8Array(10) }])], "bad.zip"));
   ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav", "kit import: a ZIP without kit.json is rejected, the kit stays");
+  /* (2.8.9) a v1 (WAV) kit is refused with the old-version message, and the kit stays; a future
+     version and a kit.json that is not a kit are refused too */
+  const v1zip = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 1, name: "OLDKIT",
+    pads: [{ lane: 0, file: "kick.wav", wav: "01 KICK.wav", tune: 0, gain: 0, len: 8000 }] })) }, { name: "01 KICK.wav", data: E.wavFile(s(8000)) }]);
+  const errOf = async (f) => X.kitZipParse(f).then(() => "", (e) => e.message);
+  ok((await errOf(new File([v1zip], "old-kit.zip"))) === "kitImportOld"
+    && /kitImportOld: "This kit is the old version 1 \(WAV\) format and can't be imported\."/.test(html),
+    "kit import: a v1 (WAV) kit is refused with the old-version message");
+  await X.kitImport(new File([v1zip], "old-kit.zip"));
+  ok(exBox.kitDraft.name === "MYKIT" && ip[0] && ip[0].fname === "kick.wav", "kit import: a v1 (WAV) kit is refused, the kit stays");
+  const v3zip = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 3, name: "NEW", pads: [] })) }]);
+  const notKitZip = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "something-else", version: 2, pads: [] })) }]);
+  ok((await errOf(new File([v3zip], "v3.zip"))) === "kitImportBadkit.json" && (await errOf(new File([notKitZip], "notkit.zip"))) === "kitImportBadkit.json",
+    "kit import: a future version and a kit.json that is not a kit are refused");
   /* the mock device (protocol 16): object 13 is listed only when non-default, and a write reads back */
   const { m, rq, done } = attachMock();
   const list = async () => E.parse[E.CMD.BK_LIST](await rq(E.req.bkList(), { timeout: 5000, retries: 0 }));
@@ -1437,6 +1458,214 @@ async function editorKitSlices() {
   const oldInfo = E.parse[E.CMD.INFO](await old.rq(E.req.info()));
   ok(oldInfo.proto === 15, "kit slices: opt.v15 is the old protocol (15)");
   old.done();
+}
+
+/* ------------------------------------------- Lowtide 2.8.9: Route B, v2 kits, pick-a-slot --- */
+async function editorKit289() {
+  const C = E.CMD;
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+  /* ADPCM decode: decoding then re-encoding reproduces the original bytes (the decode is the
+     inverse of the encode, nibble for nibble) — on a smooth signal, a harsh one and noise, and on
+     an odd sample count. The decoded samples themselves are lossy, so only the bytes are compared. */
+  const sigs = { smooth: s(8000), harsh: Int16Array.from({ length: 8000 }, (_, i) => (i % 2 ? 1 : -1) * 20000),
+    noise: Int16Array.from({ length: 8000 }, (_, i) => Math.round((((i * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff * 2 - 1)) * 20000) };
+  const rt = Object.entries(sigs).map(([k, v]) => {
+    const enc = E.imaEncode(v).data, dec = E.imaDecode(enc, v.length), re = E.imaEncode(dec).data;
+    return `${k}:${eq(enc, re) && dec.length === v.length}`;
+  });
+  const odd = Int16Array.from({ length: 7999 }, (_, i) => Math.round(15000 * Math.sin(i / 11)));
+  const oe = E.imaEncode(odd).data, oddOk = eq(oe, E.imaEncode(E.imaDecode(oe, odd.length)).data);
+  ok(rt.every((x) => x.endsWith(":true")) && oddOk, `kit v2: imaDecode round trip (decode -> re-encode: the same bytes; ${rt.join(", ")}; odd length too)`);
+  ok(JSON.stringify([...E.imaDecode(new Uint8Array([0x00]), 2)]) === "[0,0]"
+    && JSON.stringify([...E.imaDecode(new Uint8Array([0x77]), 2)]) === "[11,41]"
+    && JSON.stringify([...E.imaDecode(new Uint8Array([0xff]), 2)]) === "[-11,-41]"
+    && JSON.stringify([...E.imaDecode(new Uint8Array([0x77, 0x00]), 3)]) === "[11,41,45]",
+    "kit v2: imaDecode of known vectors (silence 0, 0x77 -> 11 / 41, 0xff -> -11 / -41)");
+  /* a slice's decode starts from the encoder's state at the cut (imaStateAt), not from zero */
+  const full = E.imaDecode(E.imaEncode(sigs.smooth).data, 8000);
+  const st = E.imaStateAt(sigs.smooth, 2000);
+  const tail = E.imaDecode(E.imaEncode(sigs.smooth).data.subarray(1000), 6000, st[0], st[1]);
+  ok(eq(tail, full.subarray(2000)), "kit v2: imaDecode from the state at a slice start decodes the tail as the whole file does");
+
+  /* Route B: the commands, the requests, the parsers, the protocol version */
+  ok(C.KITS_MODE === 80 && C.KITS_STOP === 81 && !!E.req.kitsMode && !!E.req.kitsStop && !!E.parse[80] && !!E.parse[81]
+    && E.req.kitsMode(3)[1].join() === "3" && E.req.kitsStop(0xFF)[1].join() === "127",
+    "route B: KITS_MODE 80, KITS_STOP 81 (requests and parsers; KITS_STOP never sends 0xFF, masked to 127)");
+  const { m, rq, done } = attachMock({});
+  const info = E.parse[C.INFO](await rq(E.req.info()));
+  ok(info.proto === 17, "route B: protocol version is 17");
+  const m3 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(3)));
+  const st3 = m.state.kitsMode;
+  const m5 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(5)));
+  const st5 = m.state.kitsMode;
+  const m0 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(0)));
+  const st0 = m.state.kitsMode;
+  ok(m3.mode === 3 && m3.rc === 0 && st3 === 3 && m5.mode === 5 && st5 === 5 && m0.mode === 0 && st0 === 0,
+    "route B: KITS_MODE 3 (USR3), 5 (USR3+4), 0 (off) — the mode the editor last set, read back");
+  const badMode = await rq(E.req.kitsMode(6), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
+  ok(badMode === "none", "route B: KITS_MODE 6 (no such mode) gets no reply");
+  const s5 = E.parse[C.KITS_STOP](await rq(E.req.kitsStop(5)));
+  const sAll = E.parse[C.KITS_STOP](await rq(E.req.kitsStop(127)));
+  const sFF = E.parse[C.KITS_STOP](await rq(E.req.kitsStop(0xFF)));
+  ok(s5.lane === 5 && s5.rc === 0 && m.state.kitsStop.includes(5) && sAll.lane === 127 && m.state.kitsStop.includes(127) && sFF.lane === 127,
+    "route B: KITS_STOP 5 stops lane 5, 127 stops all lanes, 0xFF arrives as 127 (a 7-bit SysEx data byte)");
+  const badLane = await rq(E.req.kitsStop(16), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
+  ok(badLane === "none", "route B: KITS_STOP 16 (no such lane) gets no reply");
+  done();
+  const o16 = attachMock({ v16: true });
+  const oi = E.parse[C.INFO](await o16.rq(E.req.info()));
+  const noMode = await o16.rq(E.req.kitsMode(1), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
+  const noStop = await o16.rq(E.req.kitsStop(0), { timeout: 60, retries: 0, quiet: true }).then(() => "reply", () => "none");
+  ok(oi.proto === 16 && noMode === "none" && noStop === "none", "route B: a v16 device answers neither KITS_MODE nor KITS_STOP");
+  o16.done();
+
+  /* the editor sends KITS_MODE on entering the Kits tab (the picked slot, or 0), on leaving (0),
+     and on pick change — kitsModeUpdate / kitPickSlot, run in a sandbox with a recording link */
+  const modeSrc = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
+  const pickSrc = html.slice(html.indexOf("async function kitPickSlot"), html.indexOf("/* the drum track on that kit"));
+  const sent = [], writes = [];
+  const modeBox = { console, dev: { info: { proto: 17 } }, tab: "kits", SMP: E.SMP,
+    req: E.req, rq: async (r) => { sent.push(r); }, report: () => {},
+    confirm: () => true, t: (k) => k, kitWriteNow: async () => { writes.push(1); }, renderKits: () => {}, setTimeout, clearTimeout };
+  const M = vm.runInNewContext(modeSrc + "\n" + pickSrc + `\n;({ kitDraft, kitsModeUpdate, kitsStopSend, kitPickSlot })`, modeBox);
+  await M.kitsModeUpdate();
+  await M.kitsModeUpdate();   /* the same value again: not sent twice */
+  M.kitDraft.slot = 2; await M.kitsModeUpdate();
+  M.kitDraft.slot = 4; await M.kitsModeUpdate();   /* USR3+4 */
+  modeBox.tab = "sound"; await M.kitsModeUpdate();   /* leaving the Kits tab */
+  ok(JSON.stringify(sent) === JSON.stringify([[80, [0]], [80, [3]], [80, [5]], [80, [0]]]),
+    "route B: KITS_MODE on entering (0 with no pick), on pick change (3 USR3, 5 USR3+4), on leaving (0); unchanged values not resent");
+  modeBox.tab = "kits";
+  await M.kitPickSlot(1);   /* no pads in the draft: no confirm, no write, the mode follows the pick */
+  M.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  await M.kitPickSlot(3); await sleep(10);
+  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 1,
+    "route B: picking a slot with pads in the draft sends its mode (4 = USR4) and writes the kit there at once");
+  modeBox.confirm = () => false;
+  await M.kitPickSlot(0);
+  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 1,
+    "route B: refusing the switch keeps the slot, the mode and the kit (no write)");
+  modeBox.confirm = () => true;
+  await M.kitsStopSend(7); await M.kitsStopSend(0xFF);
+  ok(JSON.stringify(sent.slice(-2)) === JSON.stringify([[81, [7]], [81, [127]]]),
+    "route B: kitsStopSend sends the lane, and 0xFF as 127");
+  ok(/if \(prev === "kits" && name !== "kits"\) kitsModeUpdate\(\);/.test(html)
+    && /kitsModeUpdate\(\);   \/\* \(2\.8\.9\) entering the Kits tab/.test(html),
+    "route B: showTab calls kitsModeUpdate on leaving the Kits tab, renderPanels on entering it");
+
+  /* pick-a-slot gating: the grid and the Chop panel are locked until a slot is picked; the
+     per-slot Import / Export work without a pick; importing into a slot does not select it */
+  ok(/\.kitlocked \.pads, \.kitlocked \.slice \{ opacity: \.38; pointer-events: none; \}/.test(html)
+    && /\.kitlocked \.lockbanner \{ display: flex; \}/.test(html)
+    && /u\.card\.classList\.toggle\("kitlocked", kitDraft\.slot == null\)/.test(html)
+    && /slot: null/.test(modeSrc),
+    "pick-a-slot: no slot picked -> the grid and Chop panel are inert (kitlocked) with a banner; the draft starts with no slot");
+  const writeSrc = html.slice(html.indexOf("async function kitWriteNow()"), html.indexOf("function kitWriteSoon"));
+  const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
+  ok(/if \(!dev \|\| kitDraft\.slot == null\) return;/.test(writeSrc) && /if \(!dev \|\| kitDraft\.slot == null\) return;/.test(commitSrc),
+    "pick-a-slot: with no slot picked, neither a kit write nor a marker write leaves the editor");
+  ok(/onclick: \(\) => kitExportSlot\(d\)/.test(html) && /kitImportSlot\(f, d\)/.test(html)
+    && /async function kitExportSlot\(k\)/.test(html) && /const slots = kitSlots\(k\)/.test(html)
+    && !html.slice(html.indexOf("async function kitExportSlot"), html.indexOf("/* (2.8.9) a v2 kit ZIP into the draft")).includes("kitDraft.slot"),
+    "pick-a-slot: each slot card's own Export / Import ZIP works on that slot (kitExportSlot(k), no picked slot needed)");
+  {   /* kitImportSlot, run in a sandbox with a stubbed upload: the slot is written at once, but the
+       draft is only replaced when the slot imported into is the one picked for editing */
+    const impSrc = html.slice(html.indexOf("async function kitZipParse"), html.indexOf("async function kitUploadPads"));
+    const ups = [];
+    const impBox = { console, TextEncoder, TextDecoder, File, Blob, zipRead: E.zipRead, imaDecode: E.imaDecode,
+      kitUploadPads: async (pads, name, dest) => { ups.push({ pads, name, dest }); return true; },
+      kitSlotKinds: null, kitDraft: { name: "", slot: null, pads: Array(16).fill(null), sel: -1, sent: true }, kitWrittenSlot: null,
+      renderKits: () => {}, sayK: () => {}, t: (k) => k };
+    const I = vm.runInNewContext(impSrc + `\n;({ kitZipParse, kitImportSlot })`, impBox);
+    const ad = E.imaEncode(s(8000)).data;
+    const v2 = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 2, name: "MYKIT",
+      pads: [{ lane: 0, file: "kick.wav", adpcm: "01 KICK.adpcm", tune: 0, gain: 0, len: 8000, slice: { start: 2000, end: 4000 } }] })) },
+      { name: "01 KICK.adpcm", data: ad }]);
+    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 2);
+    ok(ups.length === 1 && ups[0].dest === 2 && ups[0].name === "MYKIT" && impBox.kitDraft.slot === null
+      && impBox.kitDraft.pads.every((p) => !p),
+      "pick-a-slot: importing into a slot works with no slot picked, and does not pick it for editing");
+    impBox.kitDraft.slot = 1;
+    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 2);
+    ok(ups.length === 2 && ups[1].dest === 2 && impBox.kitDraft.slot === 1 && impBox.kitDraft.pads.every((p) => !p),
+      "pick-a-slot: importing into another slot leaves the picked slot (and its draft) alone");
+    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 1);
+    ok(ups.length === 3 && ups[2].dest === 1 && impBox.kitDraft.pads[0] && impBox.kitDraft.pads[0].fname === "kick.wav"
+      && impBox.kitDraft.pads[0].s.length === 8000 && impBox.kitDraft.pads[0].slice.start === 2000 && impBox.kitDraft.name === "MYKIT"
+      && impBox.kitDraft.sel === -1 && impBox.kitDraft.sent === true,
+      "pick-a-slot: importing into the picked slot replaces the draft (and only then)");
+  }
+
+  /* the Stop button flips back to Play after the estimated play length (the chop range's length) */
+  const playSrc = html.slice(html.indexOf("function kitTogglePlay"), html.indexOf("function kitDrawWave"));
+  const notesOn = [], notesOff = [], stops = [];
+  const playBox = { console, setTimeout, clearTimeout, t: (k) => k, kitUi: null,
+    kitDraft: { name: "", slot: 2, pads: Array(16).fill(null), sel: -1, sent: true }, kitPlaying: new Map(),
+    kitSliceRange: E.kitSliceRange, drumPadsHearNote: () => -1, DRUM_LANES: E.DRUM_LANES, SMP: E.SMP,
+    lvNoteOn: (tok, tr, note, vel) => { notesOn.push([tok, tr, note, vel]); },
+    lvNoteOff: (tok) => { notesOff.push(tok); },
+    kitsStopSend: async (l) => { stops.push(l); } };
+  const P = vm.runInNewContext(playSrc + `\n;({ kitDraft, kitTogglePlay, kitStartLane, kitStopLane, kitStopAll, kitPlaying })`, playBox);
+  P.kitDraft.pads[0] = { s: s(2205), fname: "k.wav", tune: 0, gain: 0, len: 0 };   /* 0.1 s at 22050 Hz */
+  P.kitTogglePlay(0);
+  ok(notesOn.length === 1 && notesOn[0][2] === 36 && P.kitPlaying.has(0), "stop-timer: Play starts the lane on the FM-1 (note 36) and the Stop timer runs");
+  notesOff.length = 0; stops.length = 0;   /* (starting a lane stops it first: clear that, so only the timer's stop counts) */
+  await sleep(250);
+  ok(!P.kitPlaying.has(0) && stops.includes(0) && notesOff.includes("kit:0"),
+    "stop-timer: after the estimated play length (0.1 s) the lane stops and the button flips back to Play");
+  notesOn.length = 0; notesOff.length = 0; stops.length = 0;
+  P.kitDraft.pads[1] = { s: s(22050), fname: "o.wav", tune: 0, gain: 0, len: 0, slice: { start: 0, end: 4410 } };   /* a 1 s pad, chopped to 0.2 s */
+  P.kitTogglePlay(1);
+  stops.length = 0;
+  await sleep(100);
+  const still = P.kitPlaying.has(1) && stops.length === 0;
+  await sleep(250);
+  ok(still && !P.kitPlaying.has(1) && stops.includes(1),
+    "stop-timer: the timer is the chop range's length (0.2 s), not the whole pad (1 s)");
+  P.kitDraft.pads[2] = { s: s(22050), fname: "long.wav", tune: 0, gain: 0, len: 0 };
+  P.kitTogglePlay(2);
+  await sleep(50);
+  P.kitTogglePlay(2);   /* a second tap stops it at once */
+  ok(!P.kitPlaying.has(2) && stops.includes(2) && notesOff.includes("kit:2"),
+    "stop-timer: a second tap stops the lane at once (Stop -> Play)");
+  P.kitTogglePlay(3);   /* an empty pad: nothing plays, no timer */
+  ok(notesOn.length === 2 && !P.kitPlaying.has(3) && !stops.includes(3),
+    "stop-timer: an empty pad plays nothing and sets no timer");
+  notesOn.length = 0; stops.length = 0;
+  P.kitTogglePlay(0); P.kitTogglePlay(1);
+  stops.length = 0;   /* (starting a lane stops it first: clear that, so only Stop All's stops count) */
+  P.kitStopAll();
+  ok(!P.kitPlaying.size && stops.length === 2 && stops.includes(0) && stops.includes(1),
+    "stop-timer: Stop All ends every lane's timer and stops each voice");
+
+  /* the settle delay: pitch / gain / length writes wait 500 ms for the control to stop moving;
+     chop marker writes go immediately, with no delay at all */
+  ok(/function kitWriteSoon\(ms = 500\)/.test(html), "settle: kitWriteSoon debounces 500 ms by default");
+  const soonSrc = html.slice(html.indexOf("function kitWriteSoon"), html.indexOf("async function kitEraseSlot"));
+  let soonCalls = 0;
+  const soonBox = { console, setTimeout, clearTimeout, kitWriteNow: async () => { soonCalls++; } };
+  const S = vm.runInNewContext(`let kitWriteTimer = null;\n` + soonSrc + `\n;({ kitWriteSoon })`, soonBox);
+  S.kitWriteSoon(); S.kitWriteSoon(); S.kitWriteSoon();
+  await sleep(200);
+  const early = soonCalls;
+  await sleep(450);
+  ok(early === 0 && soonCalls === 1, "settle: three pitch/gain writes in a row -> one write, 500 ms after the last");
+  S.kitWriteSoon(); await sleep(200); S.kitWriteSoon(); await sleep(650);
+  ok(soonCalls === 2, "settle: a write 200 ms in restarts the 500 ms delay (still one write)");
+  const cTimers = [], cWrites = [], cSyncs = [];
+  const commitBox = { console, dev: {}, setTimeout: (fn, ms) => { cTimers.push(ms); return 1; }, clearTimeout: () => {},
+    kitDraft: { slot: 2, sent: false }, kitWriteNow: async () => { cWrites.push(1); commitBox.kitDraft.sent = true; },
+    kitSliceSyncFromDraft: async () => { cSyncs.push(1); }, report: () => {} };
+  const K = vm.runInNewContext(commitSrc + `\n;({ kitSliceCommit })`, commitBox);
+  await K.kitSliceCommit();
+  ok(cWrites.length === 1 && cSyncs.length === 1 && cTimers.length === 0,
+    "settle: a chop marker write goes immediately (the kit first, then its markers; no timer set)");
+  await K.kitSliceCommit();   /* the kit is on the FM-1 now: only the markers go */
+  ok(cWrites.length === 1 && cSyncs.length === 2 && cTimers.length === 0,
+    "settle: a marker write with the kit already sent writes only the markers, still at once");
+  commitBox.kitDraft.slot = null;
+  await K.kitSliceCommit();
+  ok(cWrites.length === 1 && cSyncs.length === 2, "settle: a marker write with no slot picked writes nothing");
 }
 
 async function editor25() {
@@ -1779,7 +2008,7 @@ async function editorLivePage() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   let s = await live(L.STATE);
   const raw = await rq(E.req.live(L.STATE));
-  ok(info.proto === 16 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
+  ok(info.proto === 17 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
     "live page: the state (50 bytes as editor_live.c): stopped, 4 tracks, BPM, no section, no effect, A stored, the master on its knob, the pads as the kit");
   s = await live(L.PLAY, 1);
   ok(s.playing && m.state.playing, "live page: PLAY plays");
@@ -2335,6 +2564,7 @@ await editorV9();
 await editorBackup();
 await editorDrumMap();
 await editorKitSlices();
+await editorKit289();
 await editor25();
 await editorDsyn();
 await editorCart();

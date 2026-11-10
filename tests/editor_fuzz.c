@@ -261,14 +261,14 @@ static void cmd_rand(int bit8)
         ED_UP_STORE, ED_UP_LOAD, ED_UP_ERASE, ED_WATCH, ED_CHANGED, ED_RELOAD, ED_PING, ED_STEP_CHANGED, ED_TRACK,
         ED_TRACK_MIX, ED_TRACK_DUMP, ED_TRACK_STEP, ED_TRACK_PARAM, ED_TRACK_CHANGED, ED_DRUM_STEP, ED_BK_LIST, ED_BK_GET,
         ED_BK_PUT, ED_LOCK_GET, ED_LOCK_SET, ED_MICRO_GET, ED_MICRO_SET, ED_FILL_GET, ED_FILL_SET, ED_FM6_GET, ED_FM6_PUT,
-        ED_FM6_LIST, ED_FM6_ERASE, 72, 73, 74, 75, 76, ED_LIVE};
+        ED_FM6_LIST, ED_FM6_ERASE, 72, 73, 74, 75, 76, ED_LIVE, 80, 81};
     static const uint32_t EXP[128] = {[ED_GET] = 2, [ED_SET] = 4, [ED_DESC] = 2, [ED_STEP_GET] = 1, [ED_STEP_SET] = 12,
         [ED_PRESET] = 2, [ED_PROJECT] = 2, [ED_NAMES] = 1, [ED_SMP_BEGIN] = 1, [ED_SMP_WRITE] = 300, [ED_SMP_END] = 550,
         [ED_SMP_ERASE] = 1, [ED_UP_LIST] = 2, [ED_UP_GET] = 1, [ED_UP_PUT] = 3 + 13 + 2 * P_COUNT + 32, [ED_UP_STORE] = 6,
         [ED_UP_LOAD] = 1, [ED_UP_ERASE] = 1, [ED_WATCH] = 1, [ED_TRACK] = 1, [ED_TRACK_MIX] = 4, [ED_TRACK_DUMP] = 1,
         [ED_TRACK_STEP] = 13, [ED_TRACK_PARAM] = 4, [ED_DRUM_STEP] = 14, [ED_BK_GET] = 8, [ED_BK_PUT] = 12,
         [ED_LOCK_GET] = 1, [ED_LOCK_SET] = 5, [ED_MICRO_GET] = 1, [ED_MICRO_SET] = 3, [ED_FILL_GET] = 1, [ED_FILL_SET] = 3,
-        [ED_FM6_GET] = 2, [ED_FM6_PUT] = 130, [ED_FM6_ERASE] = 1, [73] = 1, [74] = 24, [76] = 3, [ED_LIVE] = 5};
+        [ED_FM6_GET] = 2, [ED_FM6_PUT] = 130, [ED_FM6_ERASE] = 1, [73] = 1, [74] = 24, [76] = 3, [ED_LIVE] = 5, [80] = 1, [81] = 1};
     uint8_t f[700];
     uint32_t cmd = rn(10) == 0 ? rn(bit8 ? 256 : 128) : CMDS[rn(sizeof CMDS)], e = cmd < 128 ? EXP[cmd] : 0, na, i;
     switch (rn(8)) {

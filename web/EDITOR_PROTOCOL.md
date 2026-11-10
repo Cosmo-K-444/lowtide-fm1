@@ -544,6 +544,45 @@ without re-uploading the audio; uploading a kit to a slot writes that slot's mar
 uploading a sample set to a slot clears that slot's markers. The SAMPLE engine does not read them:
 they apply to drum-kit voices only.
 
+## v17: kits mode (Lowtide 2.8.9)
+
+`INFO` ends with 17. Commands **80** `KITS_MODE` and **81** `KITS_STOP` let the editor's Drum Kits
+tab audition a user kit through the FM-1's own audio (Route B): the editor tells the FM-1 when the
+Kits tab is active and which slot is being edited, and while that mode is on the FM-1 plays live drum
+hits from that user kit instead of the selected preset.
+
+| cmd | Request args | Reply args |
+| --- | --- | --- |
+| 80 KITS_MODE | mode (0 off, 1..4 USR1..USR4, 5 USR3+4) | mode |
+| 81 KITS_STOP | lane 0..15, 127 = all | lane |
+
+- **Sending it:** the editor sends `KITS_MODE` when it enters the Kits tab (with the picked slot),
+  when it leaves (mode 0), and when the picked slot changes. A mode past 5 gets no reply.
+- **What plays:** while the mode is on, a live drum hit — a note-on on the drum channel from DIN or
+  USB MIDI in, or one of the FM-1's own 27 keys (the same path as the DIN pads), or a roll — plays the
+  drum sound from the user kit in that slot, keyed by lane note (firmware `drums.c drum_usr_zone`: the
+  zone of the slot for the lane's GM note; USR3+4 takes the lane's sound from USR3, else USR4). The
+  chop markers (backup object 13, v16) apply: playback follows the slice start / end for that lane.
+  A lane whose box has no sample plays nothing.
+- **What does not change:** the sequencer keeps the selected preset — its playback never goes through
+  the live path. When the mode is off, behaviour is exactly as in 2.8.8.
+- **`DRUM_TRIG` (79) still fires** for hits in kits mode (note, channel, velocity, lane), so the
+  editor's Last triggered line and pad flash keep working — including for an empty lane, so the editor
+  flashes the box even though nothing plays.
+- **Voices:** drum voices are one-shots and note-offs are ignored. A second hit on a lane while its
+  voice is sounding restarts it: the old voice's last output fades through the declick tail and the
+  sample starts from silence (the SAMPLE / SLICE retrigger rule). `KITS_STOP` is the stop mechanism
+  for a very long sample: a lane stops that lane's kit voice, 127 stops all kit voices. The cut is
+  declicked the same way (the voice's last output joins the tail). A lane past 15 (other than 127)
+  gets no reply. **127, not 0xFF:** a SysEx data byte is 7 bit, so 0xFF can never arrive on the wire —
+  the editor sends 127 for "all", as with `DP_LEARN`'s 127 sentinel in v14.
+- **Mode changes:** changing the mode (including back to 0, on leaving the tab) stops the kit voices
+  sounding from the old slot, so no long sample outlives the tab. Sending the same mode again does not
+  cut a preview already playing.
+- **Mix:** the kit voices go through the drum track's mix as any drum voice does — its level
+  (`G_DRLVL`), reverb / delay sends, pan, and the mute / solo fade — so a muted drum track stays
+  silent in kits mode too, as it does for the preset.
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.

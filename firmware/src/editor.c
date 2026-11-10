@@ -37,8 +37,11 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v13 (Lowtide 2.8.4): DP_LEARN = 78, the drum-pad MIDI learn — removed in 2.8.6 (the learn is gone) */
 /* v15 (Lowtide 2.8.6): the drum-pad learn is gone, single-note toms */
 /* v16 (Lowtide 2.8.8): backup object 13 = the kit slices (drums.c kit_slice) */
+/* v17 (Lowtide 2.8.9): KITS_MODE = 80, KITS_STOP = 81 — the Kits tab's live kit playback (drums.c kits_mode) */
 #define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
-#define ED_PROTO 16u                                   /* the protocol version INFO ends with (2.8.8: the kit slices, backup object 13) */
+#define ED_KITS_MODE 80u   /* (2.8.9) kits mode: 0 off, 1..4 USR1..USR4, 5 USR3+4 */
+#define ED_KITS_STOP 81u   /* (2.8.9) stop a kit voice: lane 0..15, 127 = all (0xFF on the wire is 127: 7-bit SysEx) */
+#define ED_PROTO 17u                                   /* the protocol version INFO ends with (2.8.9: kits mode) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -790,7 +793,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices) */
+        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices, 17: kits mode) */
         break;
     }
     case ED_GET:
@@ -1144,6 +1147,25 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             ed_b(lv >> (7u * i));
         for (i = 0; i < 5u; i++)
             ed_b(rt >> (7u * i));
+        break;
+    }
+    case ED_KITS_MODE: {                                   /* (2.8.9) v17: kits mode: 0 off, 1..4 USR1..USR4, 5 USR3+4
+                                                            * -> the mode. The editor sends it when it enters / leaves
+                                                            * the Kits tab and when the picked slot changes; while it
+                                                            * is on, live drum hits play that user kit (drums.c) */
+        if (na < 1u || a[0] > 5u)
+            return;
+        kits_mode_set(a[0]);
+        ed_b(a[0]);
+        break;
+    }
+    case ED_KITS_STOP: {                                   /* (2.8.9) v17: stop a kit voice: lane 0..15, 127 = all
+                                                            * -> the lane. 127 is the on-the-wire form of 0xFF (a SysEx
+                                                            * data byte is 7 bit); a lane past 15 answers nothing */
+        if (na < 1u || (a[0] > 15u && a[0] != 127u))
+            return;
+        drum_kit_stop(a[0]);
+        ed_b(a[0]);
         break;
     }
     case ED_TRACK_PARAM: {                                 /* track, id [, v14] -> track, id, v14 */

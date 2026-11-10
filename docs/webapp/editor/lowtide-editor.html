@@ -509,7 +509,7 @@
   .kstep { border-top: 1px solid var(--line); padding: 16px 0 4px; margin-top: 8px; }
   .kstep > h3 { display: flex; align-items: center; gap: 12px; color: var(--fg); text-transform: uppercase; margin: 0 0 10px; }
   .kstep > h3 .num { width: 32px; height: 32px; display: grid; place-content: center; background: var(--trk); color: #000; font-size: 32px; line-height: 32px; }
-  .dest { display: grid; grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 10px; }
+  .dest { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0 0 10px; }   /* (2.8.9) six columns: the big kit spans two, four singles fill the rest */
   .dest button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; background: var(--bg);
                  border: 1px solid var(--s3); text-transform: none; white-space: normal; text-align: left; min-height: 92px; }
   .dest button b { font-weight: 400; font-size: 32px; line-height: 32px; color: var(--fg); }
@@ -523,6 +523,37 @@
   .dest button:disabled { opacity: .35; }
   .destnote { color: var(--fg2); margin: 0 0 10px; }
   .destnote .warn, .warn-t { color: var(--t3); }
+  /* (2.8.9) pick-a-slot-first: each destination is a card — the pick area on top, its own Export / Import ZIP
+     strip flush in the footer, so the buttons share the card's edges and stay enabled without picking */
+  .dest .cell { display: flex; flex-direction: column; min-width: 0; background: var(--bg); border: 1px solid var(--s3); }
+  .dest .cell.big { grid-column: span 2; }
+  .dest .cell:hover { border-color: var(--dim); }
+  .dest .cell.selected { background: var(--s2); border-color: var(--trk); box-shadow: inset 0 0 0 1px var(--trk); }
+  .dest .cell > button.pick { flex: 1; border: 0; min-height: 88px; }
+  .slot-io { display: flex; width: 100%; border-top: 1px solid var(--s3); }
+  .slot-io button { flex: 1 1 0; min-width: 0; background: var(--s1); border: 0; border-left: 1px solid var(--s3);
+                    color: var(--fg2); padding: 7px 2px; cursor: pointer; font-size: 12px; white-space: nowrap; text-align: center; }
+  .slot-io button:first-child { border-left: 0; }
+  .slot-io button:hover:not(:disabled) { color: var(--fg); background: var(--s2); }
+  .slot-io button:disabled { opacity: .35; cursor: not-allowed; }
+  /* (2.8.9) the kit is locked until a slot is picked: grid and chop panel inert, with a banner pointing at step 1 */
+  .kitlocked .pads, .kitlocked .slice { opacity: .38; pointer-events: none; }
+  .lockbanner { display: none; align-items: center; gap: 10px; border: 1px dashed var(--t3); color: var(--t3);
+                background: rgba(255, 198, 24, .06); padding: 9px 12px; margin: 10px 0 0; cursor: pointer; }
+  .kitlocked .lockbanner { display: flex; }
+  .lockbanner u { text-underline-offset: 3px; }
+  /* (2.8.9) play is just the green triangle; while playing, the red stop square. A physical hit flashes the pad */
+  .pad .acts button.play { color: var(--t2); }
+  .pad .acts button.play.stop { color: var(--red); }
+  .pad .ph b { cursor: grab; }
+  .pad .ph b:active { cursor: grabbing; }
+  .pad .leninfo { color: var(--fg2); font-size: 12px; }   /* (2.8.9) Length: the whole (baked) sample length */
+  .pad.flash canvas { outline: 1px solid var(--c); }
+  .slice .bar button.play { color: var(--t2); }
+  .slice .bar button.play.stop { color: var(--red); }
+  /* (2.8.9) the chop panel's audition: the green triangle, the red stop square while it plays */
+  .selrow button.play { color: var(--t2); }
+  .selrow button.play.stop { color: var(--red); }
 
   /* ---- samples: the slots, files or CHOP, send ---- */
   .dest.slots4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -1283,7 +1314,8 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71,    /* v9 (SLOOP 2.4): the FM6 engine's patches (Felucca 1.0's numbers) */
   DSYN_LIST: 72, DSYN_GET: 73, DSYN_PUT: 74, DSYN_STORE: 75, DSYN_PLAY: 76,   /* v10 (SLOOP 2.5): the SYN drum kits */
   LIVE: 77,                                           /* v12 (SLOOP 2.7): the LIVE page (firmware editor_live.c) */
-  DRUM_TRIG: 79 };                                      /* v14 (Lowtide 2.8.5): the last live drum hit; 78 was DP_LEARN (the drum-pad learn, removed in 2.8.6) */
+  DRUM_TRIG: 79,                                      /* v14 (Lowtide 2.8.5): the last live drum hit; 78 was DP_LEARN (the drum-pad learn, removed in 2.8.6) */
+  KITS_MODE: 80, KITS_STOP: 81 };                     /* v17 (Lowtide 2.8.9): kits mode (0 off, 1..4 USR1..4, 5 USR3+4); stop a lane's kit voice (0..15, 127 all) */
 /* v12: LIVE ops (firmware editor_live.c) and the layers its keys reach (seq.c LY_*: 5 SEL, 6 GLO, 7 SAVE) */
 const LIVE = { STATE: 0, PLAY: 1, KEY: 2, FX: 3, REC: 4, UNDO: 5, LY_KEY: 5, LY_MIX: 6, LY_SONG: 7, NFX: 27,
   /* (2.7) the page's own (editor_live.c 6..12): ROLL and ERASE while held, the pattern's tools, a chain of sections, THROW,
@@ -1622,6 +1654,9 @@ const parse = {
     const r = new Reader(a);
     return { note: r.b(), ch: r.b(), vel: r.b(), lane: r.b() };
   },
+  /* v17 (2.8.9): kits mode and kit stop: the value sent, rc 0 ok */
+  [CMD.KITS_MODE](a) { return { mode: a[0], rc: a[1] }; },
+  [CMD.KITS_STOP](a) { return { lane: a[0], rc: a[1] }; },
 };
 
 /* a name the device accepts: printable ASCII, 1..12 characters */
@@ -1706,6 +1741,9 @@ const req = {
   dsynPlay: (k, lane, vel = 110) => [CMD.DSYN_PLAY, [k & 0x7F, lane & 0x7F, Math.max(1, Math.min(127, vel | 0))]],
   /* v12: LIVE op [, args]: every reply is the live state (parse[CMD.LIVE]) */
   live: (op, ...args) => [CMD.LIVE, [op & 0x7F, ...(args.length ? args : [0]).map((x) => x & 0x7F)]],
+  /* v17 (2.8.9): kits mode (0 off, 1..4 USR1..4, 5 USR3+4); stop a lane's kit voice (0..15, 127 all) */
+  kitsMode: (v) => [CMD.KITS_MODE, [v & 0x7F]],
+  kitsStop: (lane) => [CMD.KITS_STOP, [lane & 0x7F]],
 };
 
 /* which reply belongs to which request (the device echoes these) */
@@ -1930,6 +1968,24 @@ function imaEncode(s, loopStart = 0) {
   return { data: out, pred: atLoop[0], idx: atLoop[1] };
 }
 
+/* IMA ADPCM decode: the inverse of imaEncode (low nibble first, from predictor 0 / index 0 unless
+   told otherwise) -> Int16Array of n samples. Each zone is encoded separately from predictor 0 /
+   index 0 (buildSlot), so a zone's ADPCM blob is self-contained and decodes on its own. */
+function imaDecode(data, n, pred = 0, idx = 0) {
+  const out = new Int16Array(Math.max(0, n));
+  for (let i = 0; i < n; i++) {
+    const code = (data[i >> 1] >> ((i & 1) * 4)) & 15, step = IMA_STEP[idx];
+    let diff = step >> 3;
+    if (code & 4) diff += step;
+    if (code & 2) diff += step >> 1;
+    if (code & 1) diff += step >> 2;
+    pred = Math.max(-32768, Math.min(32767, code & 8 ? pred - diff : pred + diff));
+    idx = Math.max(0, Math.min(88, idx + IMA_IDX[code & 7]));
+    out[i] = pred;
+  }
+  return out;
+}
+
 /* the IMA ADPCM state (predictor, step index) after encoding samples [0, at): the decoder state at
    sample `at`, for a slice start — the same loop as imaEncode, without building the nibbles */
 function imaStateAt(s, at) {
@@ -2101,7 +2157,9 @@ function buildSlot(name, zonesIn) {
   let len = 0;
   for (const z of zonesIn) {
     const [ls, le] = z.loop ? LOOP.range(z) : [0, z.s.length - 1];
-    const e = imaEncode(z.s, ls);                   /* (the decoder's state at the loop start) */
+    /* (2.8.9) a zone may carry its own ADPCM bytes (a drum kit pad's original bytes, bit-exact when the
+       pad is unchanged): they were encoded from predictor 0 / index 0, as imaEncode does here */
+    const e = z.adpcm ? { data: z.adpcm, pred: 0, idx: 0 } : imaEncode(z.s, ls);
     zones.push({ off: len, n: z.s.length, ls, le, looped: z.loop ? 2 : 0, root: z.root, lo: z.lo ?? null, hi: z.hi ?? null,
       pred: e.pred, idx: e.idx });
     parts.push(e.data);
@@ -3064,7 +3122,7 @@ function makeMockDevice(opt = {}) {
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
-  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : opt.v15 ? 15 : 16;   /* INFO's protocol (2.8.8: the kit slices are object 13) */
+  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : opt.v15 ? 15 : opt.v16 ? 16 : 17;   /* INFO's protocol (2.8.9: KITS_MODE / KITS_STOP; 2.8.8: the kit slices are object 13) */
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -3209,6 +3267,7 @@ function makeMockDevice(opt = {}) {
   const v10 = v9 && !opt.v9;                         /* SLOOP 2.5: the SYN drum kits */
   const v11 = v10 && !opt.v10;                       /* SLOOP 2.7: your theme (backup object 11) */
   const v16 = v11 && !opt.v15;                       /* Lowtide 2.8.8: the kit slices (backup object 13) */
+  const v17 = v16 && !opt.v16;                       /* Lowtide 2.8.9: KITS_MODE / KITS_STOP (commands 80 / 81) */
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the
      sequencer); used to seed the mock's user presets and track 1 as if they had been recorded */
   const T_ = 4;
@@ -3248,6 +3307,7 @@ function makeMockDevice(opt = {}) {
     ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 32 x 2 bytes), null: none */
     drumMap: null,                                  /* the drum map + knob speed (object 12, 17 bytes), null: the default */
     kitSlice: null,                                 /* (2.8.8) the kit slices (object 13, 768 bytes), null: the default (all zero) */
+    kitsMode: 0, kitsStop: [],                      /* (2.8.9) the kits mode the editor last set (0 off), the lanes it stopped */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
     /* v12 (LIVE): the transport's start, the sections (A..D: playing, asked for at a time), song mode, SONG REC, fills,
@@ -3802,6 +3862,19 @@ function makeMockDevice(opt = {}) {
         liveState(b, v, a[0]);
         break;
       }
+      /* v17 (2.8.9): kits mode (0 off, 1..4 USR1..4, 5 USR3+4) and kit stop (a lane 0..15) */
+      case CMD.KITS_MODE: {
+        if (!v17 || a.length < 1 || a[0] > 5) return null;
+        st.kitsMode = a[0];
+        b(a[0]); b(0);
+        break;
+      }
+      case CMD.KITS_STOP: {
+        if (!v17 || a.length < 1 || (a[0] > 15 && a[0] !== 127)) return null;   /* (2.8.9) 127 stops all kit voices, as the firmware reads it */
+        st.kitsStop.push(a[0]);
+        b(a[0]); b(0);
+        break;
+      }
       default:
         return null;
     }
@@ -4104,8 +4177,11 @@ function kitSliceRange(p) {   /* the baked samples to play: the slice, clamped t
   return { start: Math.max(0, Math.min(n, s.start)), end: Math.max(0, Math.min(n, s.end)) };
 }
 function kitSliceSlot(lane) {   /* the slot a lane's zone goes to in the current draft */
-  if (kitDraft.kind === KIT_PAIR) { const sp = kitSplit(kitDraft.pads); return sp && sp[1].includes(lane) ? 3 : 2; }
-  return kitDraft.slot;
+  return kitSliceSlotFor(lane, kitDraft.slot, kitDraft.pads);
+}
+function kitSliceSlotFor(lane, dest, pads) {   /* the slot a lane's zone goes to for a kit in `dest` */
+  if (dest === KIT_PAIR) { const sp = kitSplit(pads); return sp && sp[1].includes(lane) ? 3 : 2; }
+  return dest;
 }
 async function kitSliceRead() {   /* mirror object 13 from the FM-1; a firmware without it just leaves zeros */
   kitSliceDev.fill(0); kitSliceLoaded = true;
@@ -4125,14 +4201,17 @@ async function kitSliceWrite() {   /* write the mirror back; needs protocol 16 (
   return true;
 }
 function kitSliceSyncFromDraft() {   /* rebuild the mirror for the draft's slot(s) from the draft pads, then write */
-  if (!dev) return;
-  const slots = kitDraft.kind === KIT_PAIR ? [2, 3] : [kitDraft.slot];
+  return kitSliceSyncPads(kitDraft.pads, kitDraft.slot);
+}
+function kitSliceSyncPads(pads, dest) {   /* rebuild the mirror for a kit's slot(s) from its pads, then write */
+  if (!dev || dest == null) return;
+  const slots = dest === KIT_PAIR ? [2, 3] : [dest];
   for (const s of slots) kitSliceDev.fill(0, s * 16 * KITSLICE.ENTRY, (s + 1) * 16 * KITSLICE.ENTRY);
-  kitDraft.pads.forEach((p, l) => {
+  pads.forEach((p, l) => {
     const s = kitSliceOf(p);
     if (!s) return;
     const baked = kitPad(p), [pred, idx] = imaStateAt(baked, s.start);
-    kitSlicePutEntry(kitSliceSlot(l), l, s.start, s.end, pred, idx);
+    kitSlicePutEntry(kitSliceSlotFor(l, dest, pads), l, s.start, s.end, pred, idx);
   });
   return kitSliceWrite();
 }
@@ -4153,10 +4232,16 @@ function kitPad(p) {
   }
   return out;
 }
-/* the slot's zones: one per pad, lo = hi = root = its lane's note */
+/* the slot's zones: one per pad, lo = hi = root = its lane's note. A pad's ADPCM rides along: an
+   unchanged pad (no tune, gain or cut) keeps its original bytes, so the upload sends them bit-exact;
+   a baked pad is encoded from its baked audio, each zone separately from predictor 0 / index 0 */
 function kitZones(pads) {
   const zs = [];
-  pads.forEach((p, l) => { if (p) zs.push({ s: kitPad(p), root: DRUM_LANES[l][0], lo: DRUM_LANES[l][0], hi: DRUM_LANES[l][0], lane: l, fname: p.fname }); });
+  pads.forEach((p, l) => {
+    if (!p) return;
+    const s = kitPad(p), clean = !p.tune && !p.gain && !p.len && p.adpcm;
+    zs.push({ s, adpcm: clean ? p.adpcm : imaEncode(s).data, root: DRUM_LANES[l][0], lo: DRUM_LANES[l][0], hi: DRUM_LANES[l][0], lane: l, fname: p.fname });
+  });
   return zs;
 }
 /* the samples a pad keeps after tune and cut (no encode: for the meter while the knobs move) */
@@ -4959,7 +5044,7 @@ const TEXT = {
     navTrack: "トラック", navSounds: "サウンド", navDevice: "本体", tabKits: "ドラムキット", tabDrumPads: "ドラムパッド", fm1: "FM-1",
     stepList: "ステップ一覧（音名を入力）", stepsOf: "{n} ステップ", fontCredit: "フォント: Terminus（SIL OFL 1.1）",
     ctlDrag: "値を上下にドラッグでも変更できます。",
-    kitTitle: "ドラムキット", kitHelp: "ドラムトラック用に 16 の音を作ります（白鍵 1 つに 1 音）。3 ステップ: 音を入れる → 置き場所を選ぶ → FM-1 に送る。",
+    kitTitle: "ドラムキット", kitHelp: "ドラムトラック用に 16 の音を作ります（白鍵 1 つに 1 音）。まず置き場所を選んでから音を入れます。変更はすぐ FM-1 に書き込まれ、試聴も FM-1 から鳴ります。",
     kitName: "名前", kitAdd: "ファイルを選ぶ", kitClear: "全部消す", kitFit: "スロットに収める",
     kitSend: "{x} に書き込む", kitUse: "ドラムトラックで {x} を使う", kitZip: "ZIP で保存", kitOpen: "ZIP を開く",
     kitUsed: "{s} 秒 / {t} 秒", kitOver: "入りません",
@@ -4970,11 +5055,22 @@ const TEXT = {
     kitFull: "16 パッドとも埋まっています", kitLoaded: "ZIP を読み込みました: ",
     kitExport: "キットを保存", kitImport: "キットを開く", kitExported: "キットを保存しました: ", kitImported: "キットを読み込みました: ",
     kitImportBad: "キットファイルが読めません: ",
-    kitSliceTitle: "スライス", kitSliceHint: "パッドの名前をクリックするとスライスします。",
-    kitSliceStart: "開始", kitSliceEnd: "終了", kitSliceLen: "長さ", kitSlicePlay: "スライスを試聴",
-    kitSliceClear: "スライスを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceFit: "全体",
+    kitExportZip: "ZIP で保存", kitImportZip: "ZIP を開く",
+    kitImportOld: "このキットは古いバージョン 1（WAV）形式で、読み込めません。",
+    kitImportNotKit: "この ZIP はドラムキットではありません。楽器を入れるには「サンプル」タブを使ってください。",
+    kitSlotEmpty: "{x} は空です — 保存するものがありません。", kitExportedInst: "楽器を保存しました: ",
+    kitSwitchConfirm: "このキットを {x} に書き込みますか？そこにあるものは置き換わります。{y} には書き込み済みのものが残ります。",
+    kitNoSlot: "まだ置き場所が選ばれていません — 下のパッドはロックされています。各カードの ZIP 保存／読み込みボタンはもう使えます。",
+    kitInstrument: "楽器",
+    kitSlotLocked: "ロックされています — ステップ 1 で置き場所を選ぶと作り始められます。",
+    kitMeterNoSlot: "— 置き場所を選ぶと空きが表示されます",
+    kitWrote: "{x} に書き込みました · ", kitWriting: "{x} に書き込み中…",
+    kitChop: "チョップ",
+    kitSliceTitle: "チョップ", kitSliceHint: "パッドの波形をクリックするとチョップします。",
+    kitSliceStart: "開始", kitSliceEnd: "終了", kitSliceLen: "長さ", kitSlicePlay: "チョップを試聴",
+    kitSliceClear: "チョップを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceFit: "全体",
     kitSliceStored: "マーカーは FM-1 に保存されるので、サンプルを再送せずに変えられます。",
-    kitSliceUnsent: "マーカーはこのキット内に保持されます。キットを書き込むと FM-1 に保存され、その後はサンプルを再送せずに変えられます。",
+    kitSliceUnsent: "マーカーはこのキット内に保持されます。置き場所を選ぶと FM-1 に書き込まれ、その後はサンプルを再送せずに変えられます。",
     kitSliceOld: "マーカーには FM-1 の Lowtide 2.8.8 が必要です — それまではこのキット内に保持されます。",
     kitSliceWritten: "マーカーを FM-1 に書き込みました。",
     needDevice: "FM-1 を接続すると編集できます。", smpNone: "このファームウェアにはユーザーサンプルのスロットがありません。",
@@ -5026,10 +5122,11 @@ const TEXT = {
     fm6OtherBlocks: "6 オペレーターのファイル形式ですが、音色ではないデータ（パフォーマンスや補助データなど）だけでした",
     fm6OtherMaker: "別のメーカーの SysEx です", fm6Universal: "音色ではない汎用 SysEx です",
     fm6Exported: "バンクを書き出しました",
-    kitStep1: "音",
-    kitStep1Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックで試聴。パッドごとにピッチ・音量・長さ。パッドを別のパッドにドラッグすると入れ替え、空のパッドへは移動します。パッドの名前をクリックすると下でスライスできます。",
+    kitStep1: "置き場所",
+    kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードには ZIP 保存と ZIP 読み込みのボタンがあり、選ばなくても使えます。まず中身を保存したり、キットを入れたりしてから選べます。パッドは置き場所を選ぶまでロックされています。",
+    kitStep2: "音",
+    kitStep2Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックするとチョップ用に選んで試聴します。パッドごとにピッチと音量、全体の長さがあります。波形をドラッグすると音だけ、タイトルをドラッグすると箱ごと移動します。音の横の音名は位置のもの（左下が C1）で、箱が動いても変わりません。",
     kitFitHelp: "長すぎるとき: 長い音（クラッシュ、オープンハット）を短くして収めます。",
-    kitStep2: "置き場所",
     kitCapBig: "大きなキット · 約 15 秒",
     kitCapOne: "約 7 秒",
     kitNotePair: "{x}: キットを USR3 と USR4 の 2 スロットに分けて入れます（自動）。USR1 と USR2 は楽器（SAMPLE）用に空いたまま。",
@@ -5305,7 +5402,7 @@ const TEXT = {
     navTrack: "Track", navSounds: "Sounds", navDevice: "Device", tabKits: "Drum kit", tabDrumPads: "Drum Pads", fm1: "FM-1",
     stepList: "Step list (type note names)", stepsOf: "{n} steps", fontCredit: "Font: Terminus (SIL OFL 1.1)",
     ctlDrag: "You can also drag a value up or down.",
-    kitTitle: "Drum kit", kitHelp: "Build 16 sounds for the drum track, one per white key. Three steps: put your sounds on the pads, choose where the kit goes, send it to the FM-1.",
+    kitTitle: "Drum kit", kitHelp: "Build 16 sounds for the drum track, one per white key. Pick a slot first, then put your sounds on the pads — every change writes to the FM-1 straight away, and previews play through the FM-1.",
     kitName: "Name", kitAdd: "Choose files", kitClear: "Clear all", kitFit: "Fit the slot",
     kitSend: "Send to {x}", kitUse: "Use {x} on the drum track", kitZip: "Save as ZIP", kitOpen: "Open ZIP",
     kitUsed: "{s} s of {t} s", kitOver: "too long",
@@ -5316,11 +5413,22 @@ const TEXT = {
     kitFull: "All 16 pads are taken", kitLoaded: "ZIP opened: ",
     kitExport: "Export kit", kitImport: "Import kit", kitExported: "Kit exported: ", kitImported: "Kit imported: ",
     kitImportBad: "Kit file rejected: ",
-    kitSliceTitle: "Slicing", kitSliceHint: "Click a pad's name to slice it.",
-    kitSliceStart: "Start", kitSliceEnd: "End", kitSliceLen: "Length", kitSlicePlay: "Play slice",
-    kitSliceClear: "Clear slice", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceFit: "Fit",
+    kitExportZip: "Export ZIP", kitImportZip: "Import ZIP",
+    kitImportOld: "This kit is the old version 1 (WAV) format and can't be imported.",
+    kitImportNotKit: "This ZIP is not a drum kit. To import an instrument, use the Samples tab.",
+    kitSlotEmpty: "{x} is empty — nothing to export.", kitExportedInst: "Instrument exported: ",
+    kitSwitchConfirm: "Write this kit to {x} instead? It replaces what is there now. {y} keeps the copy already written to it.",
+    kitNoSlot: "No slot picked yet — the pads below are locked. The Export / Import ZIP buttons on each card already work.",
+    kitInstrument: "instrument",
+    kitSlotLocked: "Locked — pick a slot in step 1 to start building the kit.",
+    kitMeterNoSlot: "— pick a slot to see how much room the kit has",
+    kitWrote: "Written to {x} · ", kitWriting: "Writing to {x}…",
+    kitChop: "Chop",
+    kitSliceTitle: "Chop", kitSliceHint: "Click a pad's waveform to chop it.",
+    kitSliceStart: "Start", kitSliceEnd: "End", kitSliceLen: "Length", kitSlicePlay: "Play chop",
+    kitSliceClear: "Clear chop", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceFit: "Fit",
     kitSliceStored: "Markers are stored on the FM-1, so you can change them without re-uploading the sample.",
-    kitSliceUnsent: "Markers are kept in this kit; send the kit to write them to the FM-1, then you can change them without re-uploading the sample.",
+    kitSliceUnsent: "Markers are kept in this kit; pick a slot to write them to the FM-1, then you can change them without re-uploading the sample.",
     kitSliceOld: "Markers need Lowtide 2.8.8 on the FM-1 — they are kept in this kit until then.",
     kitSliceWritten: "Markers written to the FM-1.",
     needDevice: "Connect the FM-1 to edit.", smpNone: "This firmware has no user sample slots.",
@@ -5372,8 +5480,10 @@ const TEXT = {
     fm6OtherBlocks: "6-operator file format, but no voices (performance or supplement data only)",
     fm6OtherMaker: "SysEx from another manufacturer", fm6Universal: "Universal SysEx, not voice data",
     fm6Exported: "Bank exported",
-    kitStep1: "Your sounds",
-    kitStep1Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to hear it. Each pad has its pitch, gain and length. Drag a pad to another to swap them, or move it to an empty pad. Click a pad's name to slice it below.",
+    kitStep1: "Where it goes",
+    kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export ZIP and Import ZIP buttons, and they work without picking: back up what's in a slot, or load a kit into it, first. The pads stay locked until a slot is chosen.",
+    kitStep2: "Your sounds",
+    kitStep2Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to select it for Chop and hear it. Each pad has its pitch and gain, and its whole length. Drag a waveform to move a sample, drag a title to move the box. The note next to a sound belongs to its position, C1 at the bottom-left.",
     kitFitHelp: "Too long? Fit shortens the longest sounds (crashes, open hats) just enough.",
     kitStep2: "Where it goes",
     kitCapBig: "big kit · about 15 s",
@@ -5519,6 +5629,7 @@ function showTab(name) {
   try { localStorage.setItem(TAB_KEY, name); } catch (e) { /* no storage */ }
   if (location.hash !== "#" + name) history.replaceState(null, "", location.pathname + location.search + "#" + name);
   renderPanels();
+  if (prev === "kits" && name !== "kits") kitsModeUpdate();   /* (2.8.9) leaving the Kits tab: kits mode off */
   if (name === "tracks" && prev !== "tracks" && hasTracks() && dev.dump) op(readMixer);
 }
 function renderPanels() {
@@ -5547,12 +5658,13 @@ function renderPanels() {
   $("pagetitle").textContent = nb ? t(nb.dataset.t) : "";
   if (want === "kits") {
     renderKits();
+    kitsModeUpdate();   /* (2.8.9) entering the Kits tab: the picked slot, or 0 if none picked yet */
     /* (2.8.4) the builder's note labels follow the drum map: read it if it has not been read yet */
     if (ready && !drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } });
     /* (2.8.8) the slicing markers, read once per connection */
     if (ready && !kitSliceLoaded) op(async () => { try { await kitSliceRead(); } catch (e) { report(e); } });
   }
-  if (want === "drumpads") { drumPadsRender(); if (ready) { if (!drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); op(async () => { try { await drumPadsKitRead(); } catch (e) { report(e); } }); } }
+  if (want === "drumpads") { drumPadsRender(); if (ready) { op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); op(async () => { try { await drumPadsKitRead(); } catch (e) { report(e); } }); } }
   if (want === "drumsynth" && ready) {                 /* (2.5) the SYN kits, read once per connection */
     if (DS.dev !== dev) { Object.assign(DS, { dev, kit: null, list: null, k: 0, lane: 0 }); if (dsOk()) op(() => dsLoad(0)); renderDs(); } else renderDs();
   }
@@ -6237,6 +6349,10 @@ async function connect() {
 
 function disconnect(reasonKey = "disconnected") {
   stopPreview();
+  kitStopAll();   /* (2.8.9) any kit playback's stop timer ends; the FM-1's voice stops with the link */
+  smpStopPlay();   /* (2.8.9) a Samples preview's stop timer ends too */
+  chopStopAudition();   /* (2.8.9) a chop audition's stop timer ends too */
+  kitSlotKinds = null; kitKitsModeSent = null;
   if (dev) {
     dev.link.close();
     dev.input.onmidimessage = null;
@@ -7953,7 +8069,12 @@ async function decodeFile(f) {
 
 /* ---- the Samples page (2.4): 1 the slot, 2 the sound (from files, one note each; or CHOP, one recording cut in
    pieces), 3 send it and play it on a track. One draft for the files (smpPage.draft), whichever slot it goes to. */
-const smpPage = { slot: 0, mode: "files", draft: { name: "", files: [] }, ui: null };
+const smpPage = { slot: 0, mode: "files", draft: { name: "", files: [] }, ui: null, playTrack: 0 };   /* (2.8.9) playTrack: the track the ▶ previews use (the last "Play this slot on" choice) */
+const smpSentSig = [null, null, null, null];   /* (2.8.9) the draft signature each slot was last sent with */
+function smpSig(d, name) {   /* the files draft, as a string: any real change changes it */
+  return [name || "", ...d.files.map((f) => [f.fname, f.root, f.lo, f.hi, f.loop, f.ls, f.le, f.gain, f.s.length,
+    crc32(new Uint8Array(f.s.buffer, f.s.byteOffset, f.s.byteLength))].join(","))].join("|");
+}
 let smpAudio = null, smpSrc = null;
 function playInt16(s, onend) {                       /* a preview in the computer (22050 Hz mono) */
   const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -7976,11 +8097,12 @@ function playLoop(s, ls, le) {
 }
 function releaseLoop() { if (smpSrc) smpSrc.loop = false; }
 /* the ▶ of a looped file: hold it (mouse, touch, or Enter / Space held) */
-function holdToPlay(b, start) {
+function holdToPlay(b, start, stop) {   /* (2.8.9) stop: what letting go does (the loop's release by default) */
   b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (x) { /* gone */ } start(); });
-  for (const ev of ["pointerup", "pointercancel"]) b.addEventListener(ev, releaseLoop);
+  const rel = () => { if (stop) stop(); else releaseLoop(); };
+  for (const ev of ["pointerup", "pointercancel"]) b.addEventListener(ev, rel);
   b.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); start(); } });
-  b.addEventListener("keyup", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); releaseLoop(); } });
+  b.addEventListener("keyup", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); rel(); } });
 }
 /* LOOP+TAIL: the file's wave, its loop lit */
 function drawLoopWave(cv, f) {
@@ -8146,7 +8268,7 @@ function renderSamples() {
       const gi = el("input", { type: "range", min: LEVEL_MIN, max: 0, step: 1, value: String(f.gain || 0), title: t("smpGainHelp") });
       const gv = el("span", { class: "val", text: `${f.gain || 0} dB` });
       gi.addEventListener("input", () => { f.gain = +gi.value; gv.textContent = `${f.gain} dB`; barFill(gi); });
-      gi.addEventListener("change", () => playInt16(withGain(f.s, f.gain)));
+      gi.addEventListener("change", () => smpPlayFile(i));   /* (2.8.9) a gain preview plays through the FM-1 */
       requestAnimationFrame(() => barFill(gi));
       /* 2.7: ONE SHOT, LOOP (the whole file while held), LOOP+TAIL (its points below) */
       const lsel = el("select", { title: t("smpLoopHelp"), "aria-label": t("smpLoop") },
@@ -8157,9 +8279,9 @@ function renderSamples() {
         if (f.loop === 2 && f.ls == null) [f.ls, f.le] = LOOP.snapRange(f.s, Math.round(f.s.length / 4), Math.round(f.s.length * 3 / 4));
         renderSamples();
       });
-      const play = el("button", { type: "button", title: t(f.loop ? "smpHoldPlay" : "kitPlay") }, "▶");
-      if (f.loop) holdToPlay(play, () => { const [a, b] = LOOP.range(f); playLoop(withGain(f.s, f.gain), a, b); });
-      else play.addEventListener("click", () => playInt16(withGain(f.s, f.gain)));
+      const play = el("button", { type: "button", title: t(f.loop ? "smpHoldPlay" : "kitPlay") }, smpPlaying && smpPlaying.i === i ? "■" : "▶");
+      if (f.loop) holdToPlay(play, () => smpPlayFile(i, true), () => smpStopPlay());
+      else play.addEventListener("click", () => smpPlayFile(i));
       const row = el("div", { class: "frow", style: `--c:${TCOL[i % 4]}` },
         play,
         el("span", { class: "fn", text: f.fname, title: f.fname }), root,
@@ -8211,35 +8333,90 @@ function smpButtons() {
 async function smpSendPage() {
   const P = smpPage, k = P.slot;
   if (P.mode === "chop") { await chopSend(k, P.ui.prog); }
-  else if (await smpUpload(k, P.ui.prog, true, P.draft)) sayK("smpDone", `${k + 1}`);
+  else if (await smpUpload(k, P.ui.prog, true, P.draft)) { smpSentSig[k] = smpSig(P.draft, P.draft.name); sayK("smpDone", `${k + 1}`); }
   P.ui.prog.hidden = true;
   renderSamples();
 }
 /* track i plays slot k: the track selected, engine SAMPLE (its first preset), SET = USRk */
+async function smpSetupTrack(i, k) {   /* returns false when the track cannot play the slot */
+  if (dev.sel !== i) { dev.sel = parse[CMD.TRACK](await rq(req.track(i))).sel; await afterSoundChange(); }
+  const e = dev.info.engines.indexOf("SAMPLE");
+  if (e < 0) { sayK("smpNoEngine"); return false; }
+  if (dev.dump.engine !== e) { selfLoad(); parse[CMD.PRESET](await rq(req.preset(e, 0))); await afterSoundChange(); }
+  const d = dev.pdesc[dev.info.pe0], v = d && d.names ? d.names.indexOf(`USR${k + 1}`) : -1;
+  if (v < 0) { sayK("smpNoEngine"); return false; }
+  userSet(0, dev.info.pe0, v + d.min, true);
+  return true;
+}
 function smpUseOn(i, k) {
   if (!dev || !hasTracks()) return;
-  op(async () => {
-    if (dev.sel !== i) { dev.sel = parse[CMD.TRACK](await rq(req.track(i))).sel; await afterSoundChange(); }
-    const e = dev.info.engines.indexOf("SAMPLE");
-    if (e < 0) { sayK("smpNoEngine"); return; }
-    if (dev.dump.engine !== e) { selfLoad(); parse[CMD.PRESET](await rq(req.preset(e, 0))); await afterSoundChange(); }
-    const d = dev.pdesc[dev.info.pe0], v = d && d.names ? d.names.indexOf(`USR${k + 1}`) : -1;
-    if (v < 0) { sayK("smpNoEngine"); return; }
-    userSet(0, dev.info.pe0, v + d.min, true);
-    sayK("smpPlaying", ` ${i + 1}: SAMPLE, SET = USR${k + 1}`);
+  smpPage.playTrack = i;   /* (2.8.9) the ▶ previews use this track too */
+  op(async () => { if (await smpSetupTrack(i, k)) sayK("smpPlaying", ` ${i + 1}: SAMPLE, SET = USR${k + 1}`); });
+}
+/* (2.8.9) a file plays through the FM-1: the draft goes into the slot first — only when it really
+   changed (no re-upload when nothing changed) — then the track last chosen for "Play this slot on"
+   is set up and the file's root key is played. A second tap stops it; a held loop plays until let go. */
+let smpPlaying = null;   /* {i, timer} while a Samples file plays through the FM-1 */
+async function smpPlayFile(i, hold = false) {
+  const P = smpPage, d = P.draft, f = d.files[i];
+  if (!dev || !f || smpBusy) return;
+  if (smpPlaying && smpPlaying.i === i) { smpStopPlay(); return; }
+  smpStopPlay();
+  const k = P.slot, track = P.playTrack || 0;
+  if (smpSentSig[k] !== smpSig(d, d.name)) {
+    if (!await smpUpload(k, P.ui && P.ui.prog, false, d)) return;
+    smpSentSig[k] = smpSig(d, d.name);
+  }
+  if (!await smpSetupTrack(track, k)) return;
+  lvNoteOn("smp:" + i, track, f.root, 100);
+  const ms = Math.max(120, Math.round(f.s.length / SMP.RATE * 1000));
+  smpPlaying = { i, timer: hold ? null : setTimeout(() => smpStopPlay(), ms) };
+  smpPlayUi();
+}
+function smpStopPlay() {
+  if (!smpPlaying) return;
+  if (smpPlaying.timer) clearTimeout(smpPlaying.timer);
+  lvNoteOff("smp:" + smpPlaying.i);
+  smpPlaying = null;
+  smpPlayUi();
+}
+function smpPlayUi() {   /* the file rows' play buttons: ▶, or ■ while that file plays */
+  const u = smpPage.ui;
+  if (!u) return;
+  [...u.list.querySelectorAll(".frow:not(.fhead)")].forEach((row, j) => {
+    const b = row.firstElementChild;
+    if (b && b.tagName === "BUTTON") b.textContent = smpPlaying && smpPlaying.i === j ? "■" : "▶";
   });
 }
 
 /* ---------------------------------------------------------- drum kit (2.4) --- */
 /* 16 pads, one per drum lane (DRUM_LANES, the white keys F3..), each a sound kitPad tunes, cuts and levels; the kit
    goes to a USR slot as one zone per lane (kitZones) and the drum track plays it with KIT = USR1..USR3 */
-const kitDraft = { name: "", slot: 4, pads: Array(16).fill(null), sel: -1, picked: null, justPicked: false, dragging: false, sent: false };   /* slot 0..3: USR1..4; 4: USR3+4 (a big kit) */
+/* (2.8.9) no slot is chosen until the user picks one — a draft must never silently land on USR3+4
+   (the old default) now that every change writes to the FM-1 straight away */
+const kitDraft = { name: "", slot: null, pads: Array(16).fill(null), sel: -1, picked: null, justPicked: false, dragging: false, sent: true };   /* slot 0..3: USR1..4; 4: USR3+4 (a big kit) */
 const KIT_PAIR = 4;
-const kitSlots = (d = kitDraft.slot) => (d === KIT_PAIR ? [2, 3] : [d]);
-const kitDest = (d = kitDraft.slot) => (d === KIT_PAIR ? "USR3+4" : `USR${d + 1}`);
+const kitSlots = (d = kitDraft.slot) => (d == null ? [] : d === KIT_PAIR ? [2, 3] : [d]);
+const kitDest = (d = kitDraft.slot) => (d == null ? "—" : d === KIT_PAIR ? "USR3+4" : `USR${d + 1}`);
 const kitRoom = () => SMP.MAX_DATA - 64;                 /* (a slot, less a margin: kitLen may undercount a sample) */
 const kitHas4 = () => !!dev && !!dev.smp && dev.smp.nslots >= 4;
-let kitUi = null, kitAudio = null, kitSrc = null;
+const kitPlaying = new Map();   /* (2.8.9) lane -> the timer that flips its Stop button back to Play (the FM-1 sends no "finished") */
+let kitWriteTimer = null, kitWriteBusy = false, kitWritePending = false, kitHoldWrite = 0, kitSlotKinds = null, kitWrittenSlot = null;   /* (2.8.9) kinds are read lazily, null = not yet read from the FM-1; written: the slot the draft was last written to */
+let kitKitsModeSent = null;   /* the KITS_MODE value the FM-1 last got (null: never sent) */
+/* (2.8.9) the KITS_MODE value for the picked slot: 0 off, 1..4 USR1..4, 5 USR3+4 */
+const kitsModeValue = () => kitDraft.slot == null ? 0 : kitDraft.slot === KIT_PAIR ? 5 : kitDraft.slot + 1;
+async function kitsModeUpdate() {   /* tell the FM-1 the kits mode, but only when it changed */
+  if (!dev || !dev.info || dev.info.proto < 17) return;
+  const v = tab === "kits" ? kitsModeValue() : 0;
+  if (v === kitKitsModeSent) return;
+  kitKitsModeSent = v;
+  try { await rq(req.kitsMode(v)); } catch (e) { if (e.message !== "closed") report(e); }
+}
+async function kitsStopSend(lane) {   /* stop a lane's kit voice on the FM-1 (0..15) */
+  if (!dev || !dev.info || dev.info.proto < 17) return;
+  try { await rq(req.kitsStop(lane)); } catch (e) { if (e.message !== "closed") report(e); }
+}
+let kitUi = null;
 function kitProg() { return kitUi && kitUi.prog; }
 const kitKiB = (b) => (b / 1024).toFixed(1);
 async function kitAddFiles(list, lane = -1) {
@@ -8252,7 +8429,8 @@ async function kitAddFiles(list, lane = -1) {
       const pads = kitDraft.pads;                   /* (after the decode: CLEAR ALL may have come meanwhile) */
       const l = kitPlace(pads, f.name, lane);
       if (l < 0) { full = true; break; }
-      pads[l] = { s: z.s, fname: f.name, tune: 0, gain: 0, len: 0 };
+      /* (2.8.9) the pad keeps its ADPCM too, so an unchanged upload sends the original bytes bit-exact */
+      pads[l] = { s: z.s, adpcm: imaEncode(z.s).data, fname: f.name, tune: 0, gain: 0, len: 0 };
       done.push(`${DRUM_LANES[l][1]} ← ${f.name}`);
       if (!kitDraft.name) kitDraft.name = "KIT";
       if (lane >= 0) lane = -1;                     /* (more files dropped on one pad: the rest by name) */
@@ -8260,33 +8438,67 @@ async function kitAddFiles(list, lane = -1) {
   }
   if (done.length) sayK("kitAssigned", done.join(", ") + (full ? " — " + t("kitFull") : ""));
   else if (full) sayK("kitFull");
-  if (done.length) kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
+  if (done.length) kitWriteNow();   /* (2.8.9) a new sample writes to the FM-1 straight away */
   renderKits();
 }
 async function kitOpenZip(f) {
   try {
     const files = (await zipRead(await f.arrayBuffer())).filter((x) => /\.(wav|aif|aiff|mp3|flac|ogg)$/i.test(x.name));
     const base = f.name.replace(/\.zip$/i, "").toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8);
-    await kitAddFiles(files.map((x) => new File([x.data], x.name.split("/").pop())));
-    if (base) kitDraft.name = base;
+    kitHoldWrite++;
+    try {
+      await kitAddFiles(files.map((x) => new File([x.data], x.name.split("/").pop())));
+      if (base) kitDraft.name = base;
+    } finally { kitHoldWrite--; }
+    kitWriteNow();   /* (2.8.9) the ZIP's files and its name go to the FM-1 in one write */
     sayK("kitLoaded", f.name);
   } catch (e) { sayK("smpDecodeFail", `${f.name} (${e.message})`); }
 }
-/* preview a pad through the browser speakers: the slice when one is set (2.8.8), else the whole pad */
-function kitPlayPad(l) {
+/* (2.8.9) a pad plays through the FM-1: a MIDI note-on for the pad's note, while the Kits tab has the
+   FM-1 in kits mode — an empty pad plays nothing, it only flashes. A second tap stops it, and the
+   Stop button flips back to Play on a timer: the chop range's length, since the FM-1 sends no
+   "finished" (an estimate — a choked voice ends sooner, and the button stays on Stop until then). */
+function kitTogglePlay(l) {
+  if (kitPlaying.has(l)) kitStopLane(l);
+  else kitStartLane(l);
+}
+function kitStartLane(l) {
   const p = kitDraft.pads[l];
-  if (!p) return;
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!kitAudio) kitAudio = new Ctx();
-  if (kitSrc) try { kitSrc.stop(); } catch (e) { /* ended */ }
-  const s = kitPad(p), r = kitSliceRange(p), buf = kitAudio.createBuffer(1, s.length, SMP.RATE), ch = buf.getChannelData(0);
-  for (let i = 0; i < s.length; i++) ch[i] = s[i] / 32768;
-  kitSrc = kitAudio.createBufferSource();
-  kitSrc.buffer = buf;
-  kitSrc.connect(kitAudio.destination);
-  kitSrc.start(0, r.start / SMP.RATE, (r.end - r.start) / SMP.RATE);
-  const pad = kitUi && kitUi.pads[l];
-  if (pad) { pad.box.classList.add("playing"); kitSrc.onended = () => pad.box.classList.remove("playing"); }
+  if (!p) { kitFlashLane(l); return; }   /* an empty box: play nothing, just flash it */
+  kitStopLane(l);
+  const note = drumPadsHearNote(l) >= 0 ? drumPadsHearNote(l) : DRUM_LANES[l][0];
+  lvNoteOn("kit:" + l, 3, note, 100);
+  const rng = kitSliceRange(p), ms = Math.max(120, Math.round((rng.end - rng.start) / SMP.RATE * 1000));
+  kitPlaying.set(l, setTimeout(() => kitStopLane(l), ms));
+  kitPlayUi(l);
+}
+function kitStopLane(l) {
+  if (kitPlaying.has(l)) { clearTimeout(kitPlaying.get(l)); kitPlaying.delete(l); }
+  lvNoteOff("kit:" + l);
+  kitsStopSend(l);
+  kitPlayUi(l);
+}
+function kitStopAll() {   /* every lane's stop timer ends and its button flips back to Play */
+  for (const l of [...kitPlaying.keys()]) kitStopLane(l);
+}
+function kitPlayUi(l) {   /* the pad's play button: green triangle, or red stop square while it plays */
+  const pu = kitUi && kitUi.pads[l];
+  if (!pu) return;
+  const on = kitPlaying.has(l);
+  pu.play.classList.toggle("stop", on);
+  pu.play.textContent = on ? "\u25a0" : "\u25b6";
+  pu.play.title = t("kitPlay");
+  pu.box.classList.toggle("playing", on);
+  if (kitDraft.sel === l && kitUi.slicePlay) {
+    kitUi.slicePlay.classList.toggle("stop", on);
+    kitUi.slicePlay.textContent = on ? "\u25a0" : "\u25b6";
+  }
+}
+function kitFlashLane(l) {   /* a physical hit on an empty box: the box flashes, nothing plays */
+  const pu = kitUi && kitUi.pads[l];
+  if (!pu) return;
+  pu.box.classList.add("flash");
+  setTimeout(() => pu.box.classList.remove("flash"), 140);
 }
 function kitDrawWave(cv, p) {
   const w = cv.width = Math.max(60, cv.clientWidth || 200), h = cv.height = 48, g = cv.getContext("2d");
@@ -8301,7 +8513,19 @@ function kitDrawWave(cv, p) {
     g.fillStyle = a < keep ? col.trim() || "#ff621a" : "#36363c";
     g.fillRect(x, h / 2 - y, 1, y * 2);
   }
+  /* (2.8.9) the chop markers, once the sample has been chopped: the slice is in baked samples, the
+     waveform in original ones, so the markers scale by the retune ratio */
+  if (p.slice) {
+    const r = Math.pow(2, p.tune / 12), cs = getComputedStyle(cv);
+    const green = (cs.getPropertyValue("--t2") || "#1ecc70").trim() || "#1ecc70";
+    const x0 = Math.max(0, Math.min(w - 1, Math.round(p.slice.start / r / n * w)));
+    const x1 = Math.max(0, Math.min(w - 1, Math.round(p.slice.end / r / n * w)));
+    g.fillStyle = green; g.fillRect(x0, 0, 2, h);
+    g.fillStyle = (col.trim() || "#ff621a"); g.fillRect(x1, 0, 2, h);
+  }
 }
+/* (2.8.8) move a sample assignment: drop a pad on another to swap them, or move it to an empty pad.
+   The pad object (sample, pitch, gain, length, slice) moves whole, so all its settings carry over. */
 /* (2.8.8) move a sample assignment: drop a pad on another to swap them, or move it to an empty pad.
    The pad object (sample, pitch, gain, length, slice) moves whole, so all its settings carry over. */
 function kitPadDrop(from, to) {
@@ -8312,7 +8536,30 @@ function kitPadDrop(from, to) {
   if (kitDraft.sel === from) kitDraft.sel = to;
   else if (kitDraft.sel === to) kitDraft.sel = from;
   kitDraft.picked = null;
-  kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
+  kitWriteNow();   /* (2.8.9) a swapped sample writes to the FM-1 straight away */
+  renderKits();
+}
+function kitPickDrop(l) {   /* drop a picked-up pad on lane l (a click after a pick-up): a sample moves the
+   sample, a box moves the box */
+  const pk = kitDraft.picked;
+  if (!pk) return;
+  kitDraft.picked = null;
+  if (pk.lane === l) { kitDraft.justPicked = false; renderKits(); return; }   /* the tap that picked it up: not a drop */
+  if (pk.kind === "box") kitBoxDrop(pk.lane, l);
+  else kitPadDrop(pk.lane, l);
+}
+/* (2.8.9) move a box: only the drum map changes (a drum-map-only write, at once), the samples stay
+   where they are. The note belongs to the grid position, so the sound keeps its sample and gains the
+   position's note. A lane with no pad takes the other's pad, and that lane ends up with no pad. */
+function kitBoxDrop(fromLane, toLane) {
+  if (fromLane == null || toLane == null || fromLane === toLane) return;
+  const eff = drumPadsEff();
+  const fi = eff.indexOf(fromLane), ti = eff.indexOf(toLane);
+  if (fi < 0 && ti < 0) return;   /* neither lane is on a pad: nothing to move */
+  if (fi < 0) eff[ti] = fromLane;
+  else if (ti < 0) eff[fi] = toLane;
+  else { eff[ti] = fromLane; eff[fi] = toLane; }
+  drumPadsApplyEff(eff, DRUMPADS.PAD_NOTES[ti >= 0 ? ti : fi]);
   renderKits();
 }
 /* ---- the slicing panel (2.8.8): one waveform for the selected pad, below the grid ---- */
@@ -8328,17 +8575,31 @@ function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a 
   else p.slice = { start, end };
   kitSliceRender();
 }
-async function kitSliceCommit() {   /* after a marker change: rebuild the FM-1 store from the draft and write it.
-   Only when this kit has been sent (kitDraft.sent): before that, the FM-1's slot holds another kit, and these
-   markers would slice it — so they stay in the draft until the kit is sent (kitSend writes them). */
-  if (!dev || !kitDraft.sent) return;
-  try { await kitSliceSyncFromDraft(); } catch (e) { report(e); }
+async function kitSliceCommit() {   /* after a marker change: write the markers to the FM-1 at once.
+   A marker change is a tiny write (object 13), so it goes immediately, with no settle delay — but only
+   when a slot is picked: before that, the FM-1's slot holds another kit, and these markers would
+   slice it. If the kit itself has never been written, write it first, then its markers. */
+  if (!dev || kitDraft.slot == null) return;
+  try {
+    if (!kitDraft.sent) await kitWriteNow();
+    if (kitDraft.sent) await kitSliceSyncFromDraft();   /* only when the kit is on the FM-1: otherwise the markers would slice the old kit in the slot */
+  } catch (e) { report(e); }
 }
 function kitSliceZoom(f) {   /* zoom the waveform in (2) or out (0.5), around the slice's midpoint */
   const p = kitDraft.pads[kitDraft.sel];
   if (!p) return;
   const n = kitLen(p), rng = kitSliceRange(p), mid = (rng.start + rng.end) / 2;
   const w = Math.max(Math.round(SMP.RATE * 0.02), Math.min(n, Math.round((kitSliceView.b - kitSliceView.a) / f)));
+  kitSliceView.a = Math.max(0, Math.min(n - w, Math.round(mid - w / 2)));
+  kitSliceView.b = kitSliceView.a + w;
+  kitSliceRender();
+}
+function kitSliceZoomStep(dz) {   /* (2.8.9) fine zoom by a step in zoom level (0.5x a click): 1x is the whole pad */
+  const p = kitDraft.pads[kitDraft.sel];
+  if (!p) return;
+  const n = kitLen(p), rng = kitSliceRange(p), mid = (rng.start + rng.end) / 2;
+  const z = Math.max(1, n / Math.max(1, kitSliceView.b - kitSliceView.a) + dz);
+  const w = Math.max(Math.round(SMP.RATE * 0.02), Math.min(n, Math.round(n / z)));
   kitSliceView.a = Math.max(0, Math.min(n - w, Math.round(mid - w / 2)));
   kitSliceView.b = kitSliceView.a + w;
   kitSliceRender();
@@ -8356,7 +8617,7 @@ function kitSliceNudge(which, ms) {   /* fine-adjust a marker by ms (a button cl
   if (which === "start") kitSliceSet(l, rng.start + d, rng.end);
   else kitSliceSet(l, rng.start, rng.end + d);
   kitSliceCommit();
-  kitPlayPad(l);
+  kitStartLane(l);
 }
 function kitSliceRender() {   /* the panel's title, readouts and buttons, then the waveform */
   const u = kitUi;
@@ -8367,7 +8628,7 @@ function kitSliceRender() {   /* the panel's title, readouts and buttons, then t
     u.sliceTitle.textContent = t("kitSliceTitle");
     u.sliceNote.textContent = t("kitSliceHint");
     u.sliceCv.hidden = true;
-    for (const b of [u.sliceZoomOut, u.sliceZoomIn, u.sliceFit, u.slicePlay, u.sliceClear]) b.disabled = true;
+    for (const b of [u.sliceZoomOut, u.sliceZoomIn, u.sliceZoomFineOut, u.sliceZoomFineIn, u.sliceFit, u.slicePlay, u.sliceClear]) b.disabled = true;
     u.sliceStartVal.textContent = u.sliceEndVal.textContent = u.sliceLenVal.textContent = "\u2014";
     u.sliceZoomVal.textContent = "";
     kitSliceDraw();
@@ -8381,13 +8642,16 @@ function kitSliceRender() {   /* the panel's title, readouts and buttons, then t
   u.sliceZoomVal.textContent = (n / Math.max(1, kitSliceView.b - kitSliceView.a)).toFixed(1) + "\u00d7";
   u.sliceZoomOut.disabled = kitSliceView.a === 0 && kitSliceView.b >= n;
   u.sliceZoomIn.disabled = kitSliceView.b - kitSliceView.a <= Math.max(22, Math.round(SMP.RATE * 0.02));
+  u.sliceZoomFineOut.disabled = u.sliceZoomOut.disabled;
+  u.sliceZoomFineIn.disabled = u.sliceZoomIn.disabled;
   u.slicePlay.disabled = false;
   u.sliceClear.disabled = !p.slice;
   u.sliceStartVal.textContent = ms(rng.start);
   u.sliceEndVal.textContent = ms(rng.end);
   u.sliceLenVal.textContent = ms(rng.end - rng.start);
   u.sliceNote.textContent = (dev && dev.info && dev.info.proto < 16) ? t("kitSliceOld")
-    : !dev || !kitDraft.sent ? t("kitSliceUnsent") : t("kitSliceStored");
+    : !dev || kitDraft.slot == null ? t("kitSliceUnsent") : t("kitSliceStored");
+  kitPlayUi(l);   /* the panel's play button follows the pad's (green triangle / red stop square) */
   kitSliceDraw();
 }
 function kitSliceDraw() {   /* the selected pad's waveform over the visible window, markers and a time ruler */
@@ -8412,11 +8676,20 @@ function kitSliceDraw() {   /* the selected pad's waveform over the visible wind
     g.fillRect(x, mid - y, 1, y * 2);
   }
   const px = (v) => (v - a) / span * w;
-  g.fillStyle = green; g.fillRect(Math.round(px(rng.start)), 0, 2, h);
-  g.fillStyle = col; g.fillRect(Math.round(px(rng.end)), 0, 2, h);
+  /* (2.8.9) the markers are tabs, and their lines are clamped inside the canvas: the End tab stays
+     visible even when the marker is at the very edge — a sample first loaded, end = its length */
+  const clampX = (x) => Math.max(1, Math.min(w - 2, Math.round(x)));
+  const xs = clampX(px(rng.start)), xe = clampX(px(rng.end));
+  g.fillStyle = green; g.fillRect(xs, 0, 2, h);
+  g.fillStyle = col; g.fillRect(xe, 0, 2, h);
   g.font = "11px sans-serif"; g.textBaseline = "top";
-  g.fillStyle = green; g.fillText("START", Math.min(w - 44, Math.max(0, px(rng.start) + 4)), 2);
-  g.fillStyle = col; g.fillText("END", Math.min(w - 28, Math.max(0, px(rng.end) - 30)), 2);
+  const tab = (x, label, color, left) => {
+    const tw = g.measureText(label).width + 8, tx = left ? Math.max(0, x - tw) : Math.min(w - tw, x + 2);
+    g.fillStyle = color; g.fillRect(tx, 0, tw, 15);
+    g.fillStyle = "#111"; g.fillText(label, tx + 4, 2);
+  };
+  tab(xs, "START", green, false);
+  tab(xe, "END", col, true);
   const durMs = span / SMP.RATE * 1000, stepMs = durMs > 400 ? 100 : durMs > 100 ? 20 : 5;
   g.fillStyle = "#888"; g.textBaseline = "bottom";
   for (let ms = Math.ceil(a / SMP.RATE * 1000 / stepMs) * stepMs; ms < b / SMP.RATE * 1000; ms += stepMs) {
@@ -8434,23 +8707,37 @@ function renderKits() {
     u.file = el("input", { type: "file", accept: ".wav,.zip,audio/*", multiple: true, hidden: true });
     u.file.addEventListener("change", () => { kitAddFiles([...u.file.files], u.want ?? -1); u.want = -1; u.file.value = ""; });
     u.name = el("input", { type: "text", class: "name", maxlength: 8, spellcheck: "false", placeholder: "NAME",
-      oninput: () => { const v = u.name.value.toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8); if (v !== u.name.value) u.name.value = v; kitDraft.name = v; kitButtons(); } });
-    /* where the kit goes: one slot (about 7 s), or USR3+4 (about 15 s, the big kit) */
-    u.dest = el("div", { class: "dest", role: "radiogroup", "aria-label": t("kitStep2") }, ...[KIT_PAIR, 0, 1, 2, 3].map((d) => el("button", {
-      type: "button", role: "radio", "data-d": d, class: d === KIT_PAIR ? "big" : null, onclick: () => { kitDraft.slot = d; renderKits(); } },
-      el("b", { text: kitDest(d) }), el("span", { class: "cap", text: d === KIT_PAIR ? t("kitCapBig") : t("kitCapOne") }), el("span", { class: "now" }))));
+      oninput: () => { const v = u.name.value.toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8); if (v !== u.name.value) u.name.value = v; kitDraft.name = v; kitButtons(); kitWriteSoon(); } });   /* (2.8.9) a name change writes with the 500 ms settle delay */
+    /* (2.8.9) where the kit goes, picked first: each slot is a card — the pick area on top, its own
+       Export ZIP / Import ZIP strip in the footer. The strip belongs to the slot, so it works without
+       picking; importing into a slot does not select it for editing */
+    u.dest = el("div", { class: "dest", role: "radiogroup", "aria-label": t("kitStep1") }, ...[KIT_PAIR, 0, 1, 2, 3].map((d) => {
+      const cell = el("div", { class: "cell" + (d === KIT_PAIR ? " big" : "") });
+      const pick = el("button", { type: "button", role: "radio", "data-d": d, class: "pick" + (d === KIT_PAIR ? " big" : ""),
+        onclick: () => kitPickSlot(d) },
+        el("b", { text: kitDest(d) }), el("span", { class: "cap", text: d === KIT_PAIR ? t("kitCapBig") : t("kitCapOne") }), el("span", { class: "now" }));
+      const io = el("div", { class: "slot-io" },
+        el("button", { type: "button", onclick: () => kitExportSlot(d) }, t("kitExportZip")),
+        el("button", { type: "button", onclick: () => { u.slotFile.dataset.d = d; u.slotFile.click(); } }, t("kitImportZip")));
+      cell.append(pick, io);
+      return cell;
+    }));
     u.destNote = el("p", { class: "destnote" });
+    u.slotFile = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
+    u.slotFile.addEventListener("change", () => { const f = u.slotFile.files[0], d = +u.slotFile.dataset.d; u.slotFile.value = ""; if (f) kitImportSlot(f, d); });
+    u.lock = el("p", { class: "lockbanner", onclick: () => { const first = u.dest.querySelector(".pick:not([disabled])"); if (first) first.focus(); } },
+      el("span", { text: t("kitSlotLocked") }), el("u", { text: t("kitStep1") }));
     u.meter = el("progress", { max: SMP.MAX_DATA, value: 0 });
     u.meterTxt = el("span", { class: "dim" });
     u.meterBox = el("div", { class: "kitmeter" }, u.meter, u.meterTxt);
     u.prog = el("progress", { max: 1, value: 0, hidden: true });
-    u.send = el("button", { class: "pri", ic: "symbol_upload", onclick: kitSend });
+    u.wrote = el("span", { class: "dim" });   /* (2.8.9) no Send step anymore: the last write is reported here */
     u.use = el("button", { ic: "symbol_drum", onclick: () => kitUse(kitDraft.slot) });
-    u.fit = el("button", { onclick: () => { if (kitFit(kitDraft.pads, kitRoom(), kitSlots().length)) { kitDraft.sent = false; renderKits(); } } }, t("kitFit"));
+    u.fit = el("button", { onclick: () => { if (kitFit(kitDraft.pads, kitRoom(), kitSlots().length)) { kitWriteNow(); renderKits(); } } }, t("kitFit"));
     u.match = el("button", { ic: "symbol_audio", onclick: kitMatch }, t("matchLevels"));
     u.add = el("button", { ic: "symbol_folder_open", onclick: () => { u.want = -1; u.file.click(); } }, t("kitAdd"));
     u.zip = el("button", { ic: "symbol_download", onclick: kitZip }, t("kitZip"));
-    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; kitDraft.sent = false; renderKits(); } }, t("kitClear"));
+    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; kitWriteNow(); renderKits(); } }, t("kitClear"));
     /* (2.8.8) import / export the whole kit (name, per-pad settings, slicing markers) as a ZIP */
     u.exp = el("button", { ic: "symbol_download", onclick: kitExport }, t("kitExport"));
     u.imp = el("button", { ic: "symbol_folder_open", onclick: () => u.kitFile.click() }, t("kitImport"));
@@ -8462,9 +8749,13 @@ function renderKits() {
     u.sliceCv = el("canvas", {});
     u.sliceZoomOut = el("button", { onclick: () => kitSliceZoom(0.5) }, "−");
     u.sliceZoomIn = el("button", { onclick: () => kitSliceZoom(2) }, "+");
+    /* (2.8.9) fine zoom, 0.5x a click */
+    u.sliceZoomFineOut = el("button", { title: "−0.5×", onclick: () => kitSliceZoomStep(-0.5) }, "−½");
+    u.sliceZoomFineIn = el("button", { title: "+0.5×", onclick: () => kitSliceZoomStep(0.5) }, "+½");
     u.sliceFit = el("button", { onclick: kitSliceFit }, t("kitSliceFit"));
     u.sliceZoomVal = el("span", { class: "val" });
-    u.slicePlay = el("button", { onclick: () => kitPlayPad(kitDraft.sel) }, "▶ " + t("kitSlicePlay"));
+    /* (2.8.9) the play button is just the green triangle (red stop square while it plays) */
+    u.slicePlay = el("button", { class: "play", title: t("kitSlicePlay"), onclick: () => kitTogglePlay(kitDraft.sel) }, "▶");
     u.sliceClear = el("button", { class: "warn", onclick: () => { const p = kitDraft.pads[kitDraft.sel]; if (p) { delete p.slice; kitSliceCommit(); renderKits(); } } }, t("kitSliceClear"));
     u.sliceStartVal = el("span", { class: "val" });
     u.sliceEndVal = el("span", { class: "val" });
@@ -8474,7 +8765,7 @@ function renderKits() {
       nudge("end", -10), nudge("end", -1), nudge("end", 1), nudge("end", 10)];
     u.sliceNote = el("p", { class: "dim" });
     u.slice.append(u.sliceTitle, u.sliceCv,
-      el("div", { class: "bar" }, u.sliceZoomOut, u.sliceZoomIn, u.sliceFit, u.sliceZoomVal, u.slicePlay, u.sliceClear),
+      el("div", { class: "bar" }, u.sliceZoomOut, u.sliceZoomFineOut, u.sliceZoomIn, u.sliceZoomFineIn, u.sliceFit, u.sliceZoomVal, u.slicePlay, u.sliceClear),
       el("div", { class: "bar" }, el("span", { text: t("kitSliceStart") }), u.sliceStartVal, ...u.sliceNudges.slice(0, 4)),
       el("div", { class: "bar" }, el("span", { text: t("kitSliceEnd") }), u.sliceEndVal, ...u.sliceNudges.slice(4)),
       el("div", { class: "bar" }, el("span", { text: t("kitSliceLen") }), u.sliceLenVal),
@@ -8492,7 +8783,16 @@ function renderKits() {
       e.preventDefault();
     });
     u.sliceCv.addEventListener("pointermove", (e) => {
-      if (!kitSliceDrag) return;
+      /* (2.8.9) hovering a marker shows the left-and-right arrow, elsewhere the crosshair */
+      if (!kitSliceDrag) {
+        const p = kitDraft.pads[kitDraft.sel];
+        if (p) {
+          const r = u.sliceCv.getBoundingClientRect(), x = e.clientX - r.left, rng = kitSliceRange(p);
+          const pxOf = (s) => (s - kitSliceView.a) / (kitSliceView.b - kitSliceView.a) * r.width;
+          u.sliceCv.style.cursor = (Math.abs(x - pxOf(rng.start)) <= 10 || Math.abs(x - pxOf(rng.end)) <= 10) ? "ew-resize" : "crosshair";
+        }
+        return;
+      }
       const p = kitDraft.pads[kitDraft.sel];
       if (!p) return;
       const r = u.sliceCv.getBoundingClientRect(), n = kitLen(p), rng = kitSliceRange(p);
@@ -8509,29 +8809,40 @@ function renderKits() {
     const sliceEnd = () => {   /* release: the markers are written to the FM-1, and the slice is heard */
       if (!kitSliceDrag) return;
       const d = kitSliceDrag; kitSliceDrag = null;
-      if (d.which !== "pan") { kitSliceCommit(); kitPlayPad(kitDraft.sel); renderKits(); }
+      if (d.which !== "pan") { kitSliceCommit(); kitStartLane(kitDraft.sel); renderKits(); }
     };
     u.sliceCv.addEventListener("pointerup", sliceEnd);
     u.sliceCv.addEventListener("pointercancel", sliceEnd);
+    /* (2.8.9) scroll-wheel zoom over the chop sample: 1.0x a notch, Control held for the fine 0.5x step */
+    u.sliceCv.addEventListener("wheel", (e) => {
+      if (!kitDraft.pads[kitDraft.sel]) return;
+      e.preventDefault();
+      kitSliceZoomStep(e.deltaY < 0 ? (e.ctrlKey ? 0.5 : 1) : (e.ctrlKey ? -0.5 : -1));
+    }, { passive: false });
     const grid = el("div", { class: "pads" });
     u.grid = grid;   /* (2.8.5) the builder's grid, so renderKits can order it by the Drum Pads layout */
     for (let l = 0; l < 16; l++) {
       const pu = {};
       pu.box = el("div", { class: "pad", "data-l": l });
-      pu.cv = el("canvas", { title: t("kitPlay"), onclick: () => { if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; } kitPlayPad(l); } });
+      /* (2.8.9) the waveform is the sample: click it to select the pad for Chop and hear it; the title
+         is the box: drag it to move the box. Long-press follows the same split (touch) */
+      pu.cv = el("canvas", { title: t("kitPlay"), onclick: () => {
+        if (kitDraft.picked) { kitPickDrop(l); return; }
+        kitDraft.sel = kitDraft.pads[l] ? l : -1;
+        renderKits();
+        kitTogglePlay(l);
+      } });
       pu.fn = el("div", { class: "fn" });
-      pu.empty = el("div", { class: "empty", onclick: () => { if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; } u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
+      pu.empty = el("div", { class: "empty", onclick: () => { if (kitDraft.picked) { kitPickDrop(l); return; } u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
       const knob = (lab, min, max, step, key, fmt) => {
         const inp = el("input", { type: "range", min, max, step });
         const val = el("span", { class: "val" });
         inp.addEventListener("input", () => {
           const p = kitDraft.pads[l];
           if (!p) return;
-          kitDraft.sent = false;   /* (2.8.8) the draft no longer matches the FM-1's kit: its markers wait for the next send */
-          const oldLen = kitLen(p);   /* (2.8.8) a retune or a cut re-bakes the pad: its slice follows the audio */
-          p[key] = key === "len" ? Math.round(+inp.value / 1000 * SMP.RATE) : +inp.value;
-          if (key === "len" && +inp.value >= +inp.max) p.len = 0;
-          if (p.slice && (key === "tune" || key === "len")) {
+          const oldLen = kitLen(p);   /* (2.8.8) a retune re-bakes the pad: its slice follows the audio */
+          p[key] = +inp.value;
+          if (p.slice && key === "tune") {
             const nl = kitLen(p), s = Math.round(p.slice.start * nl / Math.max(1, oldLen)), e = Math.round(p.slice.end * nl / Math.max(1, oldLen));
             if (s >= e || s >= nl) delete p.slice;
             else p.slice = { start: s, end: Math.min(nl, e) };
@@ -8539,53 +8850,64 @@ function renderKits() {
           }
           kitPadUpdate(l);
           kitMeter();
+          kitWriteSoon();   /* (2.8.9) pitch / gain write when the control stops moving (500 ms) */
         });
-        inp.addEventListener("change", () => kitPlayPad(l));
+        inp.addEventListener("change", () => kitStartLane(l));
         pu[key] = { inp, val, fmt };
         return el("div", { class: "row3" }, el("span", { text: lab }), inp, val);
       };
-      pu.ctrls = el("div", {}, knob(t("kitTune"), -KIT.TUNE, KIT.TUNE, 1, "tune"), knob(t("kitGain"), KIT.GAIN_MIN, 0, 1, "gain"),
-        knob(t("kitLen"), 10, 2000, 5, "len"));
-      pu.acts = el("div", { class: "acts" }, el("button", { onclick: () => kitPlayPad(l) }, "▶ " + t("kitPlay")),
-        el("button", { class: "warn", onclick: () => { if (kitDraft.sel === l) kitDraft.sel = -1; kitDraft.pads[l] = null; kitDraft.sent = false; renderKits(); } }, "×"));
-      pu.key = el("span", { class: "key" });   /* (2.8.6) no note info: the sound only */
-      pu.ph = el("div", { class: "ph", onclick: () => {   /* (2.8.8) the name selects the pad for slicing */
-        if (kitDraft.justPicked) { kitDraft.justPicked = false; return; }
-        if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; }
-        kitDraft.sel = kitDraft.pads[l] ? l : -1;
+      /* (2.8.9) no length slider: the Length line below shows the whole (baked) sample length */
+      pu.ctrls = el("div", {}, knob(t("kitTune"), -KIT.TUNE, KIT.TUNE, 1, "tune"), knob(t("kitGain"), KIT.GAIN_MIN, 0, 1, "gain"));
+      pu.lenInfo = el("div", { class: "leninfo" });
+      pu.play = el("button", { class: "play", title: t("kitPlay"), onclick: () => kitTogglePlay(l) }, "▶");
+      pu.chop = el("button", { onclick: () => { kitDraft.sel = kitDraft.pads[l] ? l : -1; renderKits(); } }, t("kitChop"));
+      pu.acts = el("div", { class: "acts" }, pu.play, pu.chop,
+        el("button", { class: "warn", onclick: () => { if (kitDraft.sel === l) kitDraft.sel = -1; kitDraft.pads[l] = null; kitWriteNow(); renderKits(); } }, "×"));
+      pu.key = el("span", { class: "key" });
+      pu.ph = el("div", { class: "ph" }, el("b", { text: DRUM_LANES[l][1] }), pu.key);
+      pu.box.append(pu.ph, pu.empty, pu.cv, pu.fn, pu.ctrls, pu.lenInfo, pu.acts);
+      /* (2.8.9) drag the waveform to move the sample, drag the title to move the box; long-press picks
+         it up the same way (touch). A picked-up pad drops on a click, or on a drag onto another box */
+      const pickUp = (kind) => {
+        if (kitDraft.dragging || !kitDraft.pads[l]) return;
+        kitDraft.picked = { lane: l, kind };
+        kitDraft.justPicked = true;
+        setTimeout(() => { kitDraft.justPicked = false; }, 800);
         renderKits();
-      } }, el("b", { text: DRUM_LANES[l][1] }), pu.key);
-      pu.box.append(pu.ph, pu.empty, pu.cv, pu.fn, pu.ctrls, pu.acts);
-      /* (2.8.8) drag a pad to another to swap it, or move it to an empty pad; long-press picks it up (touch) */
-      pu.box.draggable = true;
-      let lpTimer = 0;
-      pu.box.addEventListener("pointerdown", () => {
-        if (!kitDraft.pads[l]) return;
-        lpTimer = setTimeout(() => {
-          if (kitDraft.dragging) return;
-          kitDraft.picked = { lane: l };
-          kitDraft.justPicked = true;
-          setTimeout(() => { kitDraft.justPicked = false; }, 800);
-          renderKits();
-        }, 450);
-      });
-      const clearLp = () => clearTimeout(lpTimer);
-      pu.box.addEventListener("pointerup", clearLp);
-      pu.box.addEventListener("pointercancel", clearLp);
-      pu.box.addEventListener("pointerleave", clearLp);
-      pu.box.addEventListener("dragstart", (e) => {
-        clearTimeout(lpTimer);
+      };
+      const armLp = (target, kind) => {
+        let lpTimer = 0;
+        target.addEventListener("pointerdown", () => { lpTimer = setTimeout(() => pickUp(kind), 450); });
+        const clearLp = () => clearTimeout(lpTimer);
+        target.addEventListener("pointerup", clearLp);
+        target.addEventListener("pointercancel", clearLp);
+        target.addEventListener("pointerleave", clearLp);
+        return () => clearTimeout(lpTimer);
+      };
+      const clearCvLp = armLp(pu.cv, "sample"), clearPhLp = armLp(pu.ph.querySelector("b"), "box");
+      const dragStart = (kind) => (e) => {
+        clearCvLp(); clearPhLp();
         if (!kitDraft.pads[l]) { e.preventDefault(); return; }
         kitDraft.dragging = true;
-        e.dataTransfer.setData("text/plain", JSON.stringify({ from: "kitpad", lane: l }));
+        e.dataTransfer.setData("text/plain", JSON.stringify({ from: kind === "box" ? "kitbox" : "kitpad", lane: l }));
         e.dataTransfer.effectAllowed = "move";
-      });
-      pu.box.addEventListener("dragend", () => { kitDraft.dragging = false; });
+      };
+      pu.cv.draggable = true;
+      pu.cv.addEventListener("dragstart", dragStart("sample"));
+      pu.cv.addEventListener("dragend", () => { kitDraft.dragging = false; });
+      const phB = pu.ph.querySelector("b");
+      phB.draggable = true;
+      phB.addEventListener("dragstart", dragStart("box"));
+      phB.addEventListener("dragend", () => { kitDraft.dragging = false; });
       pu.box.addEventListener("dragover", (e) => { e.preventDefault(); pu.box.classList.add("over"); });
       pu.box.addEventListener("dragleave", () => pu.box.classList.remove("over"));
       pu.box.addEventListener("drop", (e) => {
         e.preventDefault(); e.stopPropagation(); pu.box.classList.remove("over");   /* (not the card's drop too) */
-        try { const d = JSON.parse(e.dataTransfer.getData("text/plain")); if (d && d.from === "kitpad") { kitPadDrop(d.lane, l); return; } } catch (err) { /* not a pad drag */ }
+        try {
+          const d = JSON.parse(e.dataTransfer.getData("text/plain"));
+          if (d && d.from === "kitpad") { kitPadDrop(d.lane, l); return; }
+          if (d && d.from === "kitbox") { kitBoxDrop(d.lane, l); return; }
+        } catch (err) { /* not a pad drag */ }
         if (e.dataTransfer.files.length) kitAddFiles([...e.dataTransfer.files], l);
       });
       grid.append(pu.box);
@@ -8593,16 +8915,19 @@ function renderKits() {
     }
     const step = (n, title, ...kids) => el("section", { class: "kstep" }, el("h3", {}, el("span", { class: "num", text: String(n) }), title), ...kids);
     u.where = el("p", { class: "dim" });
-    const card = el("div", { class: "card" },
+    /* (2.8.9) step 1 picks the slot first; step 2 builds the sounds. No Send step anymore: every
+       change writes to the FM-1 straight away, and Use just selects the kit on the drum track */
+    u.card = el("div", { class: "card" },
       el("h2", { ic: "symbol_drum" }, t("kitTitle")),
       el("p", { class: "dim", text: t("kitHelp") }),
       step(1, t("kitStep1"), el("p", { class: "dim", text: t("kitStep1Help") }),
-        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, u.add, u.file, u.zip, u.exp, u.imp, u.kitFile, u.clear), u.meterBox),
-        grid, u.slice, el("div", { class: "bar" }, u.match, el("span", { class: "dim", text: t("matchHelp") })),
-        el("div", { class: "bar" }, u.fit, el("span", { class: "dim", text: t("kitFitHelp") }))),
-      step(2, t("kitStep2"), u.dest, u.destNote,
-        el("div", { class: "bar" }, el("span", { class: "dim", text: t("kitName") }), u.name)),
-      step(3, t("kitStep3"), el("div", { class: "bar" }, u.send, u.prog, u.use), u.where));
+        u.dest, u.destNote,
+        el("div", { class: "bar" }, u.use, u.prog, u.wrote), u.where),
+      step(2, t("kitStep2"), el("p", { class: "dim", text: t("kitStep2Help") }),
+        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, el("span", { class: "dim", text: t("kitName") }), u.name, u.add, u.file, u.zip, u.exp, u.imp, u.kitFile, u.clear), u.meterBox),
+        u.lock, grid, u.slice, el("div", { class: "bar" }, u.match, el("span", { class: "dim", text: t("matchHelp") })),
+        el("div", { class: "bar" }, u.fit, el("span", { class: "dim", text: t("kitFitHelp") }))));
+    const card = u.card;
     card.addEventListener("dragover", (e) => e.preventDefault());
     card.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files.length) kitAddFiles([...e.dataTransfer.files]); });
     box.replaceChildren(card);
@@ -8610,16 +8935,22 @@ function renderKits() {
   const u = kitUi;
   if (document.activeElement !== u.name) u.name.value = kitDraft.name;
   if (!kitHas4() && ok && kitDraft.slot >= 3) kitDraft.slot = 2;   /* (a firmware without USR4) */
-  for (const b of u.dest.children) {
-    const d = +b.dataset.d, sl = kitSlots(d).map((k) => ok && dev.smp.slots[k]);
+  u.card.classList.toggle("kitlocked", kitDraft.slot == null);   /* (2.8.9) no slot picked: the pads and the Chop panel are locked */
+  if (ok && kitSlotKinds == null) op(async () => { try { await kitSlotKindRead(); } catch (e) { report(e); } });
+  for (const cell of u.dest.children) {
+    const b = cell.querySelector(".pick"), d = +b.dataset.d, sl = kitSlots(d).map((k) => ok && dev.smp.slots[k]);
     b.setAttribute("aria-checked", d === kitDraft.slot ? "true" : "false");
     b.disabled = ok && !kitHas4() && (d === KIT_PAIR || d === 3);
+    cell.classList.toggle("selected", d === kitDraft.slot);
+    const kind = kitSlotKinds && kitSlotKinds[d];
     b.querySelector(".now").textContent = !ok ? "" : sl.every((x) => !x || !x.zones) ? t("empty")
-      : sl.filter((x) => x && x.zones).map((x) => x.name || "\u2014").filter((x, i, a) => a.indexOf(x) === i).join(" + ");
-    b.classList.toggle("full", ok && sl.some((x) => x && x.zones));
+      : sl.filter((x) => x && x.zones).map((x) => x.name || "\u2014").filter((x, i, a) => a.indexOf(x) === i).join(" + ")
+        + (kind === "inst" ? " \u00b7 " + t("kitInstrument") : "");
+    cell.classList.toggle("full", ok && sl.some((x) => x && x.zones));
   }
   const used = kitSlots().map((k) => ok && dev.smp.slots[k]).filter((x) => x && x.zones);
-  u.destNote.replaceChildren(t(kitDraft.slot === KIT_PAIR ? "kitNotePair" : "kitNoteOne").replace("{x}", kitDest()),
+  if (kitDraft.slot == null) u.destNote.replaceChildren(t("kitNoSlot"));
+  else u.destNote.replaceChildren(t(kitDraft.slot === KIT_PAIR ? "kitNotePair" : "kitNoteOne").replace("{x}", kitDest()),
     ...(used.length ? [" ", el("span", { class: "warn", text: t("kitReplaces").replace("{x}", used.map((x) => x.name || "\u2014").join(" + ")) })] : []),
     ...(ok && !kitHas4() ? [" ", el("span", { class: "dim", text: t("kitNo4") })] : []));
   setLabel(u.use, t("kitUse").replace("{x}", kitDest()));
@@ -8627,9 +8958,11 @@ function renderKits() {
   for (let l = 0; l < 16; l++) kitPadUpdate(l);
   /* (2.8.5) the sounds follow the Drum Pads layout: a sound sits at the position of the pad that plays
      it, not in the original sound order — when a sound is remapped, the builder shows it at its new pad.
-     Only the order changes: the pads stay lane-bound (kitZones, the WAV drop, the click-to-load). */
+     Only the order changes: the pads stay lane-bound (kitZones, the WAV drop, the click-to-load).
+     (2.8.9) the note next to a sound belongs to its position, C1 at the bottom-left, name only. */
   u.grid.append(...[...Array(16).keys()].sort((a, b) => kitLaneGridPos(a) - kitLaneGridPos(b) || a - b)
     .map((l) => u.pads[l].box));
+  [...u.grid.children].forEach((box, i) => { const pu = u.pads[+box.dataset.l]; pu.key.textContent = DRUMPADS.ableton(DRUMPADS.PAD_NOTES[i]); pu.key.title = ""; });
   kitMeter();
   kitSliceRender();
 }
@@ -8637,36 +8970,34 @@ function kitPadUpdate(l) {
   const pu = kitUi && kitUi.pads[l], p = kitDraft.pads[l];
   if (!pu) return;
   pu.empty.hidden = !!p;
-  pu.cv.hidden = pu.fn.hidden = pu.ctrls.hidden = pu.acts.hidden = !p;
+  pu.cv.hidden = pu.fn.hidden = pu.ctrls.hidden = pu.lenInfo.hidden = pu.acts.hidden = !p;
   pu.box.classList.toggle("sel", kitDraft.sel === l);   /* (2.8.8) selected for slicing */
   pu.box.classList.toggle("picked", !!(kitDraft.picked && kitDraft.picked.lane === l));   /* (2.8.8) picked up to move */
-  /* (2.8.6) no note or MIDI info on a sound: just the sound, at its Drum Pads position (renderKits
-     orders the pads by kitLaneGridPos). */
-  pu.key.textContent = "";
-  pu.key.title = "";
+  /* (2.8.9) the note next to a sound belongs to its grid position (C1 bottom-left, name only) and is
+     set by renderKits when it orders the grid — kitPadUpdate only keeps the play button in step */
+  kitPlayUi(l);
   if (!p) return;
   pu.fn.textContent = p.fname;
   pu.fn.title = p.fname;
-  const full = kitLen({ ...p, len: 0 });
-  pu.len.inp.max = String(10 + Math.max(0, Math.ceil((full / SMP.RATE * 1000 - 10) / 5)) * 5);   /* (on the step grid: the end reachable) */
   if (document.activeElement !== pu.tune.inp) pu.tune.inp.value = String(p.tune);
   if (document.activeElement !== pu.gain.inp) pu.gain.inp.value = String(p.gain);
-  if (document.activeElement !== pu.len.inp) pu.len.inp.value = String(p.len ? Math.round(p.len / SMP.RATE * 1000) : pu.len.inp.max);
   pu.tune.val.textContent = (p.tune > 0 ? "+" : "") + p.tune + " st";
   pu.gain.val.textContent = p.gain + " dB";
-  pu.len.val.textContent = (kitLen(p) / SMP.RATE).toFixed(2) + " s";
-  for (const k of ["tune", "gain", "len"]) barFill(pu[k].inp);
+  /* (2.8.9) Length shows the whole (baked) sample length; the chop range is in the Chop panel */
+  pu.lenInfo.textContent = `${t("kitLen")}: ${(kitLen(p) / SMP.RATE).toFixed(2)} s`;
+  for (const k of ["tune", "gain"]) barFill(pu[k].inp);
   kitDrawWave(pu.cv, p);
 }
 function kitMeter() {
   const u = kitUi;
   if (!u) return;
-  const n = kitSlots().length, cap = SMP.MAX_DATA * n, bytes = kitBytes(kitDraft.pads), secs = kitDraft.pads.reduce((a, p) => a + (p ? kitLen(p) : 0), 0) / SMP.RATE;
+  const n = kitSlots().length, cap = SMP.MAX_DATA * Math.max(1, n), bytes = kitBytes(kitDraft.pads), secs = kitDraft.pads.reduce((a, p) => a + (p ? kitLen(p) : 0), 0) / SMP.RATE;
   const over = n > 1 ? !kitSplit(kitDraft.pads, kitRoom()) : bytes > kitRoom();
   u.meter.max = cap;
   u.meter.value = Math.min(bytes, cap);
   u.meterBox.classList.toggle("over", over);
-  u.meterTxt.textContent = (over ? t("kitOver") + " \u00b7 " : "") + t("kitUsed").replace("{s}", secs.toFixed(1)).replace("{t}", (cap * 2 / SMP.RATE).toFixed(1));
+  u.meterTxt.textContent = kitDraft.slot == null ? t("kitMeterNoSlot")
+    : (over ? t("kitOver") + " \u00b7 " : "") + t("kitUsed").replace("{s}", secs.toFixed(1)).replace("{t}", (cap * 2 / SMP.RATE).toFixed(1));
   u.fit.disabled = !over;
   kitButtons();
 }
@@ -8681,53 +9012,85 @@ const kitIndexOf = (d) => (dev && dev.kitNames ? dev.kitNames.indexOf(kitDest(d)
 function kitButtons() {
   const u = kitUi;
   if (!u) return;
-  const ok = !!dev && !!dev.smp, any = kitDraft.pads.some(Boolean), pair = kitDraft.slot === KIT_PAIR;
-  const over = pair ? !kitSplit(kitDraft.pads, kitRoom()) : kitBytes(kitDraft.pads) > kitRoom();
-  setLabel(u.send, t("kitSend").replace("{x}", kitDest()));
-  u.send.disabled = !ok || smpBusy || !any || over || !kitDraft.name || (!kitHas4() && kitDraft.slot >= 3);
+  const ok = !!dev && !!dev.smp, any = kitDraft.pads.some(Boolean);
   const sl = kitSlots().map((k) => ok && dev.smp.slots[k]);
-  u.use.disabled = !ok || smpBusy || !sl.some((x) => x && x.zones) || !hasTracks();
-  u.use.title = dev && dev.kitNames && kitIndexOf(kitDraft.slot) < 0 ? t("kitNoKit") : "";
+  u.use.disabled = !ok || smpBusy || kitDraft.slot == null || !sl.some((x) => x && x.zones) || !hasTracks();
+  u.use.title = dev && dev.kitNames && kitDraft.slot != null && kitIndexOf(kitDraft.slot) < 0 ? t("kitNoKit") : "";
   u.zip.disabled = !any;
   u.exp.disabled = !any;
   u.match.disabled = kitDraft.pads.filter(Boolean).length < 2;
+  u.add.disabled = kitDraft.slot == null;   /* (2.8.9) the pads are locked until a slot is picked */
+  u.clear.disabled = !any;
 }
 /* the pads to the same heard level (as they sound with their pitch and length): Gain set on each, by ear after */
 function kitMatch() {
   const g = matchGains(kitDraft.pads.map((p) => (p ? kitPad({ ...p, gain: 0 }) : null)));
   kitDraft.pads.forEach((p, l) => { if (p) p.gain = g[l]; });
-  kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
+  kitWriteNow();   /* (2.8.9) the matched gains write to the FM-1 straight away */
   sayK("levelsMatched");
   renderKits();
 }
-/* the kit to its slot, or shared out over USR3 and USR4 (kitSplit); a slot of the pair that gets no pad is erased, so
-   nothing old plays on a lane the kit leaves empty */
-async function kitSend() {
+/* (2.8.9) the immediate write: the draft goes to the FM-1 at once, never an indeterminate state.
+   An empty draft erases the destination — but only when the draft was written there before (a fresh
+   pick with an empty draft must not wipe the slot). Over-size refuses with kitOver and leaves the
+   draft ahead of the device until the user Fits. Serialised: a write in flight queues one more. */
+async function kitWriteNow() {
+  if (kitHoldWrite > 0 || kitWriteBusy) { kitWritePending = true; return; }
+  if (!dev || kitDraft.slot == null) return;
   const d = kitDraft.slot, ks = kitSlots(d);
-  if (!kitDraft.pads.some(Boolean)) { sayK("kitNone"); return; }
-  const parts = ks.length > 1 ? kitSplit(kitDraft.pads, kitRoom()) : [kitDraft.pads.map((p, l) => (p ? l : -1)).filter((l) => l >= 0)];
-  if (!parts) { sayK("kitOver"); return; }
-  if (!confirm(t("kitConfirm").replace("{x}", ks.map((k) => `USR${k + 1}`).join(" + ")))) return;
+  const any = kitDraft.pads.some(Boolean);
+  if (!any && kitWrittenSlot !== d) return;   /* an empty draft that never lived here: nothing to write */
+  kitWriteBusy = true;
+  if (kitUi) kitUi.wrote.textContent = t("kitWriting").replace("{x}", kitDest(d));
   let done = true;
-  for (let j = 0; j < ks.length && done; j++) {
-    const k = ks[j];
-    if (!parts[j].length) {
-      busy++;
-      try { const r = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 })); if (r.rc) throw new Error("erase rc " + r.rc); await smpInfo(); }
-      catch (e) { done = false; report(e); } finally { busy--; }
-      continue;
-    }
-    const sub = kitDraft.pads.map((p, l) => (parts[j].includes(l) ? p : null));
-    done = await smpUpload(k, kitProg(), false, { name: kitDraft.name || "KIT", files: kitZones(sub) }, true);
+  if (!any) {
+    for (const k of ks) if (done) done = await kitEraseSlot(k);
+  } else {
+    done = await kitUploadPads(kitDraft.pads, kitDraft.name, d);
   }
-  if (done) { kitDraft.sent = true; try { await kitSliceSyncFromDraft(); } catch (e) { report(e); } }   /* (2.8.8) this kit's markers, as object 13 */
-  if (kitProg()) kitProg().hidden = true;
+  if (done) {
+    kitWrittenSlot = d;
+    kitDraft.sent = true;
+    if (kitUi) kitUi.wrote.textContent = t("kitWrote").replace("{x}", kitDest(d)) + (kitDraft.name || "KIT");
+  } else {
+    kitDraft.sent = false;
+    if (kitUi) kitUi.wrote.textContent = "";
+  }
+  kitWriteBusy = false;
+  if (kitWritePending) { kitWritePending = false; kitWriteNow(); }
   renderKits();
-  if (done) sayK("kitSent", kitDest(d));
+}
+function kitWriteSoon(ms = 500) {   /* pitch / gain / name: write when the control stops moving */
+  if (kitWriteTimer) clearTimeout(kitWriteTimer);
+  kitWriteTimer = setTimeout(() => { kitWriteTimer = null; kitWriteNow(); }, ms);
+}
+async function kitEraseSlot(k) {   /* erase one slot (a pair part the kit leaves empty, or a cleared kit), no confirm */
+  let done = false;
+  busy++;
+  try {
+    const r = parse[CMD.SMP_ERASE](await rq(req.smpErase(k), { timeout: 2500, retries: 0 }));
+    if (r.rc) throw new Error("erase rc " + r.rc);
+    try { await kitSliceClearSlot(k); } catch (e) { report(e); }
+    await smpInfo();
+    done = true;
+  } catch (e) { if (e.message !== "closed") report(e); } finally { busy--; }
+  return done;
+}
+/* (2.8.9) pick a slot for the draft: switching with pads in the draft asks first (the kit is written
+   to the new slot straight away, and the old slot keeps the copy already written to it). A first
+   pick with an empty draft writes nothing. */
+async function kitPickSlot(d) {
+  if (kitDraft.slot === d) return;
+  const had = kitDraft.slot, any = kitDraft.pads.some(Boolean);
+  if (had != null && any && !confirm(t("kitSwitchConfirm").replace("{x}", kitDest(d)).replace("{y}", kitDest(had)))) { renderKits(); return; }
+  kitDraft.slot = d;
+  kitsModeUpdate();
+  if (any) await kitWriteNow();
+  renderKits();
 }
 /* the drum track on that kit: select track 4, then its KIT (P_E0) = USRn */
 function kitUse(k) {
-  if (!dev || !hasTracks()) return;
+  if (!dev || !hasTracks() || k == null) return;
   op(async () => {
     const drum = dev.info.ntrk - 1;
     if (dev.sel !== drum) { dev.sel = parse[CMD.TRACK](await rq(req.track(drum))).sel; await afterSoundChange(); }
@@ -8743,65 +9106,200 @@ function kitZip() {
   if (!files.length) return;
   downloadBytes(`${fileSlug(kitDraft.name || "kit")}-drumkit.zip`, zipStore(files));
 }
-/* (2.8.8) the whole kit as a ZIP: kit.json (name, per-pad assignment, pitch, gain, length, slice) plus the
-   ORIGINAL samples as WAVs, one per pad — an import rebuilds the draft from them, so a kit round-trips */
+/* (2.8.9) the draft kit as a v2 ZIP: kit.json (version 2, name, per-pad assignment, slice) plus the
+   samples as ADPCM, one blob per pad — the audio as it plays (pitch, gain and length baked in, so
+   tune and gain are 0 and len is the blob's sample count), each blob self-contained from predictor 0 */
 function kitExport() {
   const pads = [];
   const files = [];
   kitDraft.pads.forEach((p, l) => {
     if (!p) return;
-    const wav = `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.wav`;
-    pads.push({ lane: l, file: p.fname, wav, tune: p.tune, gain: p.gain, len: p.len, slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
-    files.push({ name: wav, data: wavFile(p.s) });
+    const adpcm = `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.adpcm`;
+    const s = kitPad(p), data = imaEncode(s).data;
+    pads.push({ lane: l, file: p.fname, adpcm, tune: 0, gain: 0, len: s.length, slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
+    files.push({ name: adpcm, data });
   });
   if (!files.length) return;
-  const kit = { format: "lowtide-drum-kit", version: 1, name: kitDraft.name || "KIT", pads };
+  const kit = { format: "lowtide-drum-kit", version: 2, name: kitDraft.name || "KIT", pads };
   files.unshift({ name: "kit.json", data: new TextEncoder().encode(JSON.stringify(kit, null, 2)) });
   downloadBytes(`${fileSlug(kitDraft.name || "kit")}-kit.zip`, zipStore(files));
   sayK("kitExported", kitDraft.name || "KIT");
 }
-async function kitImport(f) {
+/* (2.8.9) read a kit ZIP: version 2 only. The old version 1 (WAV) kits are refused, and a ZIP that
+   is not a kit at all (an instrument export) is refused with the Samples-tab message. Throws the
+   message to show. */
+async function kitZipParse(f) {
   let zip;
   try { zip = await zipRead(new Uint8Array(await f.arrayBuffer())); }
-  catch (e) { sayK("kitImportBad", t("kitImportBad") + e.message); return; }
+  catch (e) { throw new Error(t("kitImportBad") + e.message); }
   const json = zip.find((x) => x.name === "kit.json" || x.name.endsWith("/kit.json"));
-  if (!json) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
+  if (!json) throw new Error(t("kitImportNotKit"));
   let kit;
   try { kit = JSON.parse(new TextDecoder().decode(json.data)); }
-  catch (e) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
-  if (!kit || kit.format !== "lowtide-drum-kit" || !Array.isArray(kit.pads)) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
-  const bad = [];
-  const pads = Array(16).fill(null);
+  catch (e) { throw new Error(t("kitImportBad") + "kit.json"); }
+  if (!kit || kit.format !== "lowtide-drum-kit" || !Array.isArray(kit.pads)) throw new Error(t("kitImportBad") + "kit.json");
+  if (kit.version === 1) throw new Error(t("kitImportOld"));
+  if (kit.version !== 2) throw new Error(t("kitImportBad") + "kit.json");
+  const pads = Array(16).fill(null), bad = [];
   for (const e of kit.pads) {
     const l = e && e.lane;
     if (typeof l !== "number" || l < 0 || l > 15 || pads[l]) { bad.push(e && e.file ? e.file : "?"); continue; }
-    const wav = zip.find((x) => x.name === e.wav || x.name.endsWith("/" + e.wav) || x.name === e.file || x.name.endsWith("/" + e.file));
-    if (!wav) { bad.push(e.file || "?"); continue; }
-    let dec;
-    try { dec = await decodeFile(new File([wav.data], wav.name)); }
-    catch (err) { bad.push(e.file || "?"); continue; }
-    const p = { s: dec.s, fname: e.file || wav.name, tune: Math.max(-KIT.TUNE, Math.min(KIT.TUNE, +e.tune || 0)),
-      gain: Math.max(KIT.GAIN_MIN, Math.min(0, +e.gain || 0)), len: Math.max(0, Math.round(+e.len || 0)) };
+    const blob = zip.find((x) => x.name === e.adpcm || x.name.endsWith("/" + e.adpcm));
+    const len = Math.max(0, Math.round(+e.len || 0));
+    if (!blob || blob.data.length < Math.ceil(len / 2)) { bad.push(e.file || "?"); continue; }
+    const p = { s: imaDecode(blob.data, len), adpcm: blob.data, fname: e.file || blob.name, tune: 0, gain: 0, len: 0 };
     if (e.slice && typeof e.slice.start === "number" && typeof e.slice.end === "number") {
-      const n = kitLen(p), s = Math.max(0, Math.min(n - 1, Math.round(e.slice.start))), en = Math.max(s + 1, Math.min(n, Math.round(e.slice.end)));
-      if (s !== 0 || en !== n) p.slice = { start: s, end: en };   /* a full range is no slice */
+      const st = Math.max(0, Math.min(len - 1, Math.round(e.slice.start))), en = Math.max(st + 1, Math.min(len, Math.round(e.slice.end)));
+      if (st !== 0 || en !== len) p.slice = { start: st, end: en };   /* a full range is no slice */
     }
     pads[l] = p;
   }
-  if (!pads.some(Boolean)) { sayK("kitImportBad", t("kitImportBad") + (bad.join(", ") || f.name)); return; }
-  kitDraft.pads = pads;
-  kitDraft.name = typeof kit.name === "string" && kit.name ? kit.name.slice(0, 8) : kitDraft.name;
-  kitDraft.sel = -1;
-  kitDraft.sent = false;
+  return { name: typeof kit.name === "string" ? kit.name.slice(0, 8) : "", pads, bad };
+}
+/* (2.8.9) import a kit ZIP straight into a slot (its own Import ZIP button): the slot is written
+   at once, but it is NOT selected for editing — the user picks it explicitly to work on it */
+async function kitImportSlot(f, dest) {
+  let parsed;
+  try { parsed = await kitZipParse(f); }
+  catch (e) { sayK("kitImportBad", e.message); return; }
+  if (!parsed.pads.some(Boolean)) { sayK("kitImportBad", t("kitImportBad") + (parsed.bad.join(", ") || f.name)); return; }
+  const ok = await kitUploadPads(parsed.pads, parsed.name || "KIT", dest);
+  if (ok) {
+    kitSlotKinds = null;   /* the slot's kind may have changed: read again on the next render */
+    if (dest === kitDraft.slot) { kitDraft.pads = parsed.pads; kitDraft.name = parsed.name || kitDraft.name; kitDraft.sel = -1; kitDraft.sent = true; kitWrittenSlot = dest; }
+    renderKits();
+    sayK("kitImported", (parsed.name || "KIT") + (parsed.bad.length ? ` (${t("kitImportBad")}${parsed.bad.join(", ")})` : ""));
+  }
+}
+/* the pads to a slot (or split over USR3+4): upload each part, erase a part the kit leaves empty,
+   then write the kit's markers. Returns false when a part fails or the kit does not fit. */
+async function kitUploadPads(pads, name, dest) {
+  const ks = kitSlots(dest);
+  const parts = ks.length > 1 ? kitSplit(pads, kitRoom()) : [pads.map((p, l) => (p ? l : -1)).filter((l) => l >= 0)];
+  if (!parts) { sayK("kitOver"); return false; }
+  let done = true;
+  for (let j = 0; j < ks.length && done; j++) {
+    const k = ks[j];
+    if (!parts[j].length) { done = await kitEraseSlot(k); continue; }
+    const sub = pads.map((p, l) => (parts[j].includes(l) ? p : null));
+    done = await smpUpload(k, kitProg(), false, { name: name || "KIT", files: kitZones(sub) }, true);
+  }
+  if (done) { try { await kitSliceSyncPads(pads, dest); } catch (e) { report(e); } }
+  return done;
+}
+/* read part of a backup object (a slot header, or a slot's data): BK_GET in 256-byte chunks, no CRC
+   check (the CRC covers the whole object) */
+async function bkReadRange(id, off, n) {
+  const out = new Uint8Array(n);
+  let got = 0;
+  while (got < n) {
+    const m = Math.min(256, n - got);
+    const g = parse[CMD.BK_GET](await rq(req.bkGet(id, off + got, m), { timeout: 1500, retries: 2 }));
+    if (g.rc) throw new Error(`bk get rc ${g.rc}`);
+    out.set(g.data.subarray(0, Math.min(m, g.data.length)), got);
+    got += m;
+  }
+  return out;
+}
+async function bkReadSlot(k) {   /* a USR slot's raw image (backup object 32+k): header first, then its data */
+  const head = await bkReadRange(32 + k, 0, SMP.DATA_OFF);
+  const dv = new DataView(head.buffer);
+  if (dv.getUint32(0, true) !== 0x504D5346) return head.slice(0, SMP.HDR_LEN);   /* empty / erased: no data */
+  const len = dv.getUint32(16, true), raw = new Uint8Array(SMP.DATA_OFF + len);
+  raw.set(head);
+  if (len) raw.set(await bkReadRange(32 + k, SMP.DATA_OFF, len), SMP.DATA_OFF);
+  return raw;
+}
+/* a slot's header: name and zones (off/n/ls/le/rate/root/pred/idx/lo/hi/looped). `raw` may be the
+   whole slot image or just its 480-byte header — the zones live in the header. Root is stored ×16. */
+function parseSlotHeader(raw) {
+  const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  if (v.getUint32(0, true) !== 0x504D5346) return { name: "", zones: [] };
+  const nz = raw[6], name = new TextDecoder().decode(raw.subarray(8, 16)).replace(/\0.*$/, "");
+  const zones = [];
+  for (let j = 0; j < nz && j < 16; j++) {
+    const o = 32 + j * 28;
+    zones.push({ off: v.getUint32(o, true), n: v.getUint32(o + 4, true), ls: v.getUint32(o + 8, true),
+      le: v.getUint32(o + 12, true), rate: v.getUint32(o + 16, true), root: v.getInt16(o + 20, true) / 16,
+      pred: v.getInt16(o + 22, true), idx: raw[o + 24], lo: raw[o + 25], hi: raw[o + 26], looped: raw[o + 27] });
+  }
+  return { name, zones };
+}
+function kitSlotKind(raw) {   /* "kit": every zone is one lane note (lo = hi = root); "empty": no zones; else "inst" */
+  const { zones } = parseSlotHeader(raw);
+  if (!zones.length) return "empty";
+  const laneNotes = new Set(DRUM_LANES.map((z) => z[0]));
+  return zones.every((z) => z.lo === z.hi && z.lo === z.root && laneNotes.has(z.root)) ? "kit" : "inst";
+}
+/* (2.8.9) what each USR slot holds — a kit, an instrument, or nothing — read lazily when the Kits
+   tab opens, from the slot headers only. The Import / Export buttons stay enabled for instruments. */
+async function kitSlotKindRead() {
+  if (!dev) return;
+  const kinds = [];
+  for (let k = 0; k < 4; k++) {
+    try { kinds[k] = kitSlotKind(await bkReadRange(32 + k, 0, SMP.HDR_LEN)); }
+    catch (e) { kinds[k] = "empty"; }
+  }
+  kitSlotKinds = kinds;
   renderKits();
-  sayK("kitImported", kitDraft.name + (bad.length ? ` (${t("kitImportBad")}${bad.join(", ")})` : ""));
+}
+/* (2.8.9) back up a slot as a ZIP (its own Export ZIP button): the slot's raw bytes, read from the
+   FM-1, plus its chop markers. A drum kit becomes a v2 kit ZIP (its ADPCM as-is, no decode to WAV);
+   an instrument becomes a ZIP of its raw slot image, for the Samples tab; an empty slot has nothing */
+async function kitExportSlot(k) {
+  if (!dev) return;
+  try {
+    if (!kitSliceLoaded) await kitSliceRead();
+    const slots = kitSlots(k);
+    const raws = [];
+    for (const s of slots) raws.push(await bkReadSlot(s));
+    if (raws.some((r) => kitSlotKind(r) === "inst")) {
+      const files = raws.map((raw, j) => ({ name: `USR${slots[j] + 1}.bin`, data: raw }));
+      downloadBytes(`${fileSlug(slots.map((s) => "USR" + (s + 1)).join("-"))}-instrument.zip`, zipStore(files));
+      sayK("kitExportedInst", slots.map((s) => "USR" + (s + 1)).join(" + "));
+      return;
+    }
+    const pads = [], files = [];
+    raws.forEach((raw, j) => {
+      const { name, zones } = parseSlotHeader(raw), slot = slots[j];
+      for (const z of zones) {
+        const lane = DRUM_LANES.findIndex((d) => d[0] === z.root);
+        if (lane < 0) continue;
+        const adpcm = `${String(lane + 1).padStart(2, "0")} ${DRUM_LANES[lane][1]}.adpcm`;
+        const data = raw.subarray(SMP.DATA_OFF + z.off, SMP.DATA_OFF + z.off + Math.ceil(z.n / 2));
+        const e = kitSliceEntry(slot, lane);
+        pads.push({ lane, file: name || `USR${slot + 1}`, adpcm, tune: 0, gain: 0, len: z.n,
+          slice: e && (e.start !== 0 || e.end !== z.n) ? { start: e.start, end: e.end } : null });
+        files.push({ name: adpcm, data });
+      }
+    });
+    if (!files.length) { sayK("kitSlotEmpty", kitDest(k)); return; }
+    const kit = { format: "lowtide-drum-kit", version: 2, name: parseSlotHeader(raws[0]).name || kitDest(k), pads };
+    files.unshift({ name: "kit.json", data: new TextEncoder().encode(JSON.stringify(kit, null, 2)) });
+    downloadBytes(`${fileSlug(kit.name || "kit")}-kit.zip`, zipStore(files));
+    sayK("kitExported", kit.name);
+  } catch (e) { if (e.message !== "closed") report(e); }
+}
+/* (2.8.9) a v2 kit ZIP into the draft: the pads keep their ADPCM, so an unchanged upload sends the
+   original bytes bit-exact. The kit writes to the picked slot straight away — or waits for a pick. */
+async function kitImport(f) {
+  let parsed;
+  try { parsed = await kitZipParse(f); }
+  catch (e) { sayK("kitImportBad", e.message); return; }
+  if (!parsed.pads.some(Boolean)) { sayK("kitImportBad", t("kitImportBad") + (parsed.bad.join(", ") || f.name)); return; }
+  kitDraft.pads = parsed.pads;
+  if (parsed.name) kitDraft.name = parsed.name;
+  kitDraft.sel = -1;
+  kitWriteNow();
+  renderKits();
+  sayK("kitImported", kitDraft.name + (parsed.bad.length ? ` (${t("kitImportBad")}${parsed.bad.join(", ")})` : ""));
 }
 
 async function smpInfo() { dev.smp = parse[CMD.SMP_INFO](await rq(req.smpInfo())); }
 
 async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = false) {   /* (d: the DRUM KIT page's own, not the Samples draft) */
   let built, done = false;
-  try { built = buildSlot(d.name, d.files.map((f) => ({ s: withGain(f.s, f.gain), root: f.root, lo: f.lo, hi: f.hi,
+  try { built = buildSlot(d.name, d.files.map((f) => ({ s: withGain(f.s, f.gain), adpcm: f.adpcm, root: f.root, lo: f.lo, hi: f.hi,
     loop: f.loop || 0, ls: f.ls, le: f.le }))); }
   catch (e) { sayK("smpFail", e.message); return false; }
   if (ask && !confirm(t("confirmUpload").replace("{n}", k + 1))) return false;
@@ -8827,9 +9325,11 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = fals
     r = parse[CMD.SMP_END](await rq(req.smpEnd(k, hdr), { timeout: 2000, retries: 0 }));
     if (r.rc) throw new Error(`end rc ${r.rc} (${SMP_RC[r.rc] || "?"})`);
     /* (2.8.8) a slot's samples are replaced: its markers must not slice the fresh samples — unless the
-       caller keeps them (a kit upload, whose markers are written right after by kitSend) */
+       caller keeps them (a kit upload, whose markers are written right after by kitUploadPads) */
     if (!keepSlices) { try { await kitSliceClearSlot(k); } catch (e) { report(e); } }
     sayK("smpDone", `${k + 1}  ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    smpSentSig[k] = null;   /* (2.8.9) the slot changed: a preview must re-check its draft */
+    chopSentSig[k] = null;   /* (2.8.9) the slot changed: a chop audition must re-check its chops */
     done = true;
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);
@@ -8855,6 +9355,8 @@ async function smpErase(k) {
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);
   } finally {
+    smpSentSig[k] = null;   /* (2.8.9) the slot is empty: a preview must re-check its draft */
+    chopSentSig[k] = null;   /* (2.8.9) the slot is empty: a chop audition must re-check its chops */
     try { if (dev) await smpInfo(); } catch (e) { /* ignore */ }
     smpBusy = false;
     busy--;
@@ -8871,6 +9373,9 @@ async function smpErase(k) {
    USR1..4 or as WAV files. CH.opt[i] = {off, len} goes with marker i. */
 const CH = { x: null, nov: null, name: "", marks: [], opt: [], sel: -1, v0: 0, v1: 1, ctx: null, src: null, t0: 0, raf: 0,
   drag: -1, dragEnd: false, key0: 60, mode: 0, maxLen: 0, ui: null };
+let chopPlaying = null;   /* (2.8.9) {i, timer} while a chop audition plays through the FM-1 */
+let chopSentSig = [null, null, null, null];   /* (2.8.9) the chop signature each USR slot was last sent with */
+let chopLoadSeq = 0;   /* (2.8.9) the loaded recording's identity: a new load changes what a signature means */
 const chR = () => SMP.RATE;
 const chSecs = (n) => (n / SMP.RATE).toFixed(2) + " s";
 
@@ -8922,6 +9427,7 @@ async function chopLoad(f) {
     const x = await chopDecode(await f.arrayBuffer());
     if (!x.length) throw new Error("no audio");
     CH.x = x;
+    chopLoadSeq++;   /* (2.8.9) a new recording: no slot still holds these chops */
     CH.nov = chopNovelty(x);
     CH.name = f.name.replace(/\.[^.]*$/, "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "CHOP";
     CH.marks = [];
@@ -8971,24 +9477,24 @@ function chopBuffer(a, b) {
   return buf;
 }
 function chopStop() {
+  chopStopAudition();   /* (2.8.9) an FM-1 audition stops too */
   if (CH.src) { try { CH.src.stop(); } catch (e) { /* ended */ } CH.src = null; }
   cancelAnimationFrame(CH.raf);
   if (CH.ui) { CH.ui.play.textContent = t("chopPlay"); chopDraw(); }
 }
-/* play a..b; whole = the transport (a playhead, TAP marks), else an audition */
+/* play a..b; whole = the transport (a playhead, TAP marks, on the computer: TAP needs the playhead
+   the FM-1 cannot give), else an audition through the FM-1 — never the computer's audio */
 function chopPlay(a, b, whole) {
   if (!CH.x) return;
+  if (!whole) {   /* an audition: the chop whose range this is, through the FM-1 */
+    const i = chopChops().findIndex((c) => c.start === a && c.end === b);
+    if (i >= 0) chopAudition(i);
+    return;
+  }
   chopStop();
   const ctx = chopCtx(), src = ctx.createBufferSource();
-  const g = ctx.createGain();
   src.buffer = chopBuffer(a, b);
-  src.connect(g).connect(ctx.destination);
-  if (!whole) {                                     /* the fades the slot will have */
-    const n = b - a, fo = Math.min(CHOP.FADE_OUT, n >> 2) / SMP.RATE, now = ctx.currentTime + 0.005, end = now + n / SMP.RATE;
-    g.gain.setValueAtTime(1, now);
-    g.gain.setValueAtTime(1, Math.max(now, end - fo));
-    g.gain.linearRampToValueAtTime(0, end);
-  }
+  src.connect(ctx.destination);
   CH.t0 = ctx.currentTime + 0.005 - a / SMP.RATE;
   src.start(ctx.currentTime + 0.005);
   src.onended = () => { if (CH.src === src) { CH.src = null; if (whole) chopStop(); } };
@@ -9016,12 +9522,58 @@ function chopTap(ev) {                               /* TAP while it plays: a ma
   if (p < 0 || p >= CH.x.length) return;
   chopAdd(CH.ui.snap.checked ? chopSnap(CH.x, CH.nov, p) : Math.round(p));
 }
-function chopAudition(i) {
+function chopSig() {   /* what chopSend would put in a slot: the recording, its keys and mode, every chop's range */
+  return [CH.name, CH.key0, CH.mode, CH.mode === 1 ? CH.sel : -1, chopLoadSeq,
+    ...chopChops().map((c) => `${c.start},${c.end},${c.off ? 1 : 0}`)].join("|");
+}
+function chopAudKey(i) {   /* the chop's key on the FM-1, or -1 when the slot does not hold this chop */
+  if (CH.mode === 1) return i === CH.sel ? CH.key0 : -1;   /* mode 1: only the selected chop is in the slot */
+  const k = chopUsed().key.get(i);
+  return k == null ? -1 : k;   /* left out, or past the 16 kept: not in the slot */
+}
+/* (2.8.9) a chop audition plays through the FM-1, like a Samples file preview: the chops go into the
+   page's slot first — only when they changed — then the track last chosen for "Play this slot on" is
+   set up and the chop's key is played. A chop the slot does not hold plays nothing, and neither does
+   an audition with no FM-1 or while an upload is in flight: never the computer's audio. A second tap
+   stops it, and the button flips back to Play on a timer: the chop's length, since the FM-1 sends no
+   "finished" (an estimate — a choked voice ends sooner, and the button stays on Stop until then). */
+async function chopAudition(i) {
   const c = chopChops()[i];
   if (!c) return;
+  const wasPlaying = chopPlaying && chopPlaying.i === i;
   CH.sel = i;
-  chopPlay(c.start, c.end, false);
   chopRender();
+  if (wasPlaying) { chopStopAudition(); return; }   /* a second tap stops it */
+  if (!dev || !hasTracks() || smpBusy) return;   /* no FM-1, or an upload in flight: play nothing */
+  const key = chopAudKey(i);
+  if (key < 0) return;   /* this chop is not in the slot */
+  chopStopAudition();
+  const k = smpPage.slot;
+  if (!dev.smp || k >= dev.smp.nslots) return;
+  if (chopSentSig[k] !== chopSig()) {
+    if (!await chopSend(k, smpPage.ui && smpPage.ui.prog, false)) return;   /* the upload failed: play nothing */
+    if (!dev) return;   /* unplugged during the upload */
+  }
+  const track = smpPage.playTrack || 0;
+  if (!await smpSetupTrack(track, k)) return;
+  lvNoteOn("chop:" + i, track, key, 100);
+  const ms = Math.max(120, Math.round((c.end - c.start) / SMP.RATE * 1000));
+  chopPlaying = { i, timer: setTimeout(() => chopStopAudition(), ms) };
+  chopAudUi();
+}
+function chopStopAudition() {
+  if (!chopPlaying) return;
+  clearTimeout(chopPlaying.timer);
+  lvNoteOff("chop:" + chopPlaying.i);
+  chopPlaying = null;
+  chopAudUi();
+}
+function chopAudUi() {   /* the selected chop's play button: green triangle, or red stop square while it plays */
+  const u = CH.ui;
+  if (!u) return;
+  const on = !!chopPlaying;
+  u.selPlay.classList.toggle("stop", on);
+  u.selPlay.textContent = on ? "\u25a0" : "\u25b6";
 }
 
 /* ---- drawing (the page's own two colours) */
@@ -9110,7 +9662,7 @@ function chopUI() {
   u.len = el("input", { type: "range", class: "len", min: 10, max: 1000, step: 1, title: t("chopLen"),
     oninput: () => { const c = chopChops()[CH.sel]; if (c) { const ms = +u.len.value, full = c.full - c.start; chopSetLen(CH.sel, ms >= Math.floor(full / SMP.RATE * 1000) ? 0 : ms * SMP.RATE / 1000); } } });
   u.lenTxt = el("span", { class: "dim" });
-  u.selPlay = el("button", { onclick: () => chopAudition(CH.sel) }, "▶");
+  u.selPlay = el("button", { class: "play", onclick: () => chopAudition(CH.sel) }, "▶");
   u.full = el("button", { onclick: () => chopSetLen(CH.sel, 0) }, t("chopFull"));
   u.selRow = el("div", { class: "head selrow" }, u.selName, el("label", {}, u.keep, " " + t("chopKeep")),
     el("span", { text: t("chopLen") }), u.len, u.lenTxt, u.selPlay, u.full);
@@ -9266,12 +9818,16 @@ function chopRender() {
 }
 
 /* the chops into slot k's list (it shows below), then the usual upload */
-async function chopSend(k, prog) {
-  if (!CH.x || smpBusy) return;
+async function chopSend(k, prog, ask = true) {
+  if (!CH.x || smpBusy) return false;
   const { use } = chopUsed();
-  if (!use.length) return;
+  if (!use.length) return false;
+  const sig = chopSig();
   const zones = chopZones(CH.x, chopChops(), CH.key0, CH.mode, Math.max(0, CH.sel));   /* (the kept ones) */
-  if (await smpUpload(k, prog, true, { name: CH.name || "CHOP", files: zones })) sayK("chopSent", `USR${k + 1}: ${zones.length} ${t("chopChops")}, ${noteName(zones[0].lo === 0 ? zones[0].root : zones[0].lo)}…`);
+  if (!await smpUpload(k, prog, ask, { name: CH.name || "CHOP", files: zones })) return false;
+  chopSentSig[k] = sig;   /* (2.8.9) this slot now holds these chops: an audition need not send them again */
+  sayK("chopSent", `USR${k + 1}: ${zones.length} ${t("chopChops")}, ${noteName(zones[0].lo === 0 ? zones[0].root : zones[0].lo)}…`);
+  return true;
 }
 
 function chopZip() {
@@ -9530,6 +10086,8 @@ function onPush(f) {
       const c = parse[CMD.DRUM_TRIG](f.a);
       drumPadsTriggered({ ch: c.ch, note: c.note, vel: c.vel, lane: c.lane });
       drumPadsFlash(c.note, c.lane);
+      /* (2.8.9) on the Kits tab the hit box flashes too — an empty box plays nothing, it only flashes */
+      if (tab === "kits" && c.lane >= 0 && c.lane < 16) kitFlashLane(c.lane);
     }
   } catch (e) { console.warn("bad push", f, e); }
 }
@@ -10679,8 +11237,6 @@ function drumPadsRender() {
     u = drumPads.ui = {};
     u.grid = el("div", { class: "dpgrid" });
     u.status = el("p", { class: "dim" });
-    u.refresh = el("button", { type: "button", text: "Refresh",
-      onclick: () => op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }) });
     u.reset = el("button", { type: "button", text: "Reset", onclick: () => {
       drumPads.map = new Uint8Array(16).fill(0xFF);
       drumPads.picked = null;
@@ -10719,7 +11275,7 @@ function drumPadsRender() {
         u.kitNow),
       u.trig,
       u.grid,
-      el("p", { class: "bar" }, u.refresh, u.reset, u.export, u.import),
+      el("p", { class: "bar" }, u.reset, u.export, u.import),
       u.file,
       u.status);
     box.replaceChildren(card);
@@ -10775,9 +11331,8 @@ function drumPadsRender() {
     return d;
   }));
   u.status.textContent = drumPads.statusMsg || (!dev ? "Connect the FM-1 to read the drum map."
-    : !drumPads.loaded ? "Not read yet. Press Refresh."
+    : !drumPads.loaded ? "Reading the map…"   /* (2.8.9) the tab reads the map every time it is opened */
     : "Map matches the FM-1.");   /* (2.8.6) every change is written at once: the map always matches */
-  u.refresh.disabled = !dev;
   u.reset.disabled = !dev;
   if (drumPads.trigMsg) u.trig.textContent = drumPads.trigMsg;
   else u.trig.textContent = "Last triggered: —";
