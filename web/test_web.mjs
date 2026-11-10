@@ -570,7 +570,7 @@ async function editorV9() {
   /* the device: FM6_LIST / GET / PUT / ERASE */
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 17 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 17 (v17 includes v9), FM6 is engine 9");
+  ok(info.proto === 18 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 18 (v18 includes v9), FM6 is engine 9");
   const L = E.parse[C.FM6_LIST](await rq(E.req.fm6List()));
   if (!(L.factory === 8 && L.bank === 27 && L.slots.length === 35)) console.log("  FM6_LIST", L.factory, L.bank, L.slots.length, js(L.slots.slice(0, 10)));
   ok(L.factory === 8 && L.bank === 27 && L.slots.length === 35 && L.slots[0].used, "v9: FM6_LIST: 8 factory patches, 27 bank slots");
@@ -705,8 +705,8 @@ async function editorDrumMap() {
   /* (2.8.6) the drum-pad MIDI learn is gone: DP_LEARN (78) is no command any more — the editor has
      no dpLearn request and no parser for 78, the mock does not answer it, and the protocol is v15.
      DRUM_TRIG (79) stays. */
-  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 17,
-    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v17)");
+  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 18,
+    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v18)");
   await put12(def);   /* the default map: every pad plays its GM sound */
   const unanswered = await rq([78, [0]], { timeout: 250, retries: 0 }).then(() => "answered", (e) => e.message);
   ok(/^timeout/.test(unanswered) && !(await list()).items.some((x) => x.id === 12),
@@ -1059,7 +1059,7 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 17 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v17: INFO ends with the protocol version (17: KITS_MODE / KITS_STOP); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  ok(info.proto === 18 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v18: INFO ends with the protocol version (18: a slice with end == 0 runs to the sample end); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
   /* (2.8.3) the device's INFO version is LOWTIDE, never FELUCCA: editor.c builds "LOWTIDE " + the version,
      and uses the default as-is when it already starts with LOWTIDE (ui.c: "LOWTIDE 2.8.5") */
   const ecVer = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
@@ -1076,11 +1076,11 @@ async function editorV5() {
     && names.indexOf("ED_MICRO_GET") + 1 === C.MICRO_GET && names.indexOf("ED_MICRO_SET") + 1 === C.MICRO_SET
     && names.indexOf("ED_FILL_GET") + 1 === C.FILL_GET && names.indexOf("ED_FILL_SET") + 1 === C.FILL_SET
     && /ED_FM6_GET = 68, ED_FM6_PUT, ED_FM6_LIST, ED_FM6_ERASE/.test(ec) && C.FM6_GET === 68 && C.FM6_ERASE === 71
-    && /#define ED_PROTO 17u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
+    && /#define ED_PROTO 18u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
     && !/ED_DP_LEARN/.test(ec) && C.DP_LEARN === undefined
     && /#define ED_DRUM_TRIG 79u/.test(ec) && C.DRUM_TRIG === 79
     && /enum \{ ED_DSYN_LIST = 72, ED_DSYN_GET, ED_DSYN_PUT, ED_DSYN_STORE, ED_DSYN_PLAY \};/.test(readFileSync(join(HERE, "../firmware/src/editor_dsyn.c"), "utf8"))
-    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v17: command numbers and INFO == editor.c / editor_dsyn.c");
+    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v18: command numbers and INFO == editor.c / editor_dsyn.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -1148,7 +1148,7 @@ async function editorV7() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 17, "v7: INFO ends with 17 (v17 includes v7)");
+  ok(info.proto === 18, "v7: INFO ends with 18 (v18 includes v7)");
   /* the lockable set == seq.c p_lockable (the ids as core.h names them) */
   const sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8"), ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8");
   const ids = {}; let n = 0;
@@ -1213,7 +1213,7 @@ async function editorV8() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 17, "v8: INFO ends with 17 (v17 includes v8)");
+  ok(info.proto === 18, "v8: INFO ends with 18 (v18 includes v8)");
   /* the condition codes == core.h FC_*; the bit layout of a 2-bit step field */
   const ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8"), sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8");
   ok(/enum \{ FC_NORM, FC_FILL, FC_NOFILL \}/.test(ch) && /uint8_t fill\[NSTEP \/ 4\];/.test(ch)
@@ -1493,7 +1493,7 @@ async function editorKit289() {
     "route B: KITS_MODE 80, KITS_STOP 81 (requests and parsers; KITS_STOP never sends 0xFF, masked to 127)");
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 17, "route B: protocol version is 17");
+  ok(info.proto === 18, "route B: protocol version is 18");
   const m3 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(3)));
   const st3 = m.state.kitsMode;
   const m5 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(5)));
@@ -1522,11 +1522,12 @@ async function editorKit289() {
   /* the editor sends KITS_MODE on entering the Kits tab (the picked slot, or 0), on leaving (0),
      and on pick change — kitsModeUpdate / kitPickSlot, run in a sandbox with a recording link */
   const modeSrc = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
-  const pickSrc = html.slice(html.indexOf("async function kitPickSlot"), html.indexOf("/* the drum track on that kit"));
+  const pickSrc = html.slice(html.indexOf("async function kitPickSlot"), html.indexOf("/* (2.8.9) the draft kit as a v2 ZIP"));
   const sent = [], writes = [];
-  const modeBox = { console, dev: { info: { proto: 17 } }, tab: "kits", SMP: E.SMP,
+  const modeBox = { console, dev: { info: { proto: 18 } }, tab: "kits", SMP: E.SMP,
     req: E.req, rq: async (r) => { sent.push(r); }, report: () => {},
-    confirm: () => true, t: (k) => k, kitWriteNow: async () => { writes.push(1); }, renderKits: () => {}, setTimeout, clearTimeout };
+    confirm: () => true, t: (k) => k, kitWriteNow: async () => { writes.push(1); }, renderKits: () => {}, setTimeout, clearTimeout,
+    bkReadRange: async () => new Uint8Array(480), kitSlotKind: () => "kit" };   /* (2.8.10) every slot reads as holding a kit, so a pick asks first */
   const M = vm.runInNewContext(modeSrc + "\n" + pickSrc + `\n;({ kitDraft, kitsModeUpdate, kitsStopSend, kitPickSlot })`, modeBox);
   await M.kitsModeUpdate();
   await M.kitsModeUpdate();   /* the same value again: not sent twice */
@@ -1536,15 +1537,24 @@ async function editorKit289() {
   ok(JSON.stringify(sent) === JSON.stringify([[80, [0]], [80, [3]], [80, [5]], [80, [0]]]),
     "route B: KITS_MODE on entering (0 with no pick), on pick change (3 USR3, 5 USR3+4), on leaving (0); unchanged values not resent");
   modeBox.tab = "kits";
-  await M.kitPickSlot(1);   /* no pads in the draft: no confirm, no write, the mode follows the pick */
+  await M.kitPickSlot(1);   /* no pads in the draft: no confirm, no write, the slot's kit is read back (empty here) */
+  ok(M.kitDraft.slot === 1 && sent.at(-1).join() === "80,2" && writes.length === 0 && M.kitDraft.pads.every((p) => !p),
+    "route B: picking a slot with an empty draft reads that slot back (empty here) instead of writing");
   M.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
   await M.kitPickSlot(3); await sleep(10);
-  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 1,
-    "route B: picking a slot with pads in the draft sends its mode (4 = USR4) and writes the kit there at once");
+  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 0 && M.kitDraft.pads.every((p) => !p),
+    "route B: picking another slot with the kit already written reads the new slot back (empty here); the old slot keeps its copy");
   modeBox.confirm = () => false;
+  M.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
   await M.kitPickSlot(0);
-  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 1,
-    "route B: refusing the switch keeps the slot, the mode and the kit (no write)");
+  ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 0,
+    "route B: refusing the pick keeps the slot, the mode and the kit (no read-back, no write)");
+  modeBox.confirm = () => true;
+  M.kitDraft.slot = null; M.kitDraft.sent = false;   /* an imported kit with no slot yet: never written anywhere */
+  M.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  await M.kitPickSlot(2); await sleep(10);
+  ok(M.kitDraft.slot === 2 && sent.at(-1).join() === "80,3" && writes.length === 1 && M.kitDraft.pads[0] && M.kitDraft.pads[0].fname === "k.wav",
+    "route B: picking a slot with an unwritten draft writes the draft there (the import is not lost)");
   modeBox.confirm = () => true;
   await M.kitsStopSend(7); await M.kitsStopSend(0xFF);
   ok(JSON.stringify(sent.slice(-2)) === JSON.stringify([[81, [7]], [81, [127]]]),
@@ -1666,6 +1676,161 @@ async function editorKit289() {
   commitBox.kitDraft.slot = null;
   await K.kitSliceCommit();
   ok(cWrites.length === 1 && cSyncs.length === 2, "settle: a marker write with no slot picked writes nothing");
+}
+
+/* ------------------------------------------- Lowtide 2.8.10: the 2.8.9 bug fixes --- */
+async function editorKit2810() {
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+
+  /* #13: picking a slot reads that slot's kit back (its ADPCM as-is, its markers from object 13);
+     an empty slot empties the draft; an unwritten draft is written to the picked slot instead */
+  const modeSrc = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
+  const pickSrc = html.slice(html.indexOf("async function kitPickSlot"), html.indexOf("/* (2.8.9) the draft kit as a v2 ZIP"));
+  const hdrSrc = html.slice(html.indexOf("/* a slot's header:"), html.indexOf("/* (2.8.9) what each USR slot holds"));
+  const kitSig = s(8000), kitAdpcm = E.imaEncode(kitSig).data;
+  const built = E.buildSlot("TESTKIT", [{ s: kitSig, adpcm: kitAdpcm, root: 36, lo: 36, hi: 36 }]);
+  const kitRaw = new Uint8Array(E.SMP.DATA_OFF + built.data.length);
+  kitRaw.set(built.hdr, 0); kitRaw.set(built.data, E.SMP.DATA_OFF);
+  const emptyRaw = new Uint8Array(E.SMP.HDR_LEN);   /* no magic: an empty slot */
+  const sent = [], writes = [], confirms = [];
+  let confirmOk = true;
+  const rbBox = { console, TextEncoder, TextDecoder, dev: { info: { proto: 18 } }, tab: "kits", SMP: E.SMP, DRUM_LANES: E.DRUM_LANES,
+    imaDecode: E.imaDecode, kitSliceEntry: E.kitSliceEntry, kitSliceLoaded: false,
+    kitSliceRead: async () => { E.kitSliceDev.fill(0); E.kitSlicePutEntry(2, 0, 1000, 3000, 0, 0); },
+    bkReadSlot: async (k) => (k === 2 ? kitRaw : emptyRaw),
+    bkReadRange: async (id) => (id === 34 || id === 35 ? kitRaw.subarray(0, 480) : emptyRaw.subarray(0, 480)),
+    req: E.req, rq: async (r) => { sent.push(r); }, report: () => {},
+    confirm: (m) => { confirms.push(m); return confirmOk; }, t: (k) => k,
+    kitWriteNow: async () => { writes.push(1); }, renderKits: () => {}, setTimeout, clearTimeout };
+  const RB = vm.runInNewContext(modeSrc + "\n" + pickSrc + "\n" + hdrSrc + `\n;({ kitDraft, kitsModeUpdate, kitsStopSend, kitPickSlot })`, rbBox);
+  await RB.kitPickSlot(2);
+  ok(RB.kitDraft.slot === 2 && RB.kitDraft.name === "TESTKIT" && RB.kitDraft.pads[0] && RB.kitDraft.pads[0].fname === "TESTKIT"
+    && RB.kitDraft.pads[0].s.length === 8000 && eq(RB.kitDraft.pads[0].adpcm, kitAdpcm)
+    && RB.kitDraft.pads[0].slice && RB.kitDraft.pads[0].slice.start === 1000 && RB.kitDraft.pads[0].slice.end === 3000
+    && writes.length === 0 && sent.at(-1).join() === "80,3" && confirms.join() === "kitPickConfirm",
+    "slot read-back: picking a slot loads its kit (name, ADPCM as-is, chop markers) and asks first — it does not overwrite the slot");
+  await RB.kitPickSlot(3);
+  ok(RB.kitDraft.slot === 3 && RB.kitDraft.name === "" && RB.kitDraft.pads.every((p) => !p) && writes.length === 0,
+    "slot read-back: picking an empty slot empties the draft");
+  RB.kitDraft.slot = null; RB.kitDraft.sent = false;   /* an imported kit with no slot yet */
+  RB.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  await RB.kitPickSlot(2);
+  ok(RB.kitDraft.slot === 2 && writes.length === 1 && RB.kitDraft.pads[0].fname === "k.wav" && confirms.at(-1) === "kitConfirm",
+    "slot read-back: an unwritten draft is written to the picked slot instead (the import survives)");
+  confirmOk = false;
+  await RB.kitPickSlot(3);
+  ok(RB.kitDraft.slot === 2 && writes.length === 1 && confirms.at(-1) === "kitSwitchConfirm",
+    "slot read-back: refusing the pick keeps the slot and the draft");
+  ok(confirms.join() === "kitPickConfirm,kitPickConfirm,kitConfirm,kitSwitchConfirm",
+    "slot read-back: the pick asks with the load message when the draft is safe, the write message when it is not");
+
+  /* #12: importing a kit ZIP with no slot picked waits in the draft (no success reported) until a slot is picked */
+  const exSrc = html.slice(html.indexOf("function kitExport()"), html.indexOf("async function smpInfo()"));
+  const decSrc = html.slice(html.indexOf("async function decodeFile"), html.indexOf("/* ---- the Samples page"));
+  const said = [];
+  const exBox = { console, TextEncoder, TextDecoder, File, Blob, Response,
+    DRUM_LANES: E.DRUM_LANES, KIT: E.KIT, kitLen: E.kitLen, kitPad: E.kitPad, wavFile: E.wavFile,
+    imaEncode: E.imaEncode, imaDecode: E.imaDecode, zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample,
+    normalize: E.normalize, rootFromName: E.rootFromName, SMP: E.SMP, LOOP: E.LOOP,
+    fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch",
+    sayK: (k) => { said.push(k); }, renderKits: () => {}, t: (k) => k,
+    kitWriteNow: async () => { exBox.kitDraft.sent = true; } };
+  const X2 = vm.runInNewContext(exSrc + "\n" + decSrc + `\n;({ kitExport, kitImport, kitZipParse })`, exBox);
+  const ad = E.imaEncode(s(8000)).data;
+  const v2 = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 2, name: "MYKIT",
+    pads: [{ lane: 0, file: "kick.wav", adpcm: "01 KICK.adpcm", tune: 0, gain: 0, len: 8000, slice: { start: 2000, end: 4000 } }] })) },
+    { name: "01 KICK.adpcm", data: ad }]);
+  exBox.kitDraft = { name: "", slot: null, pads: Array(16).fill(null), sel: -1, sent: true };
+  await X2.kitImport(new File([v2], "mykit-kit.zip"));
+  ok(said.includes("kitNeedSlot") && !said.includes("kitImported") && exBox.kitDraft.pads[0] && exBox.kitDraft.sent === false,
+    "kit import: with no slot picked the kit waits in the draft (no success reported) until a slot is picked");
+  exBox.kitDraft.slot = 2;
+  await X2.kitImport(new File([v2], "mykit-kit.zip"));
+  ok(said.includes("kitImported") && exBox.kitDraft.sent === true,
+    "kit import: with a slot picked the kit is written there and only then is the import reported");
+
+  /* #2: a nudge writes the markers before the preview plays; a kit that never landed fails loudly */
+  const nudgeSrc = html.slice(html.indexOf("function kitSliceNudge"), html.indexOf("function kitSliceRender"));
+  const order = [];
+  const nBox = { console, kitDraft: { sel: 0, pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0, slice: { start: 1000, end: 3000 } }] },
+    kitSliceRange: E.kitSliceRange, kitSliceSet: () => { order.push("set"); },
+    kitSliceCommit: async () => { await sleep(20); order.push("commit"); }, kitStartLane: () => { order.push("start"); }, SMP: E.SMP };
+  const N = vm.runInNewContext(nudgeSrc + `\n;({ kitSliceNudge })`, nBox);
+  N.kitSliceNudge("start", 10);
+  await sleep(50);
+  ok(order.join() === "set,commit,start", "slice commit: a nudge writes the markers before the preview plays (commit, then start)");
+  ok(/await kitSliceCommit\(\); kitStartLane\(kitDraft\.sel\)/.test(html),
+    "slice commit: on release the audition awaits the commit, so it plays the new start");
+  const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
+  const said2 = [];
+  const commitBox = { console, dev: {}, kitDraft: { slot: 2, sent: false }, kitWriteNow: async () => { /* the write fails: sent stays false */ },
+    kitSliceSyncFromDraft: async () => { said2.push("sync"); }, report: () => {}, sayK: (k) => { said2.push(k); } };
+  const K2 = vm.runInNewContext(commitSrc + `\n;({ kitSliceCommit })`, commitBox);
+  await K2.kitSliceCommit();
+  ok(said2.join() === "kitSliceWriteFail", "slice commit: a kit that never landed fails loudly (status message, no marker sync)");
+
+  /* #8 / #9: the chop canvas hit test — the START / END tabs are draggable, and the nearest marker wins */
+  const hitSrc = html.slice(html.indexOf("function kitSliceHit"), html.indexOf("function renderKits"));
+  const fakeCv = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 140 }),
+    getContext: () => ({ font: "", measureText: (t) => ({ width: t.length * 7 }) }) };
+  const hitBox = { console, kitUi: { sliceCv: fakeCv },
+    kitDraft: { sel: 0, pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0, slice: { start: 1000, end: 1200 } }] },
+    kitSliceView: { a: 0, b: 8000, for: 0 }, kitSliceRange: E.kitSliceRange };
+  const H = vm.runInNewContext(hitSrc + `\n;({ kitSliceHit })`, hitBox);
+  ok(H.kitSliceHit(110, 7) === "start" && H.kitSliceHit(85, 7) === "end" && H.kitSliceHit(84, 100) === "end"
+    && H.kitSliceHit(80, 100) === "start" && H.kitSliceHit(300, 100) === "pan",
+    "chop hit test: the tab strip grabs its marker (START at 110, END over START at 85), and the nearer line wins (end at 84, start at 80)");
+  ok(!/const ms1\b/.test(html) && /kitSliceHit\(x, e\.clientY - r\.top\)/.test(html),
+    "chop hit test: the pointerdown uses the tab-aware test, and the dead ms1 variable is gone");
+
+  /* #3: the box-preview markers multiply by the retune ratio (baked x the ratio = original) */
+  const waveSrc = html.slice(html.indexOf("function kitDrawWave"), html.indexOf("/* (2.8.8) move a sample assignment"));
+  const rects = [];
+  const fakeCtx = { fillStyle: "", fillRect: (x, y, w, h) => { rects.push([x, y, w, h]); }, clearRect: () => {} };
+  const waveCv = { clientWidth: 200, width: 0, height: 0, getContext: () => fakeCtx };
+  const waveBox = { console, kitLen: E.kitLen,
+    getComputedStyle: () => ({ getPropertyValue: (k) => (k === "--t2" ? "#1ecc70" : "#ff621a") }) };
+  const W = vm.runInNewContext(waveSrc + `\n;({ kitDrawWave })`, waveBox);
+  W.kitDrawWave(waveCv, { s: s(8000), fname: "k.wav", tune: 12, gain: 0, len: 0, slice: { start: 2000, end: 4000 } });
+  const marks = rects.filter((r) => r[2] === 2 && r[1] === 0 && r[3] === 48).map((r) => r[0]);
+  ok(JSON.stringify(marks) === "[100,199]", "box preview: the chop markers multiply by the retune ratio (+12 st: start 2000 x2, end 4000 x2, of 8000 over 200 px)");
+
+  /* #4: a slice can never be written with end == 0 (kitSliceSet clamps the end past the start; the marker sync skips a degenerate range) */
+  const setSrc = html.slice(html.indexOf("function kitSliceSet"), html.indexOf("async function kitSliceCommit"));
+  const setBox = { console, kitDraft: { pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 }] }, kitLen: E.kitLen, kitSliceRender: () => {} };
+  const ST = vm.runInNewContext(setSrc + `\n;({ kitSliceSet })`, setBox);
+  ST.kitSliceSet(0, 100, 0);
+  ok(setBox.kitDraft.pads[0].slice.end === 101 && setBox.kitDraft.pads[0].slice.start === 100,
+    "slice end==0: kitSliceSet clamps the end past the start (never end == 0 with start > 0)");
+  ST.kitSliceSet(0, 0, 8000);
+  ok(!setBox.kitDraft.pads[0].slice, "slice end==0: a full range is no slice");
+  ok(/if \(s\.end <= s\.start\) return;/.test(html.slice(html.indexOf("function kitSliceSyncPads"), html.indexOf("function kitSliceClearSlot"))),
+    "slice end==0: the marker sync skips a degenerate range instead of writing it");
+
+  /* #7 / #11 / #14 / #1 / #10 / #5 / #6 / #15 / #16: the smaller fixes, by shape */
+  ok(/u\.sliceFit\.disabled = false;/.test(html.slice(html.indexOf("function kitSliceRender"), html.indexOf("function kitSliceDraw"))),
+    "fit button: the pad-selected branch re-enables Fit (it stayed disabled after any no-pad render)");
+  ok(!/u\.use = el\("button"/.test(html) && /u\.use = el\("span", \{ class: "dim" \}\)/.test(html) && !/function kitUse\(/.test(html)
+    && /u\.use\.textContent = t\("kitUse"\)/.test(html) && !/u\.use\.disabled/.test(html),
+    "use label: the drum-track button is a label now (no button, no onclick, no kitUse)");
+  ok(!/function kitZip\(\)/.test(html) && !/u\.zip/.test(html) && !/kitZip: "/.test(html),
+    "save as ZIP: the button and the old WAV export are gone (Export kit and per-slot Export ZIP stay)");
+  ok(/\.slot-io button \{[^}]*min-height: 0;/.test(html) && /\.dest \.cell\.selected \.slot-io button \{ background: var\(--s2\);/.test(html),
+    "slot cards: the footer strip is thin (min-height 0, not the pick button's 92 px) and the picked highlight covers the whole card");
+  ok(/kitStep2: "Drum Kit Constructor",/.test(html), "step 2: the duplicate kitStep2 key reads 'Drum Kit Constructor'");
+  ok(!/−½/.test(html) && !/\+½/.test(html) && /kitSliceFine: "Fine"/.test(html)
+    && /title: "Fine zoom out \(0\.5 zoom level\)"/.test(html) && /title: "Fine zoom in \(0\.5 zoom level\)"/.test(html)
+    && /class: "fine" \}, el\("span", \{ text: t\("kitSliceFine"\) \}\)/.test(html),
+    "fine zoom: its own Fine group with plain − / + buttons (no ½ labels) and tooltips for the 0.5 zoom-level step");
+  const kitsRender = html.slice(html.indexOf("function renderKits()"), html.indexOf("function kitPadUpdate"));
+  ok(/u\.prog = el\("progress", \{ max: 1, value: 0, style: "visibility:hidden" \}\)/.test(kitsRender)
+    && /prog\.style\.visibility = "visible"/.test(html)
+    && /sliderFocused/.test(kitsRender) && /if \(!sliderFocused\)/.test(kitsRender),
+    "gain slider: the write progress bar reserves its space (visibility, not hidden) and the grid is not re-appended while a slider has focus");
+  ok((html.match(/kind !== "box" && !kitDraft\.pads\[l\]/g) || []).length === 2,
+    "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box)");
+  ok(/await kitReadSlotKit\(d\)/.test(html) && /sayK\("kitNeedSlot"\)/.test(html) && /if \(kitDraft\.sent\) sayK\("kitImported"/.test(html),
+    "slot read-back / import: the pick reads the slot back, and the import only reports success once written");
 }
 
 async function editor25() {
@@ -2008,7 +2173,7 @@ async function editorLivePage() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   let s = await live(L.STATE);
   const raw = await rq(E.req.live(L.STATE));
-  ok(info.proto === 17 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
+  ok(info.proto === 18 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
     "live page: the state (50 bytes as editor_live.c): stopped, 4 tracks, BPM, no section, no effect, A stored, the master on its knob, the pads as the kit");
   s = await live(L.PLAY, 1);
   ok(s.playing && m.state.playing, "live page: PLAY plays");
@@ -2565,6 +2730,7 @@ await editorBackup();
 await editorDrumMap();
 await editorKitSlices();
 await editorKit289();
+await editorKit2810();
 await editor25();
 await editorDsyn();
 await editorCart();

@@ -114,7 +114,8 @@ static const uint8_t DK_SMP[4] = {47, 60, 74, 87};   /* a sample's DECAY -4 .. -
  * samples, end exclusive) and the ADPCM state at the start (pred, idx), so a sliced voice starts there
  * without decoding from the sample start. Stored apart from the sample data — a fifth part of the settings
  * object, backup object 13 — so the editor rewrites them without re-uploading the audio. All zero = no
- * slice: the voice plays the zone whole, as before. */
+ * slice: the voice plays the zone whole, as before. (2.8.10) end == 0 means to the end of the sample: a
+ * slice with a start and no end plays from the start to the zone's end. */
 typedef struct { uint32_t start, end; int16_t pred; uint8_t idx, rsv; } kit_slice_t;
 #define KIT_SLICE_PART_N (4u * 16u * 12u)           /* the settings part / backup object 13: 768 bytes */
 static kit_slice_t kit_slice[4][16];
@@ -138,8 +139,10 @@ static int kit_slice_default(const uint8_t *b)
             return 0;
     return 1;
 }
-/* n: KIT_SLICE_PART_N; every entry checked (an off entry is all zero; a set one starts before it ends, its
- * step index 0..88, its end inside the slot's data). A bad entry reads as off, never as a wild slice. */
+/* n: KIT_SLICE_PART_N; every entry checked (an off entry is all zero; a set one starts before its
+ * effective end, its step index 0..88, its end inside the slot's data). A bad entry reads as off, never
+ * as a wild slice. (2.8.10) end == 0 means to the end of the sample, so a set entry with no end is
+ * checked against the slot's data bound, not zeroed for start >= end. */
 static void kit_slice_read(const uint8_t *b, uint32_t n)
 {
     uint32_t k, l, o = 0;
@@ -154,7 +157,7 @@ static void kit_slice_read(const uint8_t *b, uint32_t n)
             s->idx = b[o + 10];
             s->rsv = 0;
             o += 12;
-            if (s->end && (s->start >= s->end || s->idx > 88u || s->end > 2u * SMP_USER_SIZE))
+            if ((s->start || s->end) && (s->start >= (s->end ? s->end : 2u * SMP_USER_SIZE) || s->idx > 88u || s->end > 2u * SMP_USER_SIZE))
                 *s = (kit_slice_t){0, 0, 0, 0, 0};
         }
 }
@@ -417,14 +420,16 @@ static int drum_on_kit(uint32_t note, uint32_t vel, int32_t kit_force)
     {
         const smp_zone_t *z = drum_zone_of(v);
         /* (2.8.8) a sliced user-kit voice starts at the slice, with the ADPCM state there, and ends at
-         * its end (clamped to the zone: a slice past the zone plays to the zone's end) */
+         * its end (clamped to the zone: a slice past the zone plays to the zone's end). (2.8.10) end == 0
+         * means to the end of the sample, so a slice with a start and no end is a real slice — only all
+         * zero is no slice. */
         if (kit >= DRUM_USR && lane < DRUM_LANES) {
             const kit_slice_t *sl = &kit_slice[uslot][lane];
-            if (sl->end && sl->start < z->n) {
+            if ((sl->start || sl->end) && sl->start < z->n) {
                 v->ph[0] = sl->start;
                 v->s[0] = sl->pred;
                 v->s[1] = sl->idx;
-                v->s[6] = (int32_t)(sl->end < z->n ? sl->end : z->n);
+                v->s[6] = (int32_t)(sl->end ? (sl->end < z->n ? sl->end : z->n) : z->n);
             }
         }
         v->s[3] = sample_next(z, v, 0);

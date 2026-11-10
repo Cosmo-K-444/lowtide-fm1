@@ -38,10 +38,11 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v15 (Lowtide 2.8.6): the drum-pad learn is gone, single-note toms */
 /* v16 (Lowtide 2.8.8): backup object 13 = the kit slices (drums.c kit_slice) */
 /* v17 (Lowtide 2.8.9): KITS_MODE = 80, KITS_STOP = 81 — the Kits tab's live kit playback (drums.c kits_mode) */
+/* v18 (Lowtide 2.8.10): a kit slice with end == 0 runs to the end of the sample (drums.c kit_slice) */
 #define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
 #define ED_KITS_MODE 80u   /* (2.8.9) kits mode: 0 off, 1..4 USR1..USR4, 5 USR3+4 */
 #define ED_KITS_STOP 81u   /* (2.8.9) stop a kit voice: lane 0..15, 127 = all (0xFF on the wire is 127: 7-bit SysEx) */
-#define ED_PROTO 17u                                   /* the protocol version INFO ends with (2.8.9: kits mode) */
+#define ED_PROTO 18u                                   /* the protocol version INFO ends with (2.8.10: a slice with end == 0 runs to the sample end) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -793,7 +794,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices, 17: kits mode) */
+        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices, 17: kits mode, 18: a slice with end == 0 runs to the sample end) */
         break;
     }
     case ED_GET:

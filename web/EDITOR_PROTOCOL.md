@@ -284,7 +284,7 @@ empty). Numbers are 5 × 7 bit (u35, LSB first); data is pack7.
 | --- | --- | --- |
 | 34 BK_LIST | — | rc (0 ok, 4 no flash), count, then per object: id, length u35, CRC-32 u35 (zlib). Takes a snapshot of the working project and the settings for GET |
 | 35 BK_GET | id, offset u35, count (2 × 7 bit, 1..256) | id, rc (0 ok, 1 arguments, 5 the snapshot is gone: LIST again), offset u35, count, pack7 data |
-| 36 BK_PUT | op 0 begin: id 0..11 (8: v9, 9: v10, 10: 2.6, 11: v11), length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects and preset banks; since 2.5 the settings too when their song order differs), 4 flash, 5 no begin for this object (or more than 15 s ago) |
+| 36 BK_PUT | op 0 begin: id 0..13 (8: v9, 9: v10, 10: 2.6, 11: v11, 12: 2.8.2, 13: v16), length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object (CRC, magic, sizes, ranges), 3 stop the song first (projects and preset banks; since 2.5 the settings too when their song order differs), 4 flash, 5 no begin for this object (or more than 15 s ago) |
 
 A restore stages one object in RAM (the project load buffer), checks it at the commit as a load checks it
 (projects: magic, size and sum, older formats converted; banks: magic, record size, slot count; settings:
@@ -535,8 +535,8 @@ the FM-1 immediately on a drag, import or reset (editor-side; the "Write map to 
 ## v16: kit slices (Lowtide 2.8.8)
 
 `INFO` ends with 16. Backup object **13**: the kit slices — 768 bytes, per user slot (0..3) and lane
-(0..15), 12 bytes each: start (u32, baked samples), end (u32, exclusive), pred (i16, the ADPCM state at
-the start), idx (u8, the step index at the start), 0. All zero = no slice: the voice plays the zone
+(0..15), 12 bytes each: start (u32, baked samples), end (u32, exclusive; 0 = to the end of the sample
+since v18), pred (i16, the ADPCM state at the start), idx (u8, the step index at the start), 0. All zero = no slice: the voice plays the zone
 whole. Listed only while not the default (all zero), like object 12. A sliced drum voice starts at the
 slice start with that ADPCM state and ends at the slice end (clamped to the zone). The markers live
 apart from the sample data — a fifth part of the settings object — so the editor rewrites object 13
@@ -582,6 +582,17 @@ hits from that user kit instead of the selected preset.
 - **Mix:** the kit voices go through the drum track's mix as any drum voice does — its level
   (`G_DRLVL`), reverb / delay sends, pan, and the mute / solo fade — so a muted drum track stays
   silent in kits mode too, as it does for the preset.
+
+## v18: a slice with no end runs to the sample end (Lowtide 2.8.10)
+
+`INFO` ends with 18. A kit-slice entry (backup object 13, v16) with a non-zero start and `end == 0`
+now means "from the start to the end of the sample": the voice starts at the slice start (with the
+ADPCM state there) and plays to the zone's end. Before v18 the firmware treated such an entry as no
+slice at all — the start was dropped too and the voice played the whole zone from 0 — so a live hit
+in kits mode ignored the End marker whenever the editor sent 0 for "to the end". "All zero = no
+slice" is unchanged: an entry with start 0 and end 0 still plays the zone whole. A set entry is
+still validated on read (its start before its effective end, its step index 0..88, its end inside
+the slot's data); a bad one reads as off.
 
 ## Notes for the editor
 

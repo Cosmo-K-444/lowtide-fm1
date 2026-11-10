@@ -318,10 +318,10 @@ def main():
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
     name = "lowtide.fwsc"
-    if a.release:                   # one digit each: the identity has room for two (major.minor only)
-        m = re.fullmatch(r"(\d)\.(\d)(?:\.(\d))?(-[A-Za-z0-9]+)?", a.release)
+    if a.release:                   # major/minor one digit each: the identity has room for two (FM-1_9XY); the patch may be multi-digit (2.8.10)
+        m = re.fullmatch(r"(\d)\.(\d)(?:\.(\d+))?(-[A-Za-z0-9]+)?", a.release)
         if not m:
-            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y[-suffix], one digit each")
+            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y[-suffix], major/minor one digit each")
         PRODUCT = "FM-1_9" + m[1] + m[2]
         VERSION = a.release.upper() if "BETA" in a.release.upper() else a.release.upper() + " BETA"
         name = f"lowtide-{a.release}.fwsc"

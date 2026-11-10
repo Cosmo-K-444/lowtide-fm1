@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Lowtide 2.8.9: kits mode (protocol v17, firmware/src/drums.c kits_mode). Through hostsim.c, the slots
+/* Lowtide 2.8.9: kits mode (protocol v17, firmware/src/drums.c kits_mode). Lowtide 2.8.10 (protocol
+ * v18): a slice with end == 0 runs to the end of the sample, and the markers reach the firmware
+ * through kit_slice_read (backup object 13) as well as through RAM. Through hostsim.c, the slots
  * in a RAM image of the flash (SMP_USER_XIP) read by smp_user_scan as at boot (as tests/userkit_test.c):
  *   kits off: a live hit (drum_input) plays the selected preset; kits on: it plays the user kit in the
  *     slot KITS_MODE names, keyed by lane note, with the chop markers (kit_slice); an empty lane is silent
@@ -126,6 +128,58 @@ int main(void)
     }
     quiet();
 
+    {   /* (2.8.10) all zero is still no slice: the voice plays the zone whole, from 0 */
+        drum_input(0, LV_NORM, 0, 1);
+        vi = kit_voice_idx(DZ_USR + 0);
+        check(vi >= 0 && drums.v[vi].ph[0] < 20u && drums.v[vi].s[6] == 0,
+              "no slice: start 0, end 0 plays the zone whole from 0");
+        pk = run_peak(10);
+        check(pk > 2000 && kit_voice_idx(DZ_USR + 0) >= 0, "... and it sounds");
+    }
+    quiet();
+
+    {   /* (2.8.10) a slice with a start and end == 0 runs from the start to the sample end */
+        kit_slice[0][0].start = 4000; kit_slice[0][0].end = 0; kit_slice[0][0].pred = 0; kit_slice[0][0].idx = 0;
+        drum_input(0, LV_NORM, 0, 1);
+        vi = kit_voice_idx(DZ_USR + 0);
+        check(vi >= 0 && drums.v[vi].ph[0] >= 4000u && drums.v[vi].ph[0] < 4020u && drums.v[vi].s[6] == 40000,
+              "end == 0: a sliced voice starts at the slice start and ends at the zone end");
+        pk = run_peak(10);
+        check(pk > 2000 && kit_voice_idx(DZ_USR + 0) >= 0, "... and it sounds");
+        run_peak(200);                                   /* (36000 samples to play: far more than 200 blocks) */
+        check(kit_voice_idx(DZ_USR + 0) >= 0, "... and it is still sounding past the old slice length");
+        run_peak(2300);
+        check(kit_voice_idx(DZ_USR + 0) < 0, "... and it ends at the zone end");
+        memset(kit_slice, 0, sizeof kit_slice);
+    }
+    quiet();
+
+    {   /* (2.8.10) the markers through kit_slice_read (backup object 13, as BK_PUT commits them):
+         * a marker edit after a first hit applies to the next hit, and bad entries read as off */
+        static uint8_t part[KIT_SLICE_PART_N];
+        drum_input(0, LV_NORM, 0, 1);                    /* (a first hit with no slice) */
+        vi = kit_voice_idx(DZ_USR + 0);
+        check(vi >= 0 && drums.v[vi].s[6] == 0, "markers via object 13: the first hit plays the zone whole");
+        quiet();
+        memset(part, 0, sizeof part);
+        /* slot 0 lane 0: start 4000, end 0 (to the sample end); lane 1: start past end (bad);
+         * lane 2: end 0 but a step index past 88 (bad) */
+        part[0] = 4000 & 255; part[1] = (4000 >> 8) & 255;
+        part[12] = 6000 & 255; part[13] = (6000 >> 8) & 255; part[16] = 4000 & 255; part[17] = (4000 >> 8) & 255;
+        part[24] = 1000 & 255; part[25] = (1000 >> 8) & 255; part[34] = 89;
+        kit_slice_read(part, KIT_SLICE_PART_N);
+        check(kit_slice[0][0].start == 4000u && kit_slice[0][0].end == 0u &&
+              !kit_slice[0][1].start && !kit_slice[0][1].end &&
+              !kit_slice[0][2].start && !kit_slice[0][2].end,
+              "... the read keeps a start with end == 0 and zeroes the bad entries");
+        drum_input(0, LV_NORM, 0, 1);
+        vi = kit_voice_idx(DZ_USR + 0);
+        check(vi >= 0 && drums.v[vi].ph[0] >= 4000u && drums.v[vi].ph[0] < 4020u && drums.v[vi].s[6] == 40000,
+              "... and the next hit uses the written markers");
+        memset(kit_slice, 0, sizeof kit_slice);
+    }
+    quiet();
+
     {   /* a second hit on a sounding lane restarts it (its age moves on) */
         drum_input(0, LV_NORM, 0, 1);
         run_peak(2);
@@ -186,6 +240,6 @@ int main(void)
         kits_mode_set(0);
     }
     quiet();
-    printf("kitsmode: %s\n", fails ? "FAILED" : "kits mode (v17) PASS");
+    printf("kitsmode: %s\n", fails ? "FAILED" : "kits mode (v18) PASS");
     return fails != 0;
 }
