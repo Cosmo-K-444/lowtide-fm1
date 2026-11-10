@@ -20,8 +20,8 @@ int main(int argc,char **argv)
     dstep_clr(&step,5);assert(!dstep_has(&step,5) && dstep_has(&step,4) && dstep_has(&step,6) && dstep_lvl(&step,6)==2u);
     for(i=0;i<27u;i++)assert(lane_of_key(i)<DRUM_LANES);
     assert(lane_of_key(0)==0 && lane_of_key(1)==0 && lane_of_key(26)==15 && key_of_lane(15)==26);
-    for(i=35;i<=81;i++)assert(lane_of_note(i)<=DRUM_LANES);   /* (2.8.6) single-note toms: the tom's other notes answer DRUM_LANE_NONE (16) */
-    assert(lane_of_note(41)==DRUM_LANE_NONE && lane_of_note(45)==DRUM_LANE_NONE && lane_of_note(47)==DRUM_LANE_NONE && lane_of_note(50)==DRUM_LANE_NONE);
+    for(i=35;i<=81;i++)assert(lane_of_note(i)<=DRUM_LANES);   /* (2.8.7) the filled default grid: the tom's other notes answer the four sounds that had no pad */
+    assert(lane_of_note(41)==1 && lane_of_note(45)==13 && lane_of_note(47)==14 && lane_of_note(50)==15);   /* F1 KICK 2, A1 SHAKER, B1 CONGA, D2 COWBELL */
     for(i=0;i<DRUM_LANES;i++)assert(lane_of_note(LANE_NOTE[i])==i);
     /* Render the same hits through all five kits; each must be distinct,
      * finite and silent after its one-shots have finished. */

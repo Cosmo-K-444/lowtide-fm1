@@ -183,7 +183,7 @@ UI_SMALL static void dstep_from8(dstep_t *d, const step8_t *s)
         return;
     for (i = 0; i < s->n && i < 4u; i++) {
         uint32_t l = lane_of_note(s->note[i] & 127u);
-        if (l != DRUM_LANE_NONE)                        /* (2.8.6) a single-note tom's other notes play nothing */
+        if (l != DRUM_LANE_NONE)                        /* a note with no lane sets nothing */
             dstep_set(d, l, lvl, 0);
     }
 }

@@ -926,23 +926,23 @@ static void t_drmap_remap(void)
         note_in(dch, 56, 100);
         note_in(dch, 56, 0);
         check(pen_lane == 99u, "DRUM REMAP: a moved sound no longer plays on its home note (note 56 silent)");
-        dm_clear();                                         /* (2.8.6) SINGLE-NOTE TOMS: a tom answers only its home note */
-        pen_lane = 99;                                      /* F1: LOW TOM's other note, silent by default */
+        dm_clear();                                         /* (2.8.7) FILLED DEFAULT GRID: the tom's other notes play the four sounds that had no pad */
+        pen_lane = 99;                                      /* F1: KICK 2 (lane 1) */
         note_in(dch, 41, 100);
         note_in(dch, 41, 0);
-        check(pen_lane == 99u, "DRUM REMAP: a tom's other note is silent by default (note 41, F1)");
-        pen_lane = 99;                                      /* A1: LOW TOM's other note, silent by default */
+        check(pen_lane == 1u, "DRUM REMAP: a tom's other note plays its filled-default sound (note 41, F1 -> KICK 2)");
+        pen_lane = 99;                                      /* A1: SHAKER (lane 13) */
         note_in(dch, 45, 100);
         note_in(dch, 45, 0);
-        check(pen_lane == 99u, "DRUM REMAP: a tom's other note is silent by default (note 45, A1)");
-        pen_lane = 99;                                      /* B1: HI TOM's other note, silent by default */
+        check(pen_lane == 13u, "DRUM REMAP: a tom's other note plays its filled-default sound (note 45, A1 -> SHAKER)");
+        pen_lane = 99;                                      /* B1: CONGA (lane 14) */
         note_in(dch, 47, 100);
         note_in(dch, 47, 0);
-        check(pen_lane == 99u, "DRUM REMAP: a tom's other note is silent by default (note 47, B1)");
-        pen_lane = 99;                                      /* D2: HI TOM's other note, silent by default */
+        check(pen_lane == 14u, "DRUM REMAP: a tom's other note plays its filled-default sound (note 47, B1 -> CONGA)");
+        pen_lane = 99;                                      /* D2: COWBELL (lane 15) */
         note_in(dch, 50, 100);
         note_in(dch, 50, 0);
-        check(pen_lane == 99u, "DRUM REMAP: a tom's other note is silent by default (note 50, D2)");
+        check(pen_lane == 15u, "DRUM REMAP: a tom's other note plays its filled-default sound (note 50, D2 -> COWBELL)");
         pen_lane = 99;                                      /* G1: LOW TOM's home note still plays it */
         note_in(dch, 43, 100);
         note_in(dch, 43, 0);
@@ -989,8 +989,9 @@ static void t_drmap_remap(void)
         drum_trig_pending = 0;
         note_in(dch, 36, 0);                                 /* a note-off records nothing */
         check(drum_trig_pending == 0u, "DRUM TRIG: a note-off records nothing");
-        drum_trig_pending = 0;                                /* (2.8.6) note 50 (D2) is silent by default now */
+        drum_trig_pending = 0;                                /* (2.8.7) a silent pad records nothing: COWBELL moved to 48, so its home note 50 is silent */
         pen_lane = 99;
+        dm_clear(); drum_map[12] = 15;                        /* COWBELL on pad 48 */
         note_in(dch, 50, 100);
         note_in(dch, 50, 0);
         check(pen_lane == 99u && drum_trig_pending == 0u, "DRUM TRIG: a silent pad records nothing");

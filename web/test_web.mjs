@@ -690,7 +690,7 @@ async function editorDrumMap() {
     "drum map: lane 20 (not a lane) -> stored as unmapped, the speed kept");
   /* the editor's GM fallback for notes 36..51 == drums.c LANE_OF_GM (the device's default for an unmapped note) */
   const dc = readFileSync(join(HERE, "../firmware/src/drums.c"), "utf8");
-  const gmNums = ((/LANE_OF_GM\[81 - 35 \+ 1\] = \{([^}]*)\}/.exec(dc) || [])[1] || "").replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => x.trim() === "DRUM_LANE_NONE" ? 255 : +x);   /* (2.8.6) DRUM_LANE_NONE == the editor's SILENT (255) */
+  const gmNums = ((/LANE_OF_GM\[81 - 35 \+ 1\] = \{([^}]*)\}/.exec(dc) || [])[1] || "").replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => x.trim() === "DRUM_LANE_NONE" ? 255 : +x);   /* (2.8.7) the firmware table has no DRUM_LANE_NONE left: the four ex-tom notes now answer lanes */
   const ed = readFileSync(join(HERE, "editor.html"), "utf8");
   const fb = ((/GM_FALLBACK: \[([^\]]*)\]/.exec(ed) || [])[1] || "").split(",").map((x) => +x);
   ok(gmNums.length === 47 && fb.join() === gmNums.slice(1, 17).join(),
@@ -714,30 +714,30 @@ async function editorDrumMap() {
   /* (2.8.3) TRUE MOVES: the editor's effective pads, from the map bytes alone (the pure functions, run in
      a sandbox with no device: DR MAP off, so the default is the GM sound). PAD_NOTES order is
      [48,49,50,51,44,45,46,47,40,41,42,43,36,37,38,39]; the default eff there is
-     [10,11,255,12,6,255,5,255,8,255,4,9,0,7,2,3] — (2.8.6) single-note toms: the tom's other pads
-     (50, 45, 47, 41) are silent by default. */
+     [10,11,15,12,6,13,5,14,8,1,4,9,0,7,2,3] — (2.8.7) the filled default grid: the tom's other pads
+     (50, 45, 47, 41) now play COWBELL, SHAKER, CONGA and KICK 2, so no pad is silent by default. */
   const dpSrc = ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
     + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("function drumPadsStatus"));
   const D = vm.runInNewContext(dpSrc + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsSerialize, drumPadsDefaultLane, drumPadsDeviceEff, drumPadsHearNote, drumPadsNotesOfLane, kitLaneNotes, kitLaneGridPos, drumPadsTriggeredLine, drumPadsExportData, drumPadsParseImport })`,
     { console, dev: null });
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
-  ok(D.drumPadsEff().join() === [10, 11, 255, 12, 6, 255, 5, 255, 8, 255, 4, 9, 0, 7, 2, 3].join(),
-    "drum map: true moves: the default grid plays each pad's GM sound (the tom's other pads are silent)");
+  ok(D.drumPadsEff().join() === [10, 11, 15, 12, 6, 13, 5, 14, 8, 1, 4, 9, 0, 7, 2, 3].join(),
+    "drum map: true moves: the default grid plays each pad's GM sound (the filled default: no pad silent)");
   D.drumPads.map[0] = 10;   /* HI TOM on pad 36: pad 48 goes silent */
-  ok(D.drumPadsEff().join() === [255, 11, 255, 12, 6, 255, 5, 255, 8, 255, 4, 9, 10, 7, 2, 3].join(),
+  ok(D.drumPadsEff().join() === [255, 11, 15, 12, 6, 13, 5, 14, 8, 1, 4, 9, 10, 7, 2, 3].join(),
     "drum map: true moves: a moved sound's other pads are silent (HI TOM on 36 silences 48)");
   ok(eq(D.drumPadsSerialize(D.drumPadsEff()), new Uint8Array([10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])),
     "drum map: true moves: silent pads serialise as unmapped (0xFF), the moved lane as its byte");
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
-  D.drumPads.map[12] = 15;   /* COWBELL on pad 48: no pad's default is COWBELL, so nothing goes silent */
-  ok(D.drumPadsEff().join() === [15, 11, 255, 12, 6, 255, 5, 255, 8, 255, 4, 9, 0, 7, 2, 3].join()
+  D.drumPads.map[12] = 15;   /* COWBELL on pad 48: its default pad D2 (50) goes silent (2.8.7: COWBELL's default is D2) */
+  ok(D.drumPadsEff().join() === [15, 11, 255, 12, 6, 13, 5, 14, 8, 1, 4, 9, 0, 7, 2, 3].join()
     && eq(D.drumPadsSerialize(D.drumPadsEff()), new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 15, 0xFF, 0xFF, 0xFF])),
-    "drum map: true moves: COWBELL on pad 48, nothing else silent");
+    "drum map: true moves: COWBELL on pad 48, its default pad D2 goes silent");
   /* the grid and the map bytes agree: a swap (KICK <-> HI TOM, bytes 0 and 12) shows each sound on its own
      pad and serialises back to the same bytes (the bytes are per note, not per grid position) */
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
   D.drumPads.map[0] = 10; D.drumPads.map[12] = 0;
-  ok(D.drumPadsEff().join() === [0, 11, 255, 12, 6, 255, 5, 255, 8, 255, 4, 9, 10, 7, 2, 3].join()
+  ok(D.drumPadsEff().join() === [0, 11, 15, 12, 6, 13, 5, 14, 8, 1, 4, 9, 10, 7, 2, 3].join()
     && eq(D.drumPadsSerialize(D.drumPadsEff()), D.drumPads.map),
     "drum map: true moves: a KICK/HI TOM swap shows on the right pads and round-trips");
   /* (2.8.6) the kit builder shows no note or MIDI info: each sound's pad shows the sound only — the
@@ -746,12 +746,12 @@ async function editorDrumMap() {
     && /pu\.key\.textContent = ""/.test(ed) && /pu\.key\.title = ""/.test(ed),
     "drum pads: the kit builder shows no note or MIDI info (no kitLaneLabel, no key name, empty note label)");
   /* (2.8.3) PREVIEW: the note that plays a lane on the FM-1 as it is now (its map as last read, obj): with
-     the default device map, HI TOM is heard on 48 (its first pad), KICK on 36, COWBELL on its usual note 56
-     (outside the block); with HI TOM moved to 36 on the device, it is heard on 36 — and KICK, on no pad
+     the default device map, HI TOM is heard on 48 (its first pad), KICK on 36, COWBELL on D2 (50, its
+     default pad since 2.8.7); with HI TOM moved to 36 on the device, it is heard on 36 — and KICK, on no pad
      with its usual note taken, has no note at all (-1) */
   const defObj = () => { const b = new Uint8Array(17).fill(0xFF); b[16] = 4; return b; };
   D.drumPads.obj = defObj();
-  ok(D.drumPadsHearNote(10) === 48 && D.drumPadsHearNote(0) === 36 && D.drumPadsHearNote(15) === 56
+  ok(D.drumPadsHearNote(10) === 48 && D.drumPadsHearNote(0) === 36 && D.drumPadsHearNote(15) === 50
     && D.drumPadsHearNote(9) === 43,
     "drum map: preview: the note that plays a lane on the default device map");
   D.drumPads.obj = defObj(); D.drumPads.obj[0] = 10;   /* HI TOM on 36 on the device */
@@ -767,12 +767,14 @@ async function editorDrumMap() {
   const exported = D.drumPadsExportData();
   ok(exported.entries.length === 16 && exported.entries[0].note === 48 && exported.entries[0].lane === 10
     && exported.entries[0].sound === "HI TOM" && exported.entries[12].note === 36 && exported.entries[12].lane === 0
-    && exported.entries[12].sound === "KICK" && exported.firmware === "",
+    && exported.entries[12].sound === "KICK" && exported.entries[2].note === 50 && exported.entries[2].lane === 15
+    && exported.entries[2].sound === "COWBELL" && exported.entries[9].note === 41 && exported.entries[9].lane === 1
+    && exported.entries[9].sound === "KICK 2" && exported.firmware === "",
     "drum pads: export: 16 entries in PAD_NOTES order, note + lane + sound (the file keeps the MIDI numbers)");
   const roundTrip = D.drumPadsParseImport(JSON.parse(JSON.stringify(exported)));
   ok(eq(roundTrip.map, D.drumPads.map) && roundTrip.bad.length === 0,
     "drum pads: import: the exported file reads back to the same map, nothing rejected");
-  D.drumPads.map = new Uint8Array(16).fill(0xFF); D.drumPads.map[0] = 10;   /* HI TOM on 36: 47/48/50 silent */
+  D.drumPads.map = new Uint8Array(16).fill(0xFF); D.drumPads.map[0] = 10;   /* HI TOM on 36: 48 silent */
   const imported = D.drumPadsParseImport({ entries: [{ note: 48, lane: 0 }, { note: 36, lane: 10 }] });
   ok(imported.bad.length === 0 && imported.map[12] === 0 && imported.map[0] === 10,
     "drum pads: import: two entries swap KICK and HI TOM (the import loads the map, written at once)");
@@ -787,8 +789,9 @@ async function editorDrumMap() {
   try { D.drumPadsParseImport(null); } catch (e) { threw = threw && /not a drum pad file/.test(e.message); }
   ok(threw, "drum pads: import: a file without an entries array is refused");
   /* (2.8.6) single-note toms: a tom answers only its home note — LOW TOM G1 (43), HI TOM C2 (48).
-     Moving a sound onto a tom pad silences the tom's other pads (they answer no lane now), and the
-     serialize writes just the two swapped bytes: no explicit tom bytes on the other notes. */
+     (2.8.7) the filled default grid: the tom's other notes are separate sounds now (F1 KICK 2, A1 SHAKER,
+     B1 CONGA, D2 COWBELL), so moving a sound onto a tom pad leaves them playing — and the serialize
+     still writes just the two swapped bytes: no explicit tom bytes on the other notes. */
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
   const rideSwap = D.drumPadsEff();   /* RIDE (51) <-> LOW TOM (43) */
   const t = rideSwap[3]; rideSwap[3] = rideSwap[11]; rideSwap[11] = t;
@@ -797,8 +800,8 @@ async function editorDrumMap() {
     && rideMap[11] === 0xFF && rideMap[3] === 0xFF,
     "drum map: single-note toms: RIDE onto G1 (43) writes just the two swapped bytes (LOW TOM on 51, RIDE on 43)");
   D.drumPads.map = rideMap;
-  ok(D.drumPadsEff()[3] === 9 && D.drumPadsEff()[11] === 12 && D.drumPadsEff()[9] === 255 && D.drumPadsEff()[5] === 255,
-    "drum map: single-note toms: after the swap, D#2 plays LOW TOM, G1 plays RIDE, F1 and A1 are silent");
+  ok(D.drumPadsEff()[3] === 9 && D.drumPadsEff()[11] === 12 && D.drumPadsEff()[9] === 1 && D.drumPadsEff()[5] === 13,
+    "drum map: single-note toms: after the swap, D#2 plays LOW TOM, G1 plays RIDE, F1 still plays KICK 2 and A1 still plays SHAKER");
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
   const hiSwap = D.drumPadsEff();   /* SNARE (38) <-> HI TOM (48) */
   const u = hiSwap[0]; hiSwap[0] = hiSwap[14]; hiSwap[14] = u;
@@ -806,14 +809,17 @@ async function editorDrumMap() {
   ok(hiMap[12] === 2 && hiMap[2] === 10 && hiMap[11] === 0xFF && hiMap[14] === 0xFF,
     "drum map: single-note toms: SNARE onto C2 (48) writes just the two swapped bytes (HI TOM on 38, SNARE on 48)");
   D.drumPads.map = hiMap;
-  ok(D.drumPadsEff()[0] === 2 && D.drumPadsEff()[14] === 10 && D.drumPadsEff()[7] === 255 && D.drumPadsEff()[2] === 255,
-    "drum map: single-note toms: after the swap, C2 plays SNARE, B1 and D2 are silent");
+  ok(D.drumPadsEff()[0] === 2 && D.drumPadsEff()[14] === 10 && D.drumPadsEff()[7] === 14 && D.drumPadsEff()[2] === 15,
+    "drum map: single-note toms: after the swap, C2 plays SNARE, B1 still plays CONGA and D2 still plays COWBELL");
   /* (2.8.5) the kit builder follows the Drum Pads layout: a lane sits at its first pad in PAD_NOTES
-     order (a tom at its home pad); a lane on no pad goes after the grid, in lane order */
+     order (a tom at its home pad); a lane on no pad goes after the grid, in lane order.
+     (2.8.7) the filled default grid: every lane is on a pad now, so none goes after the grid — KICK 2
+     sits on F1, SHAKER on A1, CONGA on B1, COWBELL on D2. This is the layout Reset produces (the
+     default map, all 0xFF), so after Reset the kit builder shows the sounds at these positions. */
   D.drumPads.map = new Uint8Array(16).fill(0xFF);
   ok(D.kitLaneGridPos(0) === 12 && D.kitLaneGridPos(10) === 0 && D.kitLaneGridPos(9) === 11
-    && D.kitLaneGridPos(15) === 115 && D.kitLaneGridPos(1) === 101,
-    "drum pads: kit layout: KICK at pad 12, HI TOM at pad 0, LOW TOM at pad 11, COWBELL and KICK 2 after the grid");
+    && D.kitLaneGridPos(15) === 2 && D.kitLaneGridPos(1) === 9 && D.kitLaneGridPos(13) === 5 && D.kitLaneGridPos(14) === 7,
+    "drum pads: kit layout: KICK at pad 12, HI TOM at pad 0, LOW TOM at pad 11, COWBELL on D2, KICK 2 on F1, SHAKER on A1, CONGA on B1 (the filled default grid, as after Reset)");
   D.drumPads.map[0] = 10; D.drumPads.map[12] = 0;   /* KICK <-> HI TOM */
   ok(D.kitLaneGridPos(0) === 0 && D.kitLaneGridPos(10) === 12,
     "drum pads: kit layout: after a swap, KICK sits at pad 0 and HI TOM at pad 12");
@@ -900,6 +906,7 @@ async function editorDrumMap() {
   const dpBox = new FakeEl("div");
   dpBox.setAttribute("id", "drumpads");
   const notesOn = [];
+  const renderKitsCalls = [];   /* (2.8.7) Reset re-renders the kit builder: the card test records the calls */
   const lvStub = { kmode: "play", held: new Map() };   /* LV.held: what the editor's lvNoteOn records */
   const cardMock = attachMock({});   /* a real device for the card's Learn arm / poll / re-read */
   const cardCtx = { console, document: { createElement: (t) => new FakeEl(t), getElementById: (id) => (id === "drumpads" ? dpBox : null) },
@@ -909,13 +916,14 @@ async function editorDrumMap() {
     lvG: (l, d) => d, lvGv: (id) => (cardCtx.dev.dump ? cardCtx.dev.dump.g[id] : 0),
     req: E.req, parse: E.parse, CMD: E.CMD, crc32: E.crc32,
     rq: (r, o) => cardMock.rq(r, o), report: () => {}, tab: "drumpads",
+    renderKits: () => { renderKitsCalls.push(1); },   /* (2.8.7) the builder re-render, stubbed: the card test only records that Reset calls it */
     op: async (fn) => { try { await fn(); } catch (e) { /* the real op reports it; the test checks the result */ } } };
   cardCtx.dev.dump.g[24] = 10;   /* the drum channel */
   const R = vm.runInNewContext(
     ed.slice(ed.indexOf("const $ = "), ed.indexOf("const sleep ="))
     + ed.slice(ed.indexOf("const DRUM_LANES ="), ed.indexOf("const LV_NAMES"))
     + ed.slice(ed.indexOf("const DRUMPADS = {"), ed.indexOf("/* ---- MIDI LEARN"))
-    + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsRender, drumPadsDrop, drumPadsHear, drumPadsFlash, drumPadsMidiIn })`,
+    + `\n;({ DRUMPADS, drumPads, drumPadsEff, drumPadsRender, drumPadsDrop, drumPadsHear, drumPadsFlash, drumPadsMidiIn, kitLaneGridPos })`,
     cardCtx);
   const padSound = (note) => R.drumPads.ui.grid.querySelector(`[data-note="${note}"]`).querySelector(".sound").textContent;
   const cardMap = () => cardMock.m.state.drumMap;   /* the mock device's map, as the card's writes leave it */
@@ -951,15 +959,24 @@ async function editorDrumMap() {
   ok(notesOn.length === 0 && padSound(48) === "—"
     && R.drumPads.ui.trig.textContent === "Last triggered: Ch 10 · C2 · KICK · Vel 100",
     "drum map: card: tapping a silent pad previews nothing (and the last triggered line stays put)");
-  R.drumPads.ui.reset.click();   /* Reset to default layout */
+  renderKitsCalls.length = 0;
+  R.drumPads.ui.reset.click();   /* Reset */
   await sleep(200);   /* Reset writes the default map to the device at once */
   ok(eq(R.drumPads.map, new Uint8Array(16).fill(0xFF))
     && padSound(36) === "KICK" && padSound(48) === "HI TOM"
+    && padSound(41) === "KICK 2" && padSound(45) === "SHAKER" && padSound(47) === "CONGA" && padSound(50) === "COWBELL"
     && cardMap().slice(0, 16).every((b) => b === 0xFF),
     "drum map: card: Reset puts the grid back to the default layout and writes it to the device at once");
+  /* (2.8.7) Reset is just "Reset" now, and it re-renders the kit builder to the default positions too:
+     the builder follows the map, so after Reset its layout is the filled default grid */
+  ok(R.drumPads.ui.reset.textContent === "Reset" && !/Reset to default layout/.test(ed)
+    && renderKitsCalls.length === 1
+    && R.kitLaneGridPos(1) === 9 && R.kitLaneGridPos(13) === 5 && R.kitLaneGridPos(14) === 7 && R.kitLaneGridPos(15) === 2
+    && R.kitLaneGridPos(0) === 12 && R.kitLaneGridPos(10) === 0,
+    "drum pads: card: Reset is just \"Reset\" and re-renders the kit builder to the filled default grid");
   /* (2.8.6) the learn is gone from the card: no Learn buttons on any pad, no Write button, no tray
      and no Current mapping table — on any protocol version — and the preset line is the help message */
-  cardCtx.dev.info = { proto: 15, version: "LOWTIDE 2.8.6 BETA", pcount: 71 };
+  cardCtx.dev.info = { proto: 15, version: "LOWTIDE 2.8.7 BETA", pcount: 71 };
   R.drumPadsRender();
   ok(R.drumPads.ui.grid.querySelectorAll(".dplearn").length === 0
     && !R.drumPads.ui.write && !R.drumPads.ui.tray && !R.drumPads.ui.table
@@ -969,7 +986,7 @@ async function editorDrumMap() {
   /* (2.8.5) the flash: a MIDI note shows in the last triggered line and flashes its pad for 140 ms;
      a trigger outside the block flashes the pad holding its lane; a sound on no pad flashes nothing */
   R.drumPads.map = new Uint8Array(16).fill(0xFF); R.drumPadsRender();
-  cardCtx.dev.info = { proto: 15, version: "LOWTIDE 2.8.6 BETA", pcount: 71 };
+  cardCtx.dev.info = { proto: 15, version: "LOWTIDE 2.8.7 BETA", pcount: 71 };
   R.drumPadsMidiIn([0x99, 36, 100]);
   const pad36 = R.drumPads.ui.grid.querySelector('[data-note="36"]');
   ok(R.drumPads.ui.trig.textContent === "Last triggered: Ch 10 · C1 · KICK · Vel 100"
@@ -982,7 +999,9 @@ async function editorDrumMap() {
   ok(pad36.classList.contains("playing"),
     "drum pads: card: a trigger outside the block flashes the pad holding its lane");
   await sleep(200);
-  R.drumPadsFlash(56, 15);   /* COWBELL is on no pad: nothing flashes */
+  R.drumPads.map = new Uint8Array(16).fill(0xFF); R.drumPads.map[14] = 0;   /* KICK on D2: COWBELL is on no pad (2.8.7: every lane has a pad by default, so a no-pad lane needs a moved sound) */
+  R.drumPadsRender();
+  R.drumPadsFlash(56, 15);   /* COWBELL's home note 56, outside the block, on no pad: nothing flashes */
   ok(![...R.drumPads.ui.grid.querySelectorAll(".dppad")].some((p) => p.classList.contains("playing")),
     "drum pads: card: a sound on no pad flashes nothing");
   cardMock.done();
@@ -1387,12 +1406,15 @@ sys.stdout.buffer.write(hd+t1+b'MTrk'+struct.pack('>I',len(tr))+tr)`);
     "midi: the drum track: lanes as GM notes and back, levels ghost..hard kept (drums.c LANE_OF_GM)");
   const dc = readFileSync(join(HERE, "../firmware/src/drums.c"), "utf8");
   const tbl = (/LANE_OF_GM\[81 - 35 \+ 1\] = \{([^}]*)\}/.exec(dc) || [, ""])[1].replace(/\/\*[^*]*\*\//g, "").split(",").map((x) => x.trim());
-  /* (2.8.6) single-note toms: the firmware's LANE_OF_GM has DRUM_LANE_NONE for the tom's other notes
+  /* (2.8.6) single-note toms: the firmware's LANE_OF_GM had DRUM_LANE_NONE for the tom's other notes
      (indices 6, 10, 12, 15 = notes 41, 45, 47, 50); the MIDI-file import keeps the old multi-note
-     toms, so the two tables differ only there */
-  ok(tbl.length === 47 && tbl.filter((v) => v === "DRUM_LANE_NONE").length === 4
-    && tbl.every((v, i) => v === "DRUM_LANE_NONE" ? [6, 10, 12, 15].includes(i) : +v === SMF.LANE_OF_GM[i]),
-    "midi: LANE_OF_GM == drums.c except the four single-note-tom notes (DRUM_LANE_NONE there)");
+     toms. (2.8.7) the filled default grid: the firmware now plays those notes as KICK 2 (1), SHAKER
+     (13), CONGA (14) and COWBELL (15), so the two tables differ only there — and the firmware table
+     has no DRUM_LANE_NONE left. The divergence is deliberate: import keeps the old GM meaning. */
+  ok(tbl.length === 47 && tbl.filter((v) => v === "DRUM_LANE_NONE").length === 0
+    && [6, 10, 12, 15].every((idx, k) => +tbl[idx] === [1, 13, 14, 15][k])
+    && tbl.every((v, i) => [6, 10, 12, 15].includes(i) ? true : +v === SMF.LANE_OF_GM[i]),
+    "midi: LANE_OF_GM == drums.c except the four filled-default notes (KICK 2 / SHAKER / CONGA / COWBELL in the firmware, toms on import)");
   /* the song order */
   const sb = E.mockSettings(), song = ARR.decode(sb);
   ok(ARR.ok(sb) && sb.length === 88 && !song.loop && js(song.entries) === js([0, 1, 2, 3].map((scene) => ({ scene, bars: 4 }))), "song: the settings' song order (PER3, arr_defaults)");

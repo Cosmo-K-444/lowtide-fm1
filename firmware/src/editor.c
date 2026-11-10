@@ -216,7 +216,7 @@ UI_SMALL static void ed_dstep_from_old(dstep_t *d, const uint8_t *a)
         return;
     for (i = 0; i < n; i++) {
         uint32_t l = lane_of_note(a[1 + i] & 0x7Fu);
-        if (l != DRUM_LANE_NONE)                        /* (2.8.6) a single-note tom's other notes play nothing */
+        if (l != DRUM_LANE_NONE)                        /* a note with no lane sets nothing */
             dstep_set(d, l, (a[6] & SF_ACCENT) ? LV_HARD : LV_NORM, 0);
     }
 }

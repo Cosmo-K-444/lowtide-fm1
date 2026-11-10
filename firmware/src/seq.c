@@ -1835,9 +1835,10 @@ static void learn_btn_cc(uint32_t k, uint32_t value)   /* a learned button CC: p
  * (2.8.3) TRUE MOVES: a sound put on a pad lives only there. The map wins for its own note, and a lane the
  * map holds no longer answers anywhere else: the GM / DR MAP fallback that would have played it is silenced,
  * so a moved sound's home note goes quiet and an unmapped pad whose usual sound moved away is silent too.
- * (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48); the tom's other
- * notes (F1 41, A1 45, B1 47, D2 50) answer no lane (drums.c LANE_OF_GM) and play nothing by default. A tom
- * is a plain single-note lane now, so the map needs a byte only where a pad's sound is not its default —
+ * (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48). (2.8.7) the
+ * filled default grid: the tom's other notes (F1 41, A1 45, B1 47, D2 50) now answer KICK 2 / SHAKER /
+ * CONGA / COWBELL (drums.c LANE_OF_GM), so all 16 pads have a sound by default. A tom is a plain
+ * single-note lane now, so the map needs a byte only where a pad's sound is not its default —
  * the 2.8.5 rule that wrote a displaced tom explicitly onto its remaining home notes is gone. A lane on
  * no pad still answers its usual note (the GM fallback, as before), unless that note is taken too. */
 #define DRUM_MAP_N 16u

@@ -1,4 +1,4 @@
-// Verification for the Drum Pads double-flash fix (Lowtide 2.8.6).
+// Verification for the Drum Pads double-flash fix (Lowtide 2.8.6, filled default grid in 2.8.7).
 // Run from the repo root:  node web/dp_repro.mjs
 // Exits non-zero on any failure.
 //
@@ -10,10 +10,12 @@
 // map (drumPads.map) and the device map (drumPads.obj) always agree; and the
 // toms are single-note (LOW TOM only G1 43, HI TOM only C2 48), so the note a
 // tap sends is the tapped pad's own note. A tap therefore flashes exactly one
-// pad — the tapped one — and a physical hit flashes exactly one pad too. The
-// write itself is covered by the card test in web/test_web.mjs (the mock
-// device's map is checked after a drag and after Reset); this script checks the
-// flash side: one distinct pad per tap, none for a silent pad.
+// pad — the tapped one — and a physical hit flashes exactly one pad too. (2.8.7)
+// the filled default grid: the tom's other notes now play KICK 2 / SHAKER /
+// CONGA / COWBELL, so no pad is silent by default. The write itself is covered
+// by the card test in web/test_web.mjs (the mock device's map is checked after
+// a drag and after Reset); this script checks the flash side: one distinct pad
+// per tap, none for a silent pad.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -103,15 +105,15 @@ function check(cond, label, detail = "") {
 }
 const setMap = (obj17, map16) => { drumPads.obj = Uint8Array.from(obj17); drumPads.map = Uint8Array.from(map16); };
 
-// ---- 1. the default grid: single-note toms --------------------------------
-const defEff = [10, 11, 255, 12, 6, 255, 5, 255, 8, 255, 4, 9, 0, 7, 2, 3]; // PAD_NOTES order
+// ---- 1. the default grid: the filled default (2.8.7) ------------------------
+const defEff = [10, 11, 15, 12, 6, 13, 5, 14, 8, 1, 4, 9, 0, 7, 2, 3]; // PAD_NOTES order
 setMap(DRUMPADS.defaultObj(), new Uint8Array(16).fill(0xFF));
-check(eq(ctx.drumPadsEff(), defEff), "default eff: the tom's other pads (F1 41, A1 45, B1 47, D2 50) are silent",
+check(eq(ctx.drumPadsEff(), defEff), "default eff: the filled default grid — F1 KICK 2, A1 SHAKER, B1 CONGA, D2 COWBELL, no pad silent",
   `got ${JSON.stringify(ctx.drumPadsEff())}`);
 
-// ---- 2. a silent pad: nothing sent, nothing flashes ------------------------
-let r = await tap(41);   // F1: LOW TOM's old pad, no lane now
-check(r.sent === null && r.flashed.length === 0, "tap F1 (41): no note sent, no pad flashes",
+// ---- 2. a filled ex-tom pad: it sends its own note and flashes once --------
+let r = await tap(41);   // F1: KICK 2 (2.8.7: the tom's other notes are sounds now)
+check(r.sent === 41 && eq(r.flashed, [41]), "tap F1 (41): sends 41, flashes only F1",
   `sent ${r.sent == null ? "none" : name(r.sent)}, flashed ${r.flashed.map(name).join(", ") || "none"}`);
 
 // ---- 3. a tom pad: the sent note is the tapped pad's own note ---------------
@@ -133,6 +135,9 @@ check(r.sent === 51 && eq(r.flashed, [51]), "after the drag + write: tap CLAP at
 r = await tap(43);
 check(r.sent === 43 && eq(r.flashed, [43]), "after the drag + write: tap RIDE at G1 (43) sends 43, flashes only G1",
   `sent ${r.sent == null ? "none" : name(r.sent)}, flashed ${r.flashed.map(name).join(", ")}`);
+r = await tap(39);   // D#1: CLAP's home, silent now that CLAP is on 51
+check(r.sent === null && r.flashed.length === 0, "after the drag + write: tap the silent home pad D#1 (39): no note sent, no pad flashes",
+  `sent ${r.sent == null ? "none" : name(r.sent)}, flashed ${r.flashed.map(name).join(", ") || "none"}`);
 
 // ---- 5. a physical hit (no tap): only the DRUM_TRIG push, one pad ----------
 setMap(DRUMPADS.defaultObj(), new Uint8Array(16).fill(0xFF));
@@ -147,5 +152,5 @@ await sleep(250);
 check(eq([...new Set(flashes.map((f) => f.note))], [43]), "physical hit: LOW TOM G1 (43) flashes only G1",
   `flashed ${[...new Set(flashes.map((f) => f.note))].map(name).join(", ")}`);
 
-console.log(failures ? `\n${failures} check(s) FAILED` : "\ndouble-flash fix verified: one pad per tap, none for a silent pad");
+console.log(failures ? `\n${failures} check(s) FAILED` : "\ndouble-flash fix verified: one pad per tap, none for a silent pad (filled default grid: no pad silent)");
 process.exit(failures ? 1 : 0);

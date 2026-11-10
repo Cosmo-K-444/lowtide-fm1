@@ -914,7 +914,7 @@
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
       <button id="install" class="pri" data-t="install" hidden></button>
-      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.6.html" data-t="offline"></a><!--/DL-->
+      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.7.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -3031,9 +3031,10 @@ function makeMockDevice(opt = {}) {
   /* the drum track's P_E0: its kit (drums.c DRUM_KIT_NAMES; 5 = 808, the power-on kit) */
   const KIT = E("KIT", ["ACOUSTIC", "DEEP", "TIGHT", "BRIGHT", "DUST", "808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ", "USR1", "USR2", "USR3", "USR4", "USR3+4", "SYN1", "SYN2", "SYN3", "SYN4"], 0);
   /* a GM note -> its drum lane (drums.c LANE_OF_GM: 35..81) */
-  /* (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48); the tom's
-     other notes (F1 41, A1 45, B1 47, D2 50) answer no lane (255) and play nothing by default */
-  const LANE_OF_GM = [1, 0, 7, 2, 3, 8, 255, 4, 9, 6, 255, 5, 255, 10, 11, 255, 12, 11, 12, 13, 11, 15, 11, 13, 12, 14, 14, 14, 14, 14,
+  /* (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48).
+     (2.8.7) the filled default grid: the tom's other notes play the four sounds that had no pad
+     (F1 41 KICK 2, A1 45 SHAKER, B1 47 CONGA, D2 50 COWBELL), so all 16 pads have a sound */
+  const LANE_OF_GM = [1, 0, 7, 2, 3, 8, 1, 4, 9, 6, 13, 5, 14, 10, 11, 15, 12, 11, 12, 13, 11, 15, 11, 13, 12, 14, 14, 14, 14, 14,
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
@@ -3918,7 +3919,7 @@ function makeMockDevice(opt = {}) {
     const m = map[n - 36];
     if (m !== 0xFF) return m;
     const d = dpDef(n);
-    if (d === 255) return 255;   /* (2.8.6) single-note toms: the note answers no lane */
+    if (d === 255) return 255;   /* a note with no default lane plays nothing */
     return [...map].includes(d) ? 255 : d;
   });
   const dpSerialize = (eff) => {
@@ -4321,7 +4322,11 @@ const SMF = {
     }
     return out;
   },
-  /* the GM drum note -> its lane (firmware drums.c LANE_OF_GM) */
+  /* the GM drum note -> its lane, for MIDI-file import. Deliberately NOT the firmware's LANE_OF_GM:
+     (2.8.6) single-note toms: the tom's other notes (F1 41, A1 45, B1 47, D2 50) still import as
+     toms here, as old MIDI files expect — while (2.8.7) the firmware plays them as KICK 2 / SHAKER /
+     CONGA / COWBELL, the filled default grid. The divergence is intentional: import keeps the old
+     GM meaning, the device plays the new default. */
   LANE_OF_GM: [1, 0, 7, 2, 3, 8, 9, 4, 9, 6, 9, 5, 10, 10, 11, 10, 12, 11, 12, 13, 11, 15, 11, 13, 12, 14, 14, 14, 14, 14,
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15],
   laneOf: (key) => (key < 35 ? 0 : key > 81 ? 13 : SMF.LANE_OF_GM[key - 35]),
@@ -9897,15 +9902,16 @@ $("bk-load").addEventListener("click", () => { if (dev) $("bk-file").click(); })
    object first when it has never read it, so neither clobbers the other's half.
    The default for a note is the firmware's (seq.c midi_drum_lane): with DR MAP on, lanes 1-16 in order from
    note 36; with it off, the GM sound for the note (drums.c LANE_OF_GM) — (2.8.6) single-note toms: a tom
-   answers only its home note (LOW TOM G1 43, HI TOM C2 48); the tom's other notes (F1 41, A1 45, B1 47,
-   D2 50) answer no lane and play nothing by default. A map entry moves a sound: it plays only on that pad,
+   answers only its home note (LOW TOM G1 43, HI TOM C2 48). (2.8.7) the filled default grid: the tom's
+   other notes play the four sounds that had no pad (F1 41 KICK 2, A1 45 SHAKER, B1 47 CONGA, D2 50
+   COWBELL), so all 16 pads have a sound by default. A map entry moves a sound: it plays only on that pad,
    and its usual note goes silent; a pad whose usual sound moved to another pad is silent too. The editor
    keeps the 16 map bytes as its working state and derives the pads from them, so what it shows is always
    what the device will play. Every change is written to the FM-1 at once — there is no held state and no
    Write button. Note names use Ableton's convention (60 = C3), as in the POC. */
 const DRUMPADS = { OBJ: 12, LEN: 17, SILENT: 255, SPEED_DEF: 4,
   PAD_NOTES: [48, 49, 50, 51, 44, 45, 46, 47, 40, 41, 42, 43, 36, 37, 38, 39],
-  GM_FALLBACK: [0, 7, 2, 3, 8, 255, 4, 9, 6, 255, 5, 255, 10, 11, 255, 12],   /* notes 36..51, drums.c LANE_OF_GM (255: no lane, single-note toms) */
+  GM_FALLBACK: [0, 7, 2, 3, 8, 1, 4, 9, 6, 13, 5, 14, 10, 11, 15, 12],   /* notes 36..51, drums.c LANE_OF_GM (2.8.7: the filled default grid — F1 KICK 2, A1 SHAKER, B1 CONGA, D2 COWBELL) */
   KIND: ["kick", "kick", "snare", "snare", "hat", "hat", "hat", "rim", "snare", "tom", "tom", "cym", "cym", "shaker", "tom", "bell"],
   KIND_COLOR: { kick: "#287CFF", snare: "#1ECC70", hat: "#FFC618", rim: "#FF621A", tom: "#287CFF", cym: "#FFC618", shaker: "#1ECC70", bell: "#FF621A" },
   SPEED_LABEL: { 1: "0.25×", 2: "0.5×", 4: "1×", 8: "2×", 16: "4×" },
@@ -9937,15 +9943,17 @@ function drumPadsEff() {
     const m = drumPads.map[n - 36];
     if (m !== 0xFF) return m;
     const d = drumPadsDefaultLane(n);
-    if (d === DRUMPADS.SILENT) return DRUMPADS.SILENT;   /* (2.8.6) single-note toms: the note answers no lane */
+    if (d === DRUMPADS.SILENT) return DRUMPADS.SILENT;   /* a note with no default lane plays nothing */
     return drumPads.map.includes(d) ? DRUMPADS.SILENT : d;
   });
 }
 /* the pads as shown -> the map bytes: a pad whose sound is not its default needs a byte; a silent pad
    needs none (its sound lives on another pad, so the firmware's true-move rule keeps it silent). (2.8.6)
    a tom is a plain single-note lane now, so the 2.8.5 rule that wrote a displaced tom explicitly onto
-   its remaining home notes is gone. Bytes are per note, as the device stores them. The firmware's
-   drum_map_from_eff follows the same rule, so both write the same bytes for the same layout. */
+   its remaining home notes is gone. (2.8.7) the filled default grid: the four notes that were silent
+   (F1, A1, B1, D2) now have lanes, so the default layout serialises to all 0xFF. Bytes are per note,
+   as the device stores them. The firmware's drum_map_from_eff follows the same rule, so both write the
+   same bytes for the same layout. */
 function drumPadsSerialize(eff) {
   const b = new Uint8Array(16).fill(0xFF);
   for (let i = 0; i < 16; i++) {
@@ -10013,7 +10021,7 @@ function drumPadsDeviceEff() {
     const m = dev[n - 36];
     if (m !== 0xFF) return m;
     const d = drumPadsDefaultLane(n);
-    if (d === DRUMPADS.SILENT) return DRUMPADS.SILENT;   /* (2.8.6) single-note toms: the note answers no lane */
+    if (d === DRUMPADS.SILENT) return DRUMPADS.SILENT;   /* a note with no default lane plays nothing */
     return dev.includes(d) ? DRUMPADS.SILENT : d;
   });
 }
@@ -10266,10 +10274,11 @@ function drumPadsRender() {
     u.status = el("p", { class: "dim" });
     u.refresh = el("button", { type: "button", text: "Refresh",
       onclick: () => op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }) });
-    u.reset = el("button", { type: "button", text: "Reset to default layout", onclick: () => {
+    u.reset = el("button", { type: "button", text: "Reset", onclick: () => {
       drumPads.map = new Uint8Array(16).fill(0xFF);
       drumPads.picked = null;
-      op(async () => { try { await drumPadsWrite(); drumPadsStatus("Reset to the default layout and written to the FM-1."); } catch (e) { report(e); } });
+      op(async () => { try { await drumPadsWrite(); renderKits();   /* (2.8.7) Reset also resets the kit builder: it follows the map, so re-render it to the default positions here, not on the next visit to the Kits tab */
+        drumPadsStatus("Reset to the default layout and written to the FM-1."); } catch (e) { report(e); } });
     } });
     u.kit = el("select", { onchange: (e) => { const v = +e.target.value; if (v !== drumPads.kit) op(async () => { try { await drumPadsKitWrite(v); } catch (err) { report(err); drumPadsKitRender(); } }); } });
     u.kitNow = el("span", { class: "dim" });

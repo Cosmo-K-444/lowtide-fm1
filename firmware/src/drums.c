@@ -90,12 +90,14 @@ static const char *const LANE_SHORT[DRUM_LANES] = {           /* 5 characters: t
     "kick", "kick2", "snare", "clap", "hat", "open", "pedal", "rim",
     "snr 2", "tom l", "tom h", "crash", "ride", "shake", "conga", "bell"};
 /* a GM note (MIDI in, old projects) -> its lane: the nearest sound of the 16 (35..81; below: kick, above: shaker).
- * (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48); the tom's other
- * notes (F1 41, A1 45, B1 47, D2 50) answer no lane (DRUM_LANE_NONE) and play nothing by default. */
+ * (2.8.6) single-note toms: a tom answers only its home note (LOW TOM G1 43, HI TOM C2 48).
+ * (2.8.7) the filled default grid: the tom's other notes now play the four sounds that had no pad
+ * (F1 41 KICK 2, A1 45 SHAKER, B1 47 CONGA, D2 50 COWBELL), so all 16 pads have a sound by default
+ * and there is no Off the grid tray. LOW TOM only on G1 and HI TOM only on C2 still hold. */
 #define DRUM_LANE_NONE 16u                     /* (2.8.6) a GM note with no lane: it plays nothing */
 static const uint8_t LANE_OF_GM[81 - 35 + 1] = {
-    /* 35 */ 1, 0, 7, 2, 3, 8, DRUM_LANE_NONE, 4, 9, 6,
-    /* 45 */ DRUM_LANE_NONE, 5, DRUM_LANE_NONE, 10, 11, DRUM_LANE_NONE, 12, 11, 12, 13,
+    /* 35 */ 1, 0, 7, 2, 3, 8, 1, 4, 9, 6,
+    /* 45 */ 13, 5, 14, 10, 11, 15, 12, 11, 12, 13,
     /* 55 */ 11, 15, 11, 13, 12, 14, 14, 14, 14, 14,
     /* 65 */ 14, 14, 15, 15, 13, 13, 15, 15, 13, 13,
     /* 75 */ 7, 7, 7, 14, 14, 15, 15};
@@ -297,7 +299,7 @@ static void drum_on(uint32_t note, uint32_t vel)
     uint32_t i, zi = 0xFFFFu, kit = drum_kit();
     int32_t zid = -1;
     if (lane_of_note(note) == DRUM_LANE_NONE)
-        return;                                     /* (2.8.6) a single-note tom's other notes play nothing */
+        return;                                     /* a note with no lane plays nothing */
     if (note != 76u && note != 77u)                 /* the pads and key LEDs (not the click's wood block) */
         drums.hits |= (uint16_t)(1u << lane_of_note(note));
     if (note == 35u || note == 36u)
