@@ -541,7 +541,10 @@ whole. Listed only while not the default (all zero), like object 12. A sliced dr
 slice start with that ADPCM state and ends at the slice end (clamped to the zone). The markers live
 apart from the sample data — a fifth part of the settings object — so the editor rewrites object 13
 without re-uploading the audio; uploading a kit to a slot writes that slot's markers with it, and
-uploading a sample set to a slot clears that slot's markers. The SAMPLE engine does not read them:
+uploading a sample set to a slot clears that slot's markers. A commit of object 13 answers rc 3
+while the song plays (or a transport request is pending) — the flash erase would stall the audio for
+~50 ms — so the editor stops the FM-1 first, or defers the marker write until it has stopped
+(Lowtide 2.8.11 defers it). The SAMPLE engine does not read them:
 they apply to drum-kit voices only.
 
 ## v17: kits mode (Lowtide 2.8.9)

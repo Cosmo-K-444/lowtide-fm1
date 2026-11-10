@@ -15,6 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import vm from "node:vm";
 import { logicalImage, productOf } from "./fm1pkg.js";
 import { Updater, pack7, unpack7, FM1_PORT } from "./fm1ota.js";
@@ -23,6 +24,7 @@ let failed = 0;
 const ok = (cond, what) => { console.log(`${what.padEnd(64)} ${cond ? "ok" : "FAIL"}`); if (!cond) failed++; };
 const eq = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 const PYTHON = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+const cjsRequire = createRequire(import.meta.url);   /* acorn, for the scope walk (optional: skipped without it) */
 const py = (code, ...args) => execFileSync(PYTHON, ["-c", code, ...args], { maxBuffer: 1 << 26 });
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 
@@ -1665,7 +1667,7 @@ async function editorKit289() {
   const cTimers = [], cWrites = [], cSyncs = [];
   const commitBox = { console, dev: {}, setTimeout: (fn, ms) => { cTimers.push(ms); return 1; }, clearTimeout: () => {},
     kitDraft: { slot: 2, sent: false }, kitWriteNow: async () => { cWrites.push(1); commitBox.kitDraft.sent = true; },
-    kitSliceSyncFromDraft: async () => { cSyncs.push(1); }, report: () => {} };
+    kitSliceSyncFromDraft: async () => { cSyncs.push(1); }, report: () => {}, kitSlicePending: false, bkReport: () => {} };
   const K = vm.runInNewContext(commitSrc + `\n;({ kitSliceCommit })`, commitBox);
   await K.kitSliceCommit();
   ok(cWrites.length === 1 && cSyncs.length === 1 && cTimers.length === 0,
@@ -1764,7 +1766,8 @@ async function editorKit2810() {
   const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
   const said2 = [];
   const commitBox = { console, dev: {}, kitDraft: { slot: 2, sent: false }, kitWriteNow: async () => { /* the write fails: sent stays false */ },
-    kitSliceSyncFromDraft: async () => { said2.push("sync"); }, report: () => {}, sayK: (k) => { said2.push(k); } };
+    kitSliceSyncFromDraft: async () => { said2.push("sync"); }, report: () => {}, sayK: (k) => { said2.push(k); },
+    kitSlicePending: false, bkReport: () => {} };
   const K2 = vm.runInNewContext(commitSrc + `\n;({ kitSliceCommit })`, commitBox);
   await K2.kitSliceCommit();
   ok(said2.join() === "kitSliceWriteFail", "slice commit: a kit that never landed fails loudly (status message, no marker sync)");
@@ -1831,6 +1834,402 @@ async function editorKit2810() {
     "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box)");
   ok(/await kitReadSlotKit\(d\)/.test(html) && /sayK\("kitNeedSlot"\)/.test(html) && /if \(kitDraft\.sent\) sayK\("kitImported"/.test(html),
     "slot read-back / import: the pick reads the slot back, and the import only reports success once written");
+}
+
+/* ------------------------------------------- Lowtide 2.8.11: the markers land --- */
+async function editorKit2811() {
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+
+  /* the scoping bug: the kit-slice helpers lived in the protocol section, where kitDraft/dev/rq
+     (declared inside the UI's IIFE) are out of scope — every marker commit threw "kitDraft is not
+     defined" and every marker read "dev is not defined", so the markers never landed (2.8.8–2.8.10).
+     Two guards: the structural check (the helpers are defined inside the IIFE) and, when acorn is
+     installed, a scope walk over the whole script that fails on ANY function referencing a variable
+     declared only inside the IIFE. */
+  const iifeAt = html.indexOf('if (typeof document !== "undefined") (() => {');
+  const pwaAt = html.indexOf("/*PWA*/");
+  const sliceHelpers = ["kitSliceSlot", "kitSliceRead", "kitSliceWrite", "kitSliceSyncFromDraft", "kitSliceSyncPads", "kitSliceClearSlot"];
+  const proto = html.slice(0, iifeAt);
+  ok(iifeAt > 0 && pwaAt > iifeAt
+    && sliceHelpers.every((h) => { const i = html.indexOf(`function ${h}(`); return i > iifeAt && i < pwaAt; })
+    && ["const kitDraft = ", "let dev = null", "const rq = "].every((d) => { const i = html.indexOf(d); return i > iifeAt && i < pwaAt; })
+    && sliceHelpers.every((h) => !new RegExp(`function ${h}\\(`).test(proto)),
+    "scope: the kit-slice helpers live inside the UI's IIFE, next to kitDraft/dev/rq (not in the protocol section)");
+  let acorn = null;
+  try { acorn = cjsRequire("acorn"); } catch { /* optional: the structural check above still runs */ }
+  if (acorn) {
+    const scriptStart = html.indexOf("<script>\n") + "<script>\n".length;
+    const script = html.slice(scriptStart, html.indexOf("</script>", scriptStart));
+    const LINE0 = html.slice(0, scriptStart).split("\n").length - 1;   /* file line = acorn line + LINE0 */
+    const ast = acorn.parse(script, { ecmaVersion: 2024, locations: true, sourceType: "script" });
+    const GLOBALS = new Set(["document", "window", "navigator", "location", "console", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame", "performance", "fetch", "URL", "Blob", "FileReader", "TextEncoder", "TextDecoder", "Uint8Array", "Int8Array", "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Float32Array", "Float64Array", "DataView", "ArrayBuffer", "Promise", "JSON", "Math", "Error", "TypeError", "ReferenceError", "RangeError", "Object", "Array", "String", "Number", "Boolean", "Symbol", "Map", "Set", "WeakMap", "Date", "RegExp", "isNaN", "isFinite", "parseInt", "parseFloat", "encodeURIComponent", "decodeURIComponent", "alert", "confirm", "indexedDB", "localStorage", "sessionStorage", "crypto", "WebAssembly", "AudioContext", "webkitAudioContext", "history", "screen", "event", "CustomEvent", "Event", "KeyboardEvent", "PointerEvent", "DragEvent", "ClipboardEvent", "File", "FileList", "DataTransfer", "DOMParser", "XMLSerializer", "MutationObserver", "ResizeObserver", "IntersectionObserver", "Worker", "SharedWorker", "BroadcastChannel", "MessageChannel", "Image", "Option", "Proxy", "Reflect", "Generator", "AsyncGenerator", "BigInt", "BigInt64Array", "BigUint64Array", "Atomics", "globalThis", "undefined", "NaN", "Infinity"]);
+    const TARGETS = new Set(["kitDraft", "dev", "rq", "kitSlicePending", "kitSliceReadP"]);
+    const scopes = [{ names: new Set(), kind: "top", line: 1 }];
+    const problems = [];
+    const declare = (name) => { scopes[scopes.length - 1].names.add(name); };
+    const declarePattern = (pat) => {
+      if (!pat) return;
+      if (pat.type === "Identifier") declare(pat.name);
+      else if (pat.type === "ObjectPattern") for (const p of pat.properties) declarePattern(p.type === "RestElement" ? p.argument : p.value);
+      else if (pat.type === "ArrayPattern") for (const e of pat.elements) if (e) declarePattern(e.type === "RestElement" ? e.argument : e);
+      else if (pat.type === "AssignmentPattern") declarePattern(pat.left);
+      else if (pat.type === "RestElement") declarePattern(pat.argument);
+    };
+    /* `let`/`const` are hoisted to their block (TDZ aside): a function defined before the
+       declaration still sees it when it runs, so each block's own declarations are registered
+       before any of its statements are walked — otherwise every IIFE function defined before
+       `let dev` (or `const kitDraft` / `const rq`) would be a false positive. */
+    const hoist = (stmts) => {
+      for (const st of stmts || []) {
+        if (!st) continue;
+        if (st.type === "VariableDeclaration") for (const d of st.declarations) declarePattern(d.id);
+        else if ((st.type === "FunctionDeclaration" || st.type === "ClassDeclaration") && st.id) declare(st.id.name);
+      }
+    };
+    const visible = (name) => { for (let i = scopes.length - 1; i >= 0; i--) if (scopes[i].names.has(name)) return true; return GLOBALS.has(name); };
+    const currentFn = () => { for (let i = scopes.length - 1; i >= 0; i--) if (scopes[i].fnName) return scopes[i].fnName + "@" + (scopes[i].line + LINE0); return "(top)"; };
+    const walk = (node, parent) => {
+      if (!node || typeof node.type !== "string") return;
+      switch (node.type) {
+        case "FunctionDeclaration": case "FunctionExpression": case "ArrowFunctionExpression": {
+          if (node.type === "FunctionDeclaration" && node.id) declare(node.id.name);
+          const fnName = node.id ? node.id.name : "(anon)";
+          scopes.push({ names: new Set(), kind: "fn", line: node.loc.start.line, fnName });
+          if (node.id && node.type !== "FunctionDeclaration") scopes[scopes.length - 1].names.add(node.id.name);
+          for (const p of node.params) declarePattern(p);
+          walk(node.body, node);
+          scopes.pop();
+          return;
+        }
+        case "Program": {
+          hoist(node.body);
+          for (const st of node.body) walk(st, node);
+          return;
+        }
+        case "BlockStatement": {
+          scopes.push({ names: new Set(), kind: "block", line: node.loc.start.line });
+          hoist(node.body);
+          for (const st of node.body) walk(st, node);
+          scopes.pop();
+          return;
+        }
+        case "VariableDeclaration": {
+          for (const d of node.declarations) { declarePattern(d.id); if (d.init) walk(d.init, node); }
+          return;
+        }
+        case "CatchClause": {
+          scopes.push({ names: new Set(), kind: "catch", line: node.loc.start.line });
+          if (node.param) declarePattern(node.param);
+          walk(node.body, node);
+          scopes.pop();
+          return;
+        }
+        case "ForStatement": case "ForInStatement": case "ForOfStatement": {
+          scopes.push({ names: new Set(), kind: "for", line: node.loc.start.line });
+          for (const k of Object.keys(node)) { if (k === "type" || k === "loc" || k === "start" || k === "end") continue; const v = node[k]; if (Array.isArray(v)) v.forEach((c) => walk(c, node)); else walk(v, node); }
+          scopes.pop();
+          return;
+        }
+        case "Identifier": {
+          const isPropKey = parent && ((parent.type === "MemberExpression" && parent.property === node && !parent.computed)
+            || ((parent.type === "Property" || parent.type === "PropertyDefinition") && parent.key === node && !parent.computed && parent.value !== node)
+            || (parent.type === "ObjectPattern" && parent.key === node));
+          const isDecl = parent && ((parent.type === "VariableDeclarator" && parent.id === node)
+            || (parent.type === "FunctionDeclaration" && parent.id === node) || (parent.type === "FunctionExpression" && parent.id === node));
+          if (!isPropKey && !isDecl && TARGETS.has(node.name) && !visible(node.name)) {
+            problems.push({ name: node.name, line: node.loc.start.line + LINE0, fn: currentFn() });
+          }
+          return;
+        }
+        default: {
+          for (const k of Object.keys(node)) {
+            if (k === "type" || k === "loc" || k === "start" || k === "end") continue;
+            const v = node[k];
+            if (Array.isArray(v)) v.forEach((c) => walk(c, node));
+            else walk(v, node);
+          }
+          return;
+        }
+      }
+    };
+    walk(ast, null);
+    ok(problems.length === 0,
+      `scope walk: no function references a variable declared only inside the IIFE (${problems.length} found${problems.length ? ": " + problems.slice(0, 5).map((p) => `${p.name}@${p.line} in ${p.fn}`).join(", ") : ""})`);
+  } else {
+    console.log("scope walk skipped: acorn is not installed (npm install in web/)");
+  }
+
+  /* v18: an entry with start > 0 and end == 0 is a slice to the sample end, not "no slice" */
+  E.kitSliceDev.fill(0);
+  E.kitSlicePutEntry(2, 3, 1000, 0, 0, 0);
+  const e18 = E.kitSliceEntry(2, 3);
+  ok(e18 && e18.start === 1000 && e18.end === 0, "v18: an entry with start > 0 and end == 0 is a slice to the sample end (not null)");
+  E.kitSliceDev.fill(0);
+  ok(E.kitSliceEntry(2, 3) === null, "v18: only an all-zero entry is no slice");
+
+  /* rc-3 deferral: a marker commit refused while the song plays is deferred, not dropped; and a
+     kit that never landed defers the same way. The next marker change retries the deferred commit. */
+  const commitSrc3 = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
+  const reported = [], saidC = [];
+  let syncFails = true;
+  const stopErr = () => { const e = new Error("stop the song first"); e.code = "bkStop"; return e; };
+  const commitBox3 = { console, dev: {}, kitDraft: { slot: 2, sent: false },
+    kitWriteNow: async () => { /* the write fails: sent stays false */ },
+    kitSliceSyncFromDraft: async () => { if (syncFails) throw stopErr(); },
+    report: () => {}, sayK: (k) => { saidC.push(k); }, bkReport: (e) => { reported.push(e.code); }, kitSlicePending: false };
+  const K3 = vm.runInNewContext(commitSrc3 + `\n;({ kitSliceCommit })`, commitBox3);
+  await K3.kitSliceCommit();
+  ok(saidC.join() === "kitSliceWriteFail" && commitBox3.kitSlicePending === true,
+    "rc-3 deferral: a kit that never landed still fails loudly — and the marker write is pending, not dropped");
+  commitBox3.kitDraft.sent = true;
+  await K3.kitSliceCommit();
+  ok(reported.join() === "bkStop" && commitBox3.kitSlicePending === true,
+    "rc-3 deferral: a commit refused while the song plays is deferred (pending set, stop message shown)");
+  syncFails = false;
+  await K3.kitSliceCommit();
+  ok(commitBox3.kitSlicePending === false && reported.length === 1,
+    "rc-3 deferral: the next marker change retries the deferred commit and clears it once it lands");
+
+  /* the kit write's tail flushes a pending marker write once the kit lands — and not when it fails */
+  const modeSrcW = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
+  const writeSrcW = html.slice(html.indexOf("async function kitWriteNow()"), html.indexOf("function kitWriteSoon"));
+  const commits = [];
+  const writeBox = { console, setTimeout, clearTimeout, t: (k) => k, kitUi: null, dev: {},
+    kitUploadPads: async () => true, kitSliceCommit: async () => { commits.push(1); },
+    kitSlicePending: true, renderKits: () => {} };
+  const W = vm.runInNewContext(modeSrcW + "\n" + writeSrcW + `\n;({ kitDraft, kitWriteNow })`, writeBox);
+  W.kitDraft.slot = 2; W.kitDraft.pads[0] = { s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 }; W.kitDraft.sent = false;
+  await W.kitWriteNow();
+  ok(W.kitDraft.sent === true && commits.length === 1 && writeBox.kitSlicePending === false,
+    "rc-3 deferral: once the kit lands, the pending marker write is flushed from the kit write's tail");
+  writeBox.kitUploadPads = async () => false; writeBox.kitSlicePending = true; commits.length = 0;
+  W.kitDraft.sent = false;
+  await W.kitWriteNow();
+  ok(W.kitDraft.sent === false && commits.length === 0 && writeBox.kitSlicePending === true,
+    "rc-3 deferral: a kit write that fails leaves the pending marker write pending");
+
+  /* #20/#22: the slider's change handler cancels the settle timer, writes now, drains any queued
+     write, then previews — so the preview is the new pitch/gain, not the old one or nothing */
+  ok(/inp\.addEventListener\("change", async \(\) => \{/.test(html)
+    && /if \(kitWriteTimer\) \{ clearTimeout\(kitWriteTimer\); kitWriteTimer = null; \}\s*await kitWriteNow\(\);\s*await kitWriteDrain\(\);\s*kitStartLane\(l\);/.test(html),
+    "#20/#22: the slider's change handler cancels the settle timer, writes now, drains any queued write, then previews");
+  const drainSrc = html.slice(html.indexOf("async function kitWriteDrain"), html.indexOf("async function kitEraseSlot"));
+  const drainBox = { console, setTimeout, clearTimeout, kitWriteBusy: true, kitWritePending: true };
+  const D = vm.runInNewContext(drainSrc + `\n;({ kitWriteDrain })`, drainBox);
+  const t0 = Date.now();
+  setTimeout(() => { drainBox.kitWriteBusy = false; drainBox.kitWritePending = false; }, 120);
+  await D.kitWriteDrain();
+  ok(Date.now() - t0 >= 100 && Date.now() - t0 < 2000, "slider preview: the drain waits until no kit write is running or queued");
+  drainBox.kitWriteBusy = true;
+  const t1 = Date.now();
+  await D.kitWriteDrain(200);
+  ok(Date.now() - t1 >= 150 && Date.now() - t1 < 2000, "slider preview: the drain gives up after its timeout instead of waiting forever");
+
+  /* #20/#22: stopping a lane that is not playing sends no KITS_STOP; a playing lane still stops */
+  const playSrc2 = html.slice(html.indexOf("function kitTogglePlay"), html.indexOf("function kitDrawWave"));
+  const stops2 = [], notesOff2 = [];
+  const playBox2 = { console, setTimeout, clearTimeout, t: (k) => k, kitUi: null,
+    kitDraft: { name: "", slot: 2, pads: Array(16).fill(null), sel: -1, sent: true }, kitPlaying: new Map(),
+    kitSliceRange: E.kitSliceRange, drumPadsHearNote: () => -1, DRUM_LANES: E.DRUM_LANES, SMP: E.SMP,
+    lvNoteOn: () => {}, lvNoteOff: (tok) => { notesOff2.push(tok); },
+    kitsStopSend: async (l) => { stops2.push(l); } };
+  const P2 = vm.runInNewContext(playSrc2 + `\n;({ kitDraft, kitTogglePlay, kitStartLane, kitStopLane, kitPlaying })`, playBox2);
+  P2.kitDraft.pads[0] = { s: s(2205), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  P2.kitTogglePlay(0);
+  ok(stops2.length === 0 && P2.kitPlaying.has(0), "#20/#22: starting a lane that is not playing sends no KITS_STOP (only a sounding lane is stopped)");
+  await sleep(250);
+  ok(stops2.includes(0) && !P2.kitPlaying.has(0), "#20/#22: the stop timer still stops a playing lane");
+
+  /* #18: picking a slot that holds an instrument warns about the instrument (native confirm, OK
+     continues) instead of asking to load a kit that is not there */
+  const modeSrc18 = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
+  const pickSrc18 = html.slice(html.indexOf("async function kitPickSlot"), html.indexOf("/* (2.8.9) the draft kit as a v2 ZIP"));
+  const hdrSrc18 = html.slice(html.indexOf("/* a slot's header:"), html.indexOf("/* (2.8.9) what each USR slot holds"));
+  const instBuilt = E.buildSlot("INST", [{ s: s(8000), root: 60, lo: 0, hi: 127 }]);
+  const instRaw = new Uint8Array(E.SMP.DATA_OFF + instBuilt.data.length);
+  instRaw.set(instBuilt.hdr, 0); instRaw.set(instBuilt.data, E.SMP.DATA_OFF);
+  const emptyRaw18 = new Uint8Array(E.SMP.HDR_LEN);
+  const confirms18 = [];
+  const rbBox18 = { console, TextEncoder, TextDecoder, dev: { info: { proto: 18 } }, tab: "kits", SMP: E.SMP, DRUM_LANES: E.DRUM_LANES,
+    imaDecode: E.imaDecode, kitSliceEntry: E.kitSliceEntry, kitSliceLoaded: false,
+    kitSliceRead: async () => { E.kitSliceDev.fill(0); },
+    bkReadSlot: async (k) => (k === 2 ? instRaw : emptyRaw18),
+    bkReadRange: async (id) => (id === 34 ? instRaw.subarray(0, 480) : emptyRaw18.subarray(0, 480)),
+    req: E.req, rq: async () => {}, report: () => {},
+    confirm: (m) => { confirms18.push(m); return true; }, t: (k) => k,
+    kitWriteNow: async () => {}, renderKits: () => {}, setTimeout, clearTimeout };
+  const RB18 = vm.runInNewContext(modeSrc18 + "\n" + pickSrc18 + "\n" + hdrSrc18 + `\n;({ kitDraft, kitsModeUpdate, kitsStopSend, kitPickSlot })`, rbBox18);
+  await RB18.kitPickSlot(2);
+  ok(confirms18.length === 1 && confirms18[0] === "USR3 currently contains an instrument sound. Selecting this slot will overwrite it. Export it first if you want to save it."
+    && RB18.kitDraft.slot === 2 && RB18.kitDraft.pads.every((p) => !p),
+    "#18: picking a slot that holds an instrument warns about the instrument (native confirm, OK continues)");
+
+  /* #27: a too-long sample is rejected before its box is populated — the box stays untouched, and
+     a sample that fits is assigned and written as before */
+  const addSrc = html.slice(html.indexOf("async function kitAddFiles"), html.indexOf("async function kitOpenZip"));
+  const modeSrc27 = html.slice(html.indexOf("const kitDraft = "), html.indexOf("let kitUi = null;"));
+  const said27 = [], writes27 = [];
+  const addBox = { console, TextEncoder, TextDecoder, SMP: E.SMP, DRUM_LANES: E.DRUM_LANES,
+    imaEncode: E.imaEncode, kitBytes: E.kitBytes, kitPlace: E.kitPlace,
+    decodeFile: async (f) => ({ s: f._s }),
+    sayK: (k, arg) => { said27.push([k, arg]); }, kitWriteNow: async () => { writes27.push(1); }, renderKits: () => {} };
+  const A27 = vm.runInNewContext(modeSrc27 + "\n" + addSrc + `\n;({ kitDraft, kitAddFiles })`, addBox);
+  A27.kitDraft.slot = 0;
+  await A27.kitAddFiles([{ name: "huge.wav", _s: s(173460) }]);
+  ok(A27.kitDraft.pads.every((p) => !p) && said27.some(([k, a]) => k === "smpFail" && a === "too long: 86730 B (max 81408 B)") && writes27.length === 0,
+    "#27: a too-long sample is rejected before its box is populated (no pad, no write)");
+  await A27.kitAddFiles([{ name: "kick.wav", _s: s(8000) }]);
+  ok(A27.kitDraft.pads[0] && A27.kitDraft.pads[0].fname === "kick.wav" && writes27.length === 1,
+    "#27: a sample that fits is assigned and written as before");
+  A27.kitDraft.pads = Array(16).fill(null);   /* a fresh draft for the cumulative case */
+  await A27.kitAddFiles([{ name: "big.wav", _s: s(160000) }]);
+  await A27.kitAddFiles([{ name: "snare.wav", _s: s(4000) }]);
+  ok(A27.kitDraft.pads[2] === null && said27.some(([k, a]) => k === "smpFail" && a === "too long: 82000 B (max 81408 B)"),
+    "#27: a sample that would push the slot over the limit is rejected too (the kit stays as it was)");
+
+  /* the mirror: a read sets loaded only once it succeeds; two reads at once share one LIST+GET;
+     a failed read leaves the mirror unloaded, so the next read retries instead of trusting it */
+  const readSrc = html.slice(html.indexOf("async function kitSliceRead"), html.indexOf("async function kitSliceWrite"));
+  const { m: mR, rq: rqR, done: doneR } = attachMock();
+  let lists = 0;
+  const rqCount = async (r, o) => { if (r[0] === E.CMD.BK_LIST) lists++; return rqR(r, o); };
+  const readBox = { console, dev: { info: { proto: 18 } }, rq: rqCount, req: E.req, parse: E.parse, CMD: E.CMD,
+    bkReadObj: E.bkReadObj, KITSLICE: { OBJ: 13, LEN: 768, ENTRY: 12 }, kitSliceDev: E.kitSliceDev,
+    kitSliceLoaded: false, kitSliceReadP: null, setTimeout, clearTimeout };
+  const R = vm.runInNewContext(readSrc + `\n;({ kitSliceRead })`, readBox);
+  E.kitSliceDev.fill(0);
+  await R.kitSliceRead();
+  ok(readBox.kitSliceLoaded === true && E.kitSliceDev.every((b) => b === 0),
+    "mirror: a read with no slices on the FM-1 loads an empty mirror and marks it loaded");
+  const sliceBytes = new Uint8Array(768);
+  new DataView(sliceBytes.buffer).setUint32((2 * 16 + 0) * 12, 2000, true);
+  new DataView(sliceBytes.buffer).setUint32((2 * 16 + 0) * 12 + 4, 4000, true);
+  await E.bkWriteObj(rqR, 13, sliceBytes);
+  E.kitSliceDev.fill(0); readBox.kitSliceLoaded = false; lists = 0;
+  const p1 = R.kitSliceRead(), p2 = R.kitSliceRead();
+  await Promise.all([p1, p2]);
+  ok(readBox.kitSliceLoaded === true && E.kitSliceEntry(2, 0).start === 2000 && E.kitSliceEntry(2, 0).end === 4000 && lists === 1,
+    "mirror: two reads at once share one LIST+GET, and the mirror holds the FM-1's slices");
+  const failBox = { console, dev: { info: { proto: 18 } }, rq: async () => { throw new Error("link down"); },
+    req: E.req, parse: E.parse, CMD: E.CMD, bkReadObj: E.bkReadObj, KITSLICE: { OBJ: 13, LEN: 768, ENTRY: 12 },
+    kitSliceDev: E.kitSliceDev, kitSliceLoaded: false, kitSliceReadP: null, setTimeout, clearTimeout };
+  const RF = vm.runInNewContext(readSrc + `\n;({ kitSliceRead })`, failBox);
+  await RF.kitSliceRead();
+  ok(failBox.kitSliceLoaded === false, "mirror: a failed read leaves the mirror unloaded, so the next read retries instead of trusting it");
+  doneR();
+
+  /* a marker write on a device too old for markers throws instead of silently dropping them;
+     with no device it still returns false, and on a current device the mirror is written */
+  const writeSliceSrc = html.slice(html.indexOf("async function kitSliceWrite"), html.indexOf("function kitSliceSyncFromDraft"));
+  const { m: mW, rq: rqW, done: doneW } = attachMock();
+  const wsBox = { console, dev: { info: { proto: 15 } }, rq: rqW, req: E.req, parse: E.parse, CMD: E.CMD,
+    bkWriteObj: E.bkWriteObj, KITSLICE: { OBJ: 13, LEN: 768, ENTRY: 12 }, kitSliceDev: E.kitSliceDev, t: (k) => k };
+  const WS = vm.runInNewContext(writeSliceSrc + `\n;({ kitSliceWrite })`, wsBox);
+  let threw = "";
+  try { await WS.kitSliceWrite(); } catch (e) { threw = e.message; }
+  ok(threw === "kitSliceOld", "marker write: on a device too old for markers (proto 15) the write throws instead of silently dropping them");
+  wsBox.dev = null;
+  ok((await WS.kitSliceWrite()) === false, "marker write: with no device it still returns false (nothing to write)");
+  wsBox.dev = { info: { proto: 18 } };
+  E.kitSliceDev.fill(0);
+  E.kitSlicePutEntry(2, 0, 2000, 4000, 0, 0);
+  ok((await WS.kitSliceWrite()) === true, "marker write: on a current device the mirror is written");
+  const LW = E.parse[E.CMD.BK_LIST](await rqW(E.req.bkList(), { timeout: 5000, retries: 0 }));
+  ok(LW.items.some((x) => x.id === 13 && x.len === 768), "marker write: object 13 is listed after the write");
+  doneW();
+
+  /* read-back: a read refused with rc 5 asks for a fresh list, then retries once and returns the
+     bytes; any other refusal still throws at once, with no list */
+  const rangeSrc = html.slice(html.indexOf("async function bkReadRange"), html.indexOf("async function bkReadSlot"));
+  const u35 = (n) => [0, 1, 2, 3, 4].map((i) => (n >> (7 * i)) & 0x7F);
+  const getReply = (id, rc, off, data) => new Uint8Array([id, rc, ...u35(off), data.length & 0x7F, (data.length >> 7) & 0x7F, ...E.pack7(data)]);
+  const data16 = Uint8Array.from({ length: 16 }, (_, i) => i + 1);
+  const calls = [];
+  let gets = 0;
+  const fakeRq = async (r) => {
+    calls.push(r[0]);
+    if (r[0] === E.CMD.BK_LIST) return new Uint8Array(0);   /* the LIST's reply is not read: only that it was asked for */
+    gets++;
+    if (gets === 1) return getReply(0, 5, 0, new Uint8Array(0));   /* the FM-1 refuses a read until a fresh list */
+    return getReply(0, 0, 0, data16);
+  };
+  const rangeBox = { console, parse: E.parse, CMD: E.CMD, req: E.req, rq: fakeRq };
+  const G = vm.runInNewContext(rangeSrc + `\n;({ bkReadRange })`, rangeBox);
+  const got = await G.bkReadRange(0, 0, 16);
+  ok(eq([...got], [...data16]) && calls.join() === [E.CMD.BK_GET, E.CMD.BK_LIST, E.CMD.BK_GET].join(),
+    "read-back: a read refused with rc 5 asks for a fresh list, then retries once and returns the bytes");
+  const calls1 = [];
+  const fakeRq1 = async (r) => { calls1.push(r[0]); return getReply(0, 1, 0, new Uint8Array(0)); };
+  const rangeBox1 = { console, parse: E.parse, CMD: E.CMD, req: E.req, rq: fakeRq1 };
+  const G1 = vm.runInNewContext(rangeSrc + `\n;({ bkReadRange })`, rangeBox1);
+  let rc1 = "";
+  try { await G1.bkReadRange(0, 0, 16); } catch (e) { rc1 = e.message; }
+  ok(rc1 === "bk get rc 1" && !calls1.includes(E.CMD.BK_LIST), "read-back: any other refusal (rc 1) still throws at once, with no list");
+
+  /* a slot with a kit reads back whole (header, then its data); a slot the FM-1 does not list
+     (rc 1) reads as empty instead of throwing */
+  const slotSrc = html.slice(html.indexOf("async function bkReadSlot"), html.indexOf("function parseSlotHeader"));
+  const kitSig = s(8000), kitAdpcm = E.imaEncode(kitSig).data;
+  const built = E.buildSlot("TESTKIT", [{ s: kitSig, adpcm: kitAdpcm, root: 36, lo: 36, hi: 36 }]);
+  const kitRaw = new Uint8Array(E.SMP.DATA_OFF + built.data.length);
+  kitRaw.set(built.hdr, 0); kitRaw.set(built.data, E.SMP.DATA_OFF);
+  const slotRq = async (r) => {
+    const a = r[1], id = a[0], off = a.slice(1, 6).reduce((n, b, i) => n | (b << (7 * i)), 0), n = a[6] | (a[7] << 7);
+    return getReply(id, 0, off, kitRaw.subarray(off, off + n));
+  };
+  const slotBox = { console, parse: E.parse, CMD: E.CMD, req: E.req, rq: slotRq, SMP: E.SMP };
+  const SL = vm.runInNewContext(rangeSrc + "\n" + slotSrc + `\n;({ bkReadSlot })`, slotBox);
+  const backRaw = await SL.bkReadSlot(0);
+  ok(backRaw.length === kitRaw.length && eq([...backRaw.subarray(0, 4)], [0x46, 0x53, 0x4D, 0x50]),
+    "read-back: a slot with a kit reads back whole (header, then its data)");
+  const emptyRq = async (r) => (r[0] === E.CMD.BK_LIST ? new Uint8Array(0) : getReply(32, 1, 0, new Uint8Array(0)));
+  const slotBox2 = { console, parse: E.parse, CMD: E.CMD, req: E.req, rq: emptyRq, SMP: E.SMP };
+  const SL2 = vm.runInNewContext(rangeSrc + "\n" + slotSrc + `\n;({ bkReadSlot })`, slotBox2);
+  const emptyHead = await SL2.bkReadSlot(0);
+  ok(emptyHead.length === E.SMP.HDR_LEN && emptyHead.every((b) => b === 0),
+    "read-back: a slot the FM-1 does not list (rc 1) reads as empty instead of throwing");
+
+  /* the pair split: the marker slot follows the upload split (kitRoom), so a lane the upload puts
+     in USR4 has its markers in USR4 too */
+  const slotForSrc = html.slice(html.indexOf("function kitSliceSlotFor"), html.indexOf("/* a pad as it goes to the slot"));
+  const SF = vm.runInNewContext(slotForSrc + `\n;({ kitSliceSlotFor })`, { console, KIT_PAIR: 4, kitSplit: E.kitSplit, kitRoom: () => E.SMP.MAX_DATA - 64 });
+  const pairPads = Array(16).fill(null);
+  pairPads[0] = { s: s(162600), tune: 0, gain: 0, len: 0 };   /* 81300 bytes: fills one slot, with 44 bytes to spare */
+  pairPads[1] = { s: s(200), tune: 0, gain: 0, len: 0 };   /* 100 bytes */
+  ok(SF.kitSliceSlotFor(1, 4, pairPads) === 3 && SF.kitSliceSlotFor(0, 4, pairPads) === 2,
+    "pair split: the marker slot follows the upload split (kitRoom), so the second lane's markers go to USR4, not USR3");
+
+  /* a mirror entry with end == 0 reads back as a slice to the sample end (v18), not no slice */
+  const rawsSrc = html.slice(html.indexOf("function kitPadsFromRaws"), html.indexOf("function kitExport()"));
+  const hdrSrc2 = html.slice(html.indexOf("function parseSlotHeader"), html.indexOf("function kitSlotKind("));
+  const rawsBox = { console, TextDecoder, kitSliceEntry: E.kitSliceEntry, DRUM_LANES: E.DRUM_LANES, imaDecode: E.imaDecode, SMP: E.SMP };
+  const F = vm.runInNewContext(rawsSrc + "\n" + hdrSrc2 + `\n;({ kitPadsFromRaws })`, rawsBox);
+  E.kitSliceDev.fill(0);
+  E.kitSlicePutEntry(2, 0, 1000, 0, 0, 0);   /* (v18) start 1000, end 0: a slice to the sample end */
+  const pads18 = F.kitPadsFromRaws([2], [kitRaw]).pads;
+  ok(pads18[0] && pads18[0].slice && pads18[0].slice.start === 1000 && pads18[0].slice.end === 8000,
+    "v18: a mirror entry with end == 0 reads back as a slice to the sample end, not no slice");
+  E.kitSliceDev.fill(0);
+  E.kitSlicePutEntry(2, 0, 2000, 4000, 0, 0);
+  const pads18b = F.kitPadsFromRaws([2], [kitRaw]).pads;
+  ok(pads18b[0] && pads18b[0].slice && pads18b[0].slice.start === 2000 && pads18b[0].slice.end === 4000,
+    "v18: a mirror entry with an explicit end still reads back as written");
+
+  /* disconnect clears the marker mirror, its loaded flag and any pending marker write; a kit
+     import whose markers fail does not report success (a refused-while-playing commit defers) */
+  const discSrc = html.slice(html.indexOf("function disconnect("), html.indexOf("function onState("));
+  ok(/kitSliceLoaded = false;/.test(discSrc) && /kitSliceDev\.fill\(0\)/.test(discSrc) && /kitSlicePending = false;/.test(discSrc),
+    "mirror: disconnect clears the marker mirror, its loaded flag and any pending marker write");
+  const upSrc = html.slice(html.indexOf("async function kitUploadPads"), html.indexOf("/* read part of a backup object"));
+  ok(/if \(e && e\.code === "bkStop"\) \{ kitSlicePending = true; bkReport\(e\); \}/.test(upSrc)
+    && /else \{ report\(e\); done = false; \}/.test(upSrc),
+    "kit import: a marker write that fails loses the import's success report (a refused-while-playing commit defers instead)");
+
+  /* the protocol doc states the rc-3 rule for object 13, keeps the v18 end == 0 meaning, and has
+     no v19 section: this release changes no protocol */
+  const protoDoc = readFileSync(join(HERE, "EDITOR_PROTOCOL.md"), "utf8");
+  ok(/object 13 answers rc 3\s+while the song plays/i.test(protoDoc) && !/end == 0 is no slice/i.test(protoDoc) && !/## v19/.test(protoDoc),
+    "protocol doc: object-13 commits answer rc 3 while the song plays; no stale pre-v18 'end == 0 is no slice'; no v19 (no protocol change)");
 }
 
 async function editor25() {
@@ -2731,6 +3130,7 @@ await editorDrumMap();
 await editorKitSlices();
 await editorKit289();
 await editorKit2810();
+await editorKit2811();
 await editor25();
 await editorDsyn();
 await editorCart();

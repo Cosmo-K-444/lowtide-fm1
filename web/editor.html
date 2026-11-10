@@ -4156,6 +4156,7 @@ function previewSnapshot(st, includeSamples = false) {
    plays the zone holding its GM note, at its own pitch). A pad: {s: Int16Array at SMP.RATE (normalised), fname,
    tune: semitones -12..12, gain: dB -24..0, len: samples kept (0 = all)}; pads[l] for lane l, or null. */
 const KIT = { TUNE: 12, GAIN_MIN: -24, FADE: Math.round(SMP.RATE * 0.004) };
+const kitRoom = () => SMP.MAX_DATA - 64;                 /* (a slot, less a margin: kitLen may undercount a sample) */
 /* ---- kit slices (2.8.8, protocol 16) ----
    A slice is {start, end} in baked samples (kitPad), kept on the pad object so drag-and-drop and kit export
    carry it with the sample. On the FM-1 the markers live in a SEPARATE store, backup object 13 (768 bytes:
@@ -4167,11 +4168,12 @@ const KITSLICE = { OBJ: 13, LEN: 768, ENTRY: 12 };
 let kitSliceDev = new Uint8Array(KITSLICE.LEN);   /* the FM-1's marker store, as last read */
 let kitSliceLoaded = false;                       /* false until read once (or the FM-1 has no object 13) */
 const kitSliceOff = (slot, lane) => (slot * 16 + lane) * KITSLICE.ENTRY;
-function kitSliceEntry(slot, lane) {   /* an entry from the mirror, or null when it is off */
+function kitSliceEntry(slot, lane) {   /* an entry from the mirror, or null when it is off (all zero: no slice).
+   (v18) an entry with start > 0 and end == 0 is a slice to the sample end, not "no slice" */
   const o = kitSliceOff(slot, lane), v = new DataView(kitSliceDev.buffer, kitSliceDev.byteOffset + o, KITSLICE.ENTRY);
-  const end = v.getUint32(4, true);
-  if (end === 0) return null;
-  return { start: v.getUint32(0, true), end, pred: v.getInt16(8, true), idx: v.getUint8(10) };
+  const start = v.getUint32(0, true), end = v.getUint32(4, true);
+  if (start === 0 && end === 0) return null;
+  return { start, end, pred: v.getInt16(8, true), idx: v.getUint8(10) };
 }
 function kitSlicePutEntry(slot, lane, start, end, pred, idx) {   /* write an entry into the mirror */
   const o = kitSliceOff(slot, lane), v = new DataView(kitSliceDev.buffer, kitSliceDev.byteOffset + o, KITSLICE.ENTRY);
@@ -4183,50 +4185,14 @@ function kitSliceRange(p) {   /* the baked samples to play: the slice, clamped t
   if (!s) return { start: 0, end: n };
   return { start: Math.max(0, Math.min(n, s.start)), end: Math.max(0, Math.min(n, s.end)) };
 }
-function kitSliceSlot(lane) {   /* the slot a lane's zone goes to in the current draft */
-  return kitSliceSlotFor(lane, kitDraft.slot, kitDraft.pads);
-}
 function kitSliceSlotFor(lane, dest, pads) {   /* the slot a lane's zone goes to for a kit in `dest` */
-  if (dest === KIT_PAIR) { const sp = kitSplit(pads); return sp && sp[1].includes(lane) ? 3 : 2; }
+  if (dest === KIT_PAIR) { const sp = kitSplit(pads, kitRoom()); return sp && sp[1].includes(lane) ? 3 : 2; }
   return dest;
 }
-async function kitSliceRead() {   /* mirror object 13 from the FM-1; a firmware without it just leaves zeros */
-  kitSliceDev.fill(0); kitSliceLoaded = true;
-  if (!dev) return;
-  try {
-    const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
-    if (L.rc) throw new Error(`LIST rc ${L.rc}`);
-    const it = L.items.find((x) => x.id === KITSLICE.OBJ);
-    if (!it) return;   /* the device lists object 13 only when non-default: no slices */
-    const bytes = await bkReadObj(rq, it);
-    if (bytes.length === KITSLICE.LEN) kitSliceDev.set(bytes);
-  } catch (e) { /* an old firmware, or a lost link: the markers stay in the kit draft only */ }
-}
-async function kitSliceWrite() {   /* write the mirror back; needs protocol 16 (Lowtide 2.8.8) */
-  if (!dev || !dev.info || dev.info.proto < 16) return false;
-  await bkWriteObj(rq, KITSLICE.OBJ, kitSliceDev);
-  return true;
-}
-function kitSliceSyncFromDraft() {   /* rebuild the mirror for the draft's slot(s) from the draft pads, then write */
-  return kitSliceSyncPads(kitDraft.pads, kitDraft.slot);
-}
-function kitSliceSyncPads(pads, dest) {   /* rebuild the mirror for a kit's slot(s) from its pads, then write */
-  if (!dev || dest == null) return;
-  const slots = dest === KIT_PAIR ? [2, 3] : [dest];
-  for (const s of slots) kitSliceDev.fill(0, s * 16 * KITSLICE.ENTRY, (s + 1) * 16 * KITSLICE.ENTRY);
-  pads.forEach((p, l) => {
-    const s = kitSliceOf(p);
-    if (!s) return;
-    if (s.end <= s.start) return;   /* (2.8.10) never write a slice with end == 0 (or a degenerate range): the firmware reads end == 0 as no slice */
-    const baked = kitPad(p), [pred, idx] = imaStateAt(baked, s.start);
-    kitSlicePutEntry(kitSliceSlotFor(l, dest, pads), l, s.start, s.end, pred, idx);
-  });
-  return kitSliceWrite();
-}
-function kitSliceClearSlot(k) {   /* a slot replaced from the Samples page: its markers must not slice fresh samples */
-  kitSliceDev.fill(0, k * 16 * KITSLICE.ENTRY, (k + 1) * 16 * KITSLICE.ENTRY);
-  return kitSliceWrite();
-}
+/* (2.8.11) kitSliceSlot / kitSliceRead / kitSliceWrite / kitSliceSyncFromDraft / kitSliceSyncPads /
+   kitSliceClearSlot live inside the UI's IIFE now, next to kitSliceCommit: they use kitDraft, dev
+   and rq, which are declared there — defined here, every marker commit threw "kitDraft is not
+   defined" and every marker read "dev is not defined", so the markers never landed (2.8.8–2.8.10). */
 /* a pad as it goes to the slot: tuned (played faster or slower, as a sampler does), cut, faded out, its gain */
 function kitPad(p) {
   let x = Array.from(p.s);
@@ -6346,6 +6312,7 @@ async function connect() {
     dev = { link, input, output, info: null, pdesc: [], gdesc: [], names: [], dump: null, steps: [], slotUsed: [null, null, null, null],
       keys: null, watch: false, bank: null };
     sets.clear();                                    /* (another FM-1, maybe) */
+    kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false;   /* (2.8.11) the marker mirror is read again for this FM-1 */
     setLabel($("connect"), t("disconnect"));
     renderLive();
     await load(dev);
@@ -6367,6 +6334,7 @@ function disconnect(reasonKey = "disconnected") {
   smpStopPlay();   /* (2.8.9) a Samples preview's stop timer ends too */
   chopStopAudition();   /* (2.8.9) a chop audition's stop timer ends too */
   kitSlotKinds = null; kitKitsModeSent = null;
+  kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false;   /* (2.8.11) the marker mirror belongs to the last FM-1: read it again on the next connection */
   if (dev) {
     dev.link.close();
     dev.input.onmidimessage = null;
@@ -8412,7 +8380,6 @@ const kitDraft = { name: "", slot: null, pads: Array(16).fill(null), sel: -1, pi
 const KIT_PAIR = 4;
 const kitSlots = (d = kitDraft.slot) => (d == null ? [] : d === KIT_PAIR ? [2, 3] : [d]);
 const kitDest = (d = kitDraft.slot) => (d == null ? "—" : d === KIT_PAIR ? "USR3+4" : `USR${d + 1}`);
-const kitRoom = () => SMP.MAX_DATA - 64;                 /* (a slot, less a margin: kitLen may undercount a sample) */
 const kitHas4 = () => !!dev && !!dev.smp && dev.smp.nslots >= 4;
 const kitPlaying = new Map();   /* (2.8.9) lane -> the timer that flips its Stop button back to Play (the FM-1 sends no "finished") */
 let kitWriteTimer = null, kitWriteBusy = false, kitWritePending = false, kitHoldWrite = 0, kitSlotKinds = null, kitWrittenSlot = null;   /* (2.8.9) kinds are read lazily, null = not yet read from the FM-1; written: the slot the draft was last written to */
@@ -8443,6 +8410,15 @@ async function kitAddFiles(list, lane = -1) {
       const pads = kitDraft.pads;                   /* (after the decode: CLEAR ALL may have come meanwhile) */
       const l = kitPlace(pads, f.name, lane);
       if (l < 0) { full = true; break; }
+      /* (2.8.11) too long for the destination: reject before the pad is assigned, so the box stays
+         untouched — the upload would fail with the same "too long" error after populating it. A pad
+         longer than one slot can never fit anywhere; with no slot picked yet, a kit longer than two
+         slots cannot fit either. */
+      const padBytes = (z.s.length + 1) >> 1;   /* the ADPCM bytes this sample would add */
+      if (padBytes > SMP.MAX_DATA) { sayK("smpFail", `too long: ${padBytes} B (max ${SMP.MAX_DATA} B)`); continue; }
+      const cap = kitDraft.slot == null ? SMP.MAX_DATA * 2 : kitSlots().length * SMP.MAX_DATA;
+      const total = kitBytes(pads.map((p, j) => (j === l ? { s: z.s, tune: 0, gain: 0, len: 0 } : p)));
+      if (total > cap) { sayK("smpFail", `too long: ${total} B (max ${cap} B)`); continue; }
       /* (2.8.9) the pad keeps its ADPCM too, so an unchanged upload sends the original bytes bit-exact */
       pads[l] = { s: z.s, adpcm: imaEncode(z.s).data, fname: f.name, tune: 0, gain: 0, len: 0 };
       done.push(`${DRUM_LANES[l][1]} ← ${f.name}`);
@@ -8487,9 +8463,10 @@ function kitStartLane(l) {
   kitPlayUi(l);
 }
 function kitStopLane(l) {
+  const was = kitPlaying.has(l) || (typeof LV !== "undefined" && LV.held && LV.held.has("kit:" + l));
   if (kitPlaying.has(l)) { clearTimeout(kitPlaying.get(l)); kitPlaying.delete(l); }
   lvNoteOff("kit:" + l);
-  kitsStopSend(l);
+  if (was) kitsStopSend(l);   /* (2.8.11) no KITS_STOP for a lane that is not sounding: the stop is only for a voice that plays */
   kitPlayUi(l);
 }
 function kitStopAll() {   /* every lane's stop timer ends and its button flips back to Play */
@@ -8589,16 +8566,77 @@ function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a 
   else p.slice = { start, end };
   kitSliceRender();
 }
+/* ---- the kit-slice helpers on the FM-1 (2.8.11): they live HERE, inside the IIFE, next to
+   kitDraft/dev/rq — before 2.8.11 they were defined in the protocol section, where those three are
+   out of scope, so every marker commit threw "kitDraft is not defined" and every marker read threw
+   "dev is not defined", and the markers never landed on the FM-1 (2.8.8–2.8.10). */
+function kitSliceSlot(lane) {   /* the slot a lane's zone goes to in the current draft */
+  return kitSliceSlotFor(lane, kitDraft.slot, kitDraft.pads);
+}
+let kitSliceReadP = null;   /* the mirror read in flight, if any (one LIST+GET at a time) */
+async function kitSliceRead() {   /* mirror object 13 from the FM-1; a firmware without it just leaves zeros.
+   Loaded is set only once the read SUCCEEDS, so a failed read is retried instead of trusted. */
+  if (kitSliceReadP) return kitSliceReadP;
+  kitSliceReadP = (async () => {
+    if (!dev) return;
+    try {
+      const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+      if (L.rc) throw new Error(`LIST rc ${L.rc}`);
+      const it = L.items.find((x) => x.id === KITSLICE.OBJ);
+      if (!it) { kitSliceDev.fill(0); kitSliceLoaded = true; return; }   /* the device lists object 13 only when non-default: no slices */
+      const bytes = await bkReadObj(rq, it);
+      if (bytes.length === KITSLICE.LEN) kitSliceDev.set(bytes);
+      kitSliceLoaded = true;
+    } catch (e) { /* an old firmware, or a lost link: the markers stay in the kit draft only */ }
+  })();
+  try { await kitSliceReadP; } finally { kitSliceReadP = null; }
+}
+async function kitSliceWrite() {   /* write the mirror back; needs protocol 16 (Lowtide 2.8.8).
+   Throws on a device too old for markers (and on a refused commit), so a kit import cannot report
+   success with its markers lost — the caller decides what the failure means. */
+  if (!dev) return false;
+  if (!dev.info || dev.info.proto < 16) throw new Error(t("kitSliceOld"));
+  await bkWriteObj(rq, KITSLICE.OBJ, kitSliceDev);
+  return true;
+}
+function kitSliceSyncFromDraft() {   /* rebuild the mirror for the draft's slot(s) from the draft pads, then write */
+  return kitSliceSyncPads(kitDraft.pads, kitDraft.slot);
+}
+function kitSliceSyncPads(pads, dest) {   /* rebuild the mirror for a kit's slot(s) from its pads, then write */
+  if (!dev || dest == null) return;
+  const slots = dest === KIT_PAIR ? [2, 3] : [dest];
+  for (const s of slots) kitSliceDev.fill(0, s * 16 * KITSLICE.ENTRY, (s + 1) * 16 * KITSLICE.ENTRY);
+  pads.forEach((p, l) => {
+    const s = kitSliceOf(p);
+    if (!s) return;
+    if (s.end <= s.start) return;   /* (2.8.10) never write a degenerate range: under v18 end == 0 with a real start means "to the sample end", so the editor always writes an explicit end (only all-zero is no slice) */
+    const baked = kitPad(p), [pred, idx] = imaStateAt(baked, s.start);
+    kitSlicePutEntry(kitSliceSlotFor(l, dest, pads), l, s.start, s.end, pred, idx);
+  });
+  return kitSliceWrite();
+}
+function kitSliceClearSlot(k) {   /* a slot replaced from the Samples page: its markers must not slice fresh samples */
+  if (!dev || !dev.info || dev.info.proto < 16) return false;   /* no marker store on an old firmware: nothing to clear */
+  kitSliceDev.fill(0, k * 16 * KITSLICE.ENTRY, (k + 1) * 16 * KITSLICE.ENTRY);
+  return kitSliceWrite();
+}
+let kitSlicePending = false;   /* a marker write deferred (the song was playing, or the kit had not landed yet) */
 async function kitSliceCommit() {   /* after a marker change: write the markers to the FM-1 at once.
    A marker change is a tiny write (object 13), so it goes immediately, with no settle delay — but only
    when a slot is picked: before that, the FM-1's slot holds another kit, and these markers would
-   slice it. If the kit itself has never been written, write it first, then its markers. */
+   slice it. If the kit itself has never been written, write it first, then its markers.
+   (2.8.11) a commit refused while the song plays (bkStop, rc 3) is DEFERRED, not dropped: it is
+   retried on the next kit write or marker change, once the FM-1 has stopped. */
   if (!dev || kitDraft.slot == null) return;
   try {
     if (!kitDraft.sent) await kitWriteNow();
-    if (!kitDraft.sent) { sayK("kitSliceWriteFail"); return; }   /* (2.8.10) the kit never landed (its write failed, or one is busy): say so, instead of silently leaving the old markers */
+    if (!kitDraft.sent) { kitSlicePending = true; sayK("kitSliceWriteFail"); return; }   /* (2.8.10) the kit never landed (its write failed, or one is busy): say so, instead of silently leaving the old markers */
     await kitSliceSyncFromDraft();   /* only when the kit is on the FM-1: otherwise the markers would slice the old kit in the slot */
-  } catch (e) { report(e); }
+    kitSlicePending = false;
+  } catch (e) {
+    if (e && e.code === "bkStop") { kitSlicePending = true; bkReport(e); return; }   /* the song plays: the markers wait until it stops */
+    report(e);
+  }
 }
 function kitSliceZoom(f) {   /* zoom the waveform in (2) or out (0.5), around the slice's midpoint */
   const p = kitDraft.pads[kitDraft.sel];
@@ -8884,7 +8922,13 @@ function renderKits() {
           kitMeter();
           kitWriteSoon();   /* (2.8.9) pitch / gain write when the control stops moving (500 ms) */
         });
-        inp.addEventListener("change", () => kitStartLane(l));
+        inp.addEventListener("change", async () => {   /* (2.8.11) the preview waits for the slider's write to land:
+           cancel the settle timer, write now, drain any queued write, then play — so the preview is the new pitch/gain */
+          if (kitWriteTimer) { clearTimeout(kitWriteTimer); kitWriteTimer = null; }
+          await kitWriteNow();
+          await kitWriteDrain();
+          kitStartLane(l);
+        });
         pu[key] = { inp, val, fmt };
         return el("div", { class: "row3" }, el("span", { text: lab }), inp, val);
       };
@@ -9088,12 +9132,18 @@ async function kitWriteNow() {
     if (kitUi) kitUi.wrote.textContent = "";
   }
   kitWriteBusy = false;
-  if (kitWritePending) { kitWritePending = false; kitWriteNow(); }
+  if (kitWritePending) { kitWritePending = false; kitWriteNow(); }   /* the queued write runs next; it flushes the pending markers when it lands */
+  else if (done && kitSlicePending) { kitSlicePending = false; kitSliceCommit(); }   /* (2.8.11) a marker write deferred while the kit had not landed: now that it has, the markers go */
   renderKits();
 }
 function kitWriteSoon(ms = 500) {   /* pitch / gain / name: write when the control stops moving */
   if (kitWriteTimer) clearTimeout(kitWriteTimer);
   kitWriteTimer = setTimeout(() => { kitWriteTimer = null; kitWriteNow(); }, ms);
+}
+async function kitWriteDrain(timeoutMs = 10000) {   /* (2.8.11) wait until no kit write is running or queued (a write
+   queued behind a busy one is started by the busy one's tail, so polling both flags drains the chain) */
+  const t0 = Date.now();
+  while ((kitWriteBusy || kitWritePending) && Date.now() - t0 < timeoutMs) await new Promise((r) => setTimeout(r, 50));
 }
 async function kitEraseSlot(k) {   /* erase one slot (a pair part the kit leaves empty, or a cleared kit), no confirm */
   let done = false;
@@ -9118,12 +9168,14 @@ async function kitPickSlot(d) {
   if (kitDraft.slot === d) return;
   const had = kitDraft.slot, any = kitDraft.pads.some(Boolean);
   const unsent = any && (had == null || kitWrittenSlot !== had || !kitDraft.sent);
-  let destFull = false;
-  try { destFull = await kitSlotIsFull(d); } catch (e) { destFull = false; }
+  let destFull = false, destInst = false;
+  try { const kinds = await kitSlotKindsOf(d); destFull = kinds.some((k) => k !== "empty"); destInst = kinds.some((k) => k === "inst"); } catch (e) { destFull = false; }
   if (destFull && (had == null || any)) {
-    const msg = unsent
-      ? (had != null ? t("kitSwitchConfirm").replace("{x}", kitDest(d)).replace("{y}", kitDest(had)) : t("kitConfirm").replace("{x}", kitDest(d)))
-      : t("kitPickConfirm").replace("{x}", kitDest(d));
+    const msg = destInst
+      ? `${kitDest(d)} currently contains an instrument sound. Selecting this slot will overwrite it. Export it first if you want to save it.`
+      : unsent
+        ? (had != null ? t("kitSwitchConfirm").replace("{x}", kitDest(d)).replace("{y}", kitDest(had)) : t("kitConfirm").replace("{x}", kitDest(d)))
+        : t("kitPickConfirm").replace("{x}", kitDest(d));
     if (!confirm(msg)) { renderKits(); return; }
   }
   if (unsent) {   /* an imported kit with no slot yet: the pick is where it lands */
@@ -9140,15 +9192,18 @@ async function kitPickSlot(d) {
   }
   renderKits();
 }
-async function kitSlotIsFull(d) {   /* (2.8.10) does the destination hold anything (a kit or an instrument)? */
+async function kitSlotKindsOf(d) {   /* (2.8.11) what the destination slot(s) hold: the cached kinds, or a header read */
   const ks = kitSlots(d);
-  if (kitSlotKinds) return ks.some((k) => kitSlotKinds[k] && kitSlotKinds[k] !== "empty");
-  if (!dev || typeof bkReadRange !== "function") return false;
+  if (kitSlotKinds) return ks.map((k) => kitSlotKinds[k] || "empty");
+  const kinds = [];
   for (const k of ks) {
-    try { if (kitSlotKind(await bkReadRange(32 + k, 0, SMP.HDR_LEN)) !== "empty") return true; }
-    catch (e) { /* unreadable: treat as empty */ }
+    try { kinds.push(kitSlotKind(await bkReadRange(32 + k, 0, SMP.HDR_LEN))); }
+    catch (e) { kinds.push("empty"); }
   }
-  return false;
+  return kinds;
+}
+async function kitSlotIsFull(d) {   /* (2.8.10) does the destination hold anything (a kit or an instrument)? */
+  return (await kitSlotKindsOf(d)).some((k) => k !== "empty");
 }
 async function kitReadSlotKit(d) {   /* (2.8.10) the picked slot's kit as draft pads (its ADPCM as-is, its
    markers from object 13). An empty slot, an instrument, or no FM-1: an empty draft. Null only
@@ -9156,7 +9211,7 @@ async function kitReadSlotKit(d) {   /* (2.8.10) the picked slot's kit as draft 
   const empty = { name: "", pads: Array(16).fill(null) };
   if (!dev || typeof bkReadSlot !== "function") return empty;
   try {
-    if (typeof kitSliceLoaded !== "undefined" && !kitSliceLoaded && typeof kitSliceRead === "function") await kitSliceRead();
+    await kitSliceRead();   /* (2.8.11) a fresh read, not the flag: the mirror may be stale after a marker write (rc 5 until a fresh list) */
     const slots = kitSlots(d), raws = [];
     for (const s of slots) raws.push(await bkReadSlot(s));
     if (raws.some((r) => kitSlotKind(r) === "inst")) return empty;
@@ -9175,7 +9230,7 @@ function kitPadsFromRaws(slots, raws) {   /* (2.8.10) a slot's raw image + its m
       const data = raw.subarray(SMP.DATA_OFF + z.off, SMP.DATA_OFF + z.off + Math.ceil(z.n / 2));
       const e = kitSliceEntry(slot, lane);
       pads[lane] = { s: imaDecode(data, z.n), adpcm: data, fname: name || `USR${slot + 1}`, tune: 0, gain: 0, len: 0 };
-      if (e && (e.start !== 0 || e.end !== z.n)) pads[lane].slice = { start: e.start, end: e.end };
+      if (e) { const en = e.end === 0 ? z.n : e.end; if (e.start !== 0 || en !== z.n) pads[lane].slice = { start: e.start, end: en }; }   /* (v18) end == 0 is a slice to the sample end */
       files.push({ name: adpcm, data });
     }
   });
@@ -9259,25 +9314,39 @@ async function kitUploadPads(pads, name, dest) {
     const sub = pads.map((p, l) => (parts[j].includes(l) ? p : null));
     done = await smpUpload(k, kitProg(), false, { name: name || "KIT", files: kitZones(sub) }, true);
   }
-  if (done) { try { await kitSliceSyncPads(pads, dest); } catch (e) { report(e); } }
+  if (done) {
+    try { await kitSliceSyncPads(pads, dest); }
+    catch (e) {
+      if (e && e.code === "bkStop") { kitSlicePending = true; bkReport(e); }   /* the song plays: the samples landed, the markers wait */
+      else { report(e); done = false; }   /* (2.8.11) markers lost: the upload does not report success */
+    }
+  }
   return done;
 }
 /* read part of a backup object (a slot header, or a slot's data): BK_GET in 256-byte chunks, no CRC
    check (the CRC covers the whole object) */
 async function bkReadRange(id, off, n) {
   const out = new Uint8Array(n);
-  let got = 0;
+  let got = 0, listed = false;   /* (2.8.11) the FM-1 refuses a read until a fresh list is asked for (rc 5): list once, then retry that chunk */
   while (got < n) {
     const m = Math.min(256, n - got);
-    const g = parse[CMD.BK_GET](await rq(req.bkGet(id, off + got, m), { timeout: 1500, retries: 2 }));
+    let g = parse[CMD.BK_GET](await rq(req.bkGet(id, off + got, m), { timeout: 1500, retries: 2 }));
+    if (g.rc === 5 && !listed) {
+      listed = true;
+      await rq(req.bkList(), { timeout: 5000, retries: 0 });   /* a fresh list, then the same chunk once more */
+      g = parse[CMD.BK_GET](await rq(req.bkGet(id, off + got, m), { timeout: 1500, retries: 2 }));
+    }
     if (g.rc) throw new Error(`bk get rc ${g.rc}`);
     out.set(g.data.subarray(0, Math.min(m, g.data.length)), got);
     got += m;
   }
   return out;
 }
-async function bkReadSlot(k) {   /* a USR slot's raw image (backup object 32+k): header first, then its data */
-  const head = await bkReadRange(32 + k, 0, SMP.DATA_OFF);
+async function bkReadSlot(k) {   /* a USR slot's raw image (backup object 32+k): header first, then its data.
+   (2.8.11) a slot the FM-1 does not list (rc 1) is empty, not an error: an all-zero header reads as an empty slot. */
+  let head;
+  try { head = await bkReadRange(32 + k, 0, SMP.DATA_OFF); }
+  catch (e) { if (/bk get rc 1/.test(e.message)) return new Uint8Array(SMP.HDR_LEN); throw e; }
   const dv = new DataView(head.buffer);
   if (dv.getUint32(0, true) !== 0x504D5346) return head.slice(0, SMP.HDR_LEN);   /* empty / erased: no data */
   const len = dv.getUint32(16, true), raw = new Uint8Array(SMP.DATA_OFF + len);
@@ -9324,7 +9393,7 @@ async function kitSlotKindRead() {
 async function kitExportSlot(k) {
   if (!dev) return;
   try {
-    if (!kitSliceLoaded) await kitSliceRead();
+    await kitSliceRead();   /* (2.8.11) a fresh read: the mirror may be stale after a marker write */
     const slots = kitSlots(k);
     const raws = [];
     for (const s of slots) raws.push(await bkReadSlot(s));
