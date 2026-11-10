@@ -480,6 +480,15 @@
   .pad .acts { display: flex; gap: 4px; }
   .pad .acts button { padding: 3px 8px; }
   .pad.playing canvas { outline: 1px solid var(--c); }
+  .pad.sel { outline: 2px solid var(--c); outline-offset: -2px; }   /* (2.8.8) selected for slicing */
+  .pad.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }   /* (2.8.8) picked up to move */
+  .pad.drop-target { outline: 2px solid var(--fg); outline-offset: -2px; }
+  /* ---- drum kit slicing (2.8.8): one waveform for the selected pad, below the grid ---- */
+  .slice { border-top: 1px solid var(--line); padding: 12px 0 4px; margin-top: 8px; }
+  .slice canvas { width: 100%; height: 140px; display: block; background: var(--s1); cursor: crosshair; touch-action: none; }
+  .slice .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+  .slice .bar .val { color: var(--fg2); min-width: 78px; }
+  .slice .bar button { padding: 3px 8px; }
 
   /* ---- drum pads: the 16-pad block (MIDI notes 36-51), Ableton Drum Rack order ---- */
   .dpgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
@@ -914,7 +923,7 @@
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
       <button id="install" class="pri" data-t="install" hidden></button>
-      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.7.html" data-t="offline"></a><!--/DL-->
+      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.8.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -1923,6 +1932,24 @@ function imaEncode(s, loopStart = 0) {
   return { data: out, pred: atLoop[0], idx: atLoop[1] };
 }
 
+/* the IMA ADPCM state (predictor, step index) after encoding samples [0, at): the decoder state at
+   sample `at`, for a slice start — the same loop as imaEncode, without building the nibbles */
+function imaStateAt(s, at) {
+  let pred = 0, idx = 0;
+  for (let n = 0; n < at && n < s.length; n++) {
+    const step = IMA_STEP[idx];
+    let diff = s[n] - pred, code = 0;
+    if (diff < 0) { code = 8; diff = -diff; }
+    let vd = step >> 3;
+    if (diff >= step) { code |= 4; diff -= step; vd += step; }
+    if (diff >= step >> 1) { code |= 2; diff -= step >> 1; vd += step >> 1; }
+    if (diff >= step >> 2) { code |= 1; vd += step >> 2; }
+    pred = Math.max(-32768, Math.min(32767, code & 8 ? pred - vd : pred + vd));
+    idx = Math.max(0, Math.min(88, idx + IMA_IDX[code & 7]));
+  }
+  return [pred, idx];
+}
+
 /* WAV: PCM 8/16/24/32 or float, any channel count, mixed to mono -> {sr, x} (gen_samples.read_any_wav) */
 function parseWav(buf) {
   const d = new Uint8Array(buf), v = new DataView(d.buffer, d.byteOffset, d.byteLength);
@@ -2469,9 +2496,10 @@ function b64dec(s) {
    6..7 the user preset banks, 32..35 the sample slots USR1..4 (35, USR4: SLOOP 2.4) */
 /* RESTORE: the objects in the order they are written back (banks first; 8 = the FM6 patch bank, firmware v9: a
    file without it restores fine, a v8 device gets no object 8 sent; 9 = the SYN drum kits, firmware v10, likewise) */
-const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 10, 11, 12, 2, 3, 4, 5, 0, 1] };   /* 10: MIDI LEARN (2.6),
+const BK = { FORMAT: "sloop-backup", VERSION: 1, SAMPLES: [32, 33, 34, 35], RESTORE: [6, 7, 8, 9, 10, 11, 12, 13, 2, 3, 4, 5, 0, 1] };   /* 10: MIDI LEARN (2.6),
                                                        * 11: your theme (2.7, before the settings: they say whether it is shown),
-                                                       * 12: the drum map + knob speed (before the settings too) */
+                                                       * 12: the drum map + knob speed (before the settings too),
+                                                       * 13: the kit slices (2.8.8, before the settings too) */
 class BackupError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 /* read everything; progress(done, total bytes) */
 async function backupCapture(rq, info, progress = () => {}) {
@@ -3038,7 +3066,7 @@ function makeMockDevice(opt = {}) {
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
-  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : 15;   /* INFO's protocol (2.8.6: the drum-pad learn is gone) */
+  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : opt.v15 ? 15 : 16;   /* INFO's protocol (2.8.8: the kit slices are object 13) */
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -3182,6 +3210,7 @@ function makeMockDevice(opt = {}) {
   const v9 = !opt.legacy && !opt.v3 && !opt.noBackup && !opt.v7 && !opt.v8;   /* SLOOP 2.4: FM6 patches */
   const v10 = v9 && !opt.v9;                         /* SLOOP 2.5: the SYN drum kits */
   const v11 = v10 && !opt.v10;                       /* SLOOP 2.7: your theme (backup object 11) */
+  const v16 = v11 && !opt.v15;                       /* Lowtide 2.8.8: the kit slices (backup object 13) */
   /* demo patterns of the mock only (the LIVE firmware has no factory patterns: a preset never writes the
      sequencer); used to seed the mock's user presets and track 1 as if they had been recorded */
   const T_ = 4;
@@ -3220,6 +3249,7 @@ function makeMockDevice(opt = {}) {
     dsyn: null, dsynStored: null, dsynPlayed: [],  /* v10: the SYN kits (RAM, flash), the auditions heard */
     ml: null,                                       /* 2.6: the MIDI LEARN map (seq.c ml_tab, 32 x 2 bytes), null: none */
     drumMap: null,                                  /* the drum map + knob speed (object 12, 17 bytes), null: the default */
+    kitSlice: null,                                 /* (2.8.8) the kit slices (object 13, 768 bytes), null: the default (all zero) */
     bkSnap: null, bkPut: null,
     watch: false, v4: false, lastReq: 0, playing: false,
     /* v12 (LIVE): the transport's start, the sections (A..D: playing, asked for at a time), song mode, SONG REC, fills,
@@ -3613,6 +3643,8 @@ function makeMockDevice(opt = {}) {
                                                                                     * default (editor.c, project.c midi_part_default) */
           ...(v10 && st.drumMap && !drumMapDefault(st.drumMap) ? [[12, st.drumMap.slice()]] : []),   /* the drum map +
                                                                                     * knob speed (object 12): only when not the default */
+          ...(v16 && st.kitSlice && st.kitSlice.some(Boolean) ? [[13, st.kitSlice.slice()]] : []),   /* (2.8.8) the kit
+                                                                                    * slices (object 13): only when not the default */
           ...(v11 && st.theme ? [[11, st.theme.slice()]] : []),   /* your theme (2.7): only when there is one */
           ...st.smp.map((_, k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
         st.bkPut = null;
@@ -3633,7 +3665,7 @@ function makeMockDevice(opt = {}) {
         if (opt.noBackup || a.length < 2) return null;
         const op = a[0], id = a[1], r = new Reader(a.slice(2));
         let rc = 1;
-        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9, 10, 12] : []), ...(v11 ? [11] : [])].includes(id)) {
+        if (op === 0 && a.length === 12 && [0, 1, 2, 3, 4, 5, 6, 7, ...(v9 ? [8] : []), ...(v10 ? [9, 10, 12] : []), ...(v11 ? [11] : []), ...(v16 ? [13] : [])].includes(id)) {
           const len = u35dec(r), crc = u35dec(r);
           if ((id >= 2 || len) && len <= 1 << 20) { st.bkPut = { id, len, crc, pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0; }
         } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
@@ -3675,6 +3707,11 @@ function makeMockDevice(opt = {}) {
                 if (![1, 2, 4, 8, 16].includes(b[16])) b[16] = 4;
                 st.drumMap = b;
               }
+            }
+            else if (id === 13) {                           /* (2.8.8) the kit slices (object 13, 768 bytes) */
+              if (P.len !== 768) throw 0;
+              if (st.playing) rc = 3;
+              else st.kitSlice = P.buf.slice();
             }
             else if (id === 9) {                            /* the SYN kits (with the settings: stopped only) */
               const k = DSYN.bankDecode(P.buf);
@@ -4041,6 +4078,70 @@ function previewSnapshot(st, includeSamples = false) {
    plays the zone holding its GM note, at its own pitch). A pad: {s: Int16Array at SMP.RATE (normalised), fname,
    tune: semitones -12..12, gain: dB -24..0, len: samples kept (0 = all)}; pads[l] for lane l, or null. */
 const KIT = { TUNE: 12, GAIN_MIN: -24, FADE: Math.round(SMP.RATE * 0.004) };
+/* ---- kit slices (2.8.8, protocol 16) ----
+   A slice is {start, end} in baked samples (kitPad), kept on the pad object so drag-and-drop and kit export
+   carry it with the sample. On the FM-1 the markers live in a SEPARATE store, backup object 13 (768 bytes:
+   4 slots x 16 lanes x 12 bytes: start u32 LE, end u32 LE exclusive, pred i16 LE, idx u8, 1 spare), keyed by
+   (slot, lane) — the zone header is untouched, so the markers change without re-uploading the sample. The editor
+   keeps a mirror of the FM-1 store (kitSliceDev) and rewrites object 13 when markers change, after a kit upload,
+   or clears a slot's markers when that slot is replaced from the Samples page. An all-zero entry is no slice. */
+const KITSLICE = { OBJ: 13, LEN: 768, ENTRY: 12 };
+let kitSliceDev = new Uint8Array(KITSLICE.LEN);   /* the FM-1's marker store, as last read */
+let kitSliceLoaded = false;                       /* false until read once (or the FM-1 has no object 13) */
+const kitSliceOff = (slot, lane) => (slot * 16 + lane) * KITSLICE.ENTRY;
+function kitSliceEntry(slot, lane) {   /* an entry from the mirror, or null when it is off */
+  const o = kitSliceOff(slot, lane), v = new DataView(kitSliceDev.buffer, kitSliceDev.byteOffset + o, KITSLICE.ENTRY);
+  const end = v.getUint32(4, true);
+  if (end === 0) return null;
+  return { start: v.getUint32(0, true), end, pred: v.getInt16(8, true), idx: v.getUint8(10) };
+}
+function kitSlicePutEntry(slot, lane, start, end, pred, idx) {   /* write an entry into the mirror */
+  const o = kitSliceOff(slot, lane), v = new DataView(kitSliceDev.buffer, kitSliceDev.byteOffset + o, KITSLICE.ENTRY);
+  v.setUint32(0, start, true); v.setUint32(4, end, true); v.setInt16(8, pred, true); v.setUint8(10, idx); v.setUint8(11, 0);
+}
+function kitSliceOf(p) { return p && p.slice ? p.slice : null; }   /* a pad's slice, or null (whole sound) */
+function kitSliceRange(p) {   /* the baked samples to play: the slice, clamped to the pad, or the whole pad */
+  const n = kitLen(p), s = kitSliceOf(p);
+  if (!s) return { start: 0, end: n };
+  return { start: Math.max(0, Math.min(n, s.start)), end: Math.max(0, Math.min(n, s.end)) };
+}
+function kitSliceSlot(lane) {   /* the slot a lane's zone goes to in the current draft */
+  if (kitDraft.kind === KIT_PAIR) { const sp = kitSplit(kitDraft.pads); return sp && sp[1].includes(lane) ? 3 : 2; }
+  return kitDraft.slot;
+}
+async function kitSliceRead() {   /* mirror object 13 from the FM-1; a firmware without it just leaves zeros */
+  kitSliceDev.fill(0); kitSliceLoaded = true;
+  if (!dev) return;
+  try {
+    const L = parse[CMD.BK_LIST](await rq(req.bkList(), { timeout: 5000, retries: 0 }));
+    if (L.rc) throw new Error(`LIST rc ${L.rc}`);
+    const it = L.items.find((x) => x.id === KITSLICE.OBJ);
+    if (!it) return;   /* the device lists object 13 only when non-default: no slices */
+    const bytes = await bkReadObj(rq, it);
+    if (bytes.length === KITSLICE.LEN) kitSliceDev.set(bytes);
+  } catch (e) { /* an old firmware, or a lost link: the markers stay in the kit draft only */ }
+}
+async function kitSliceWrite() {   /* write the mirror back; needs protocol 16 (Lowtide 2.8.8) */
+  if (!dev || !dev.info || dev.info.proto < 16) return false;
+  await bkWriteObj(rq, KITSLICE.OBJ, kitSliceDev);
+  return true;
+}
+function kitSliceSyncFromDraft() {   /* rebuild the mirror for the draft's slot(s) from the draft pads, then write */
+  if (!dev) return;
+  const slots = kitDraft.kind === KIT_PAIR ? [2, 3] : [kitDraft.slot];
+  for (const s of slots) kitSliceDev.fill(0, s * 16 * KITSLICE.ENTRY, (s + 1) * 16 * KITSLICE.ENTRY);
+  kitDraft.pads.forEach((p, l) => {
+    const s = kitSliceOf(p);
+    if (!s) return;
+    const baked = kitPad(p), [pred, idx] = imaStateAt(baked, s.start);
+    kitSlicePutEntry(kitSliceSlot(l), l, s.start, s.end, pred, idx);
+  });
+  return kitSliceWrite();
+}
+function kitSliceClearSlot(k) {   /* a slot replaced from the Samples page: its markers must not slice fresh samples */
+  kitSliceDev.fill(0, k * 16 * KITSLICE.ENTRY, (k + 1) * 16 * KITSLICE.ENTRY);
+  return kitSliceWrite();
+}
 /* a pad as it goes to the slot: tuned (played faster or slower, as a sampler does), cut, faded out, its gain */
 function kitPad(p) {
   let x = Array.from(p.s);
@@ -4869,6 +4970,15 @@ const TEXT = {
     kitUsing: "ドラムトラックの KIT: ", kitNoKit: "このファームウェアのドラムトラックには USR キットがありません（2.4 以降）。",
     kitConfirm: "{x} を上書きしてこのキットを書き込みますか？", kitAssigned: "振り分けました: ",
     kitFull: "16 パッドとも埋まっています", kitLoaded: "ZIP を読み込みました: ",
+    kitExport: "キットを保存", kitImport: "キットを開く", kitExported: "キットを保存しました: ", kitImported: "キットを読み込みました: ",
+    kitImportBad: "キットファイルが読めません: ",
+    kitSliceTitle: "スライス", kitSliceHint: "パッドの名前をクリックするとスライスします。",
+    kitSliceStart: "開始", kitSliceEnd: "終了", kitSliceLen: "長さ", kitSlicePlay: "スライスを試聴",
+    kitSliceClear: "スライスを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceFit: "全体",
+    kitSliceStored: "マーカーは FM-1 に保存されるので、サンプルを再送せずに変えられます。",
+    kitSliceUnsent: "マーカーはこのキット内に保持されます。キットを書き込むと FM-1 に保存され、その後はサンプルを再送せずに変えられます。",
+    kitSliceOld: "マーカーには FM-1 の Lowtide 2.8.8 が必要です — それまではこのキット内に保持されます。",
+    kitSliceWritten: "マーカーを FM-1 に書き込みました。",
     needDevice: "FM-1 を接続すると編集できます。", smpNone: "このファームウェアにはユーザーサンプルのスロットがありません。",
     bankConnect: "FM-1 を接続すると本体のユーザープリセットも扱えます。", bankNone: "このファームウェアにはユーザープリセットがありません。",
     drumNote: "ドラムトラックにはエンジンもプリセットもありません。レベル・パン・ミュートは「トラック」、キットとパターンは「シーケンサー」で。",
@@ -4919,7 +5029,7 @@ const TEXT = {
     fm6OtherMaker: "別のメーカーの SysEx です", fm6Universal: "音色ではない汎用 SysEx です",
     fm6Exported: "バンクを書き出しました",
     kitStep1: "音",
-    kitStep1Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックで試聴。パッドごとにピッチ・音量・長さ。",
+    kitStep1Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックで試聴。パッドごとにピッチ・音量・長さ。パッドを別のパッドにドラッグすると入れ替え、空のパッドへは移動します。パッドの名前をクリックすると下でスライスできます。",
     kitFitHelp: "長すぎるとき: 長い音（クラッシュ、オープンハット）を短くして収めます。",
     kitStep2: "置き場所",
     kitCapBig: "大きなキット · 約 15 秒",
@@ -5206,6 +5316,15 @@ const TEXT = {
     kitUsing: "Drum track KIT: ", kitNoKit: "This firmware's drum track has no USR kits (SLOOP 2.4 and later).",
     kitConfirm: "Replace {x} with this kit?", kitAssigned: "Sorted: ",
     kitFull: "All 16 pads are taken", kitLoaded: "ZIP opened: ",
+    kitExport: "Export kit", kitImport: "Import kit", kitExported: "Kit exported: ", kitImported: "Kit imported: ",
+    kitImportBad: "Kit file rejected: ",
+    kitSliceTitle: "Slicing", kitSliceHint: "Click a pad's name to slice it.",
+    kitSliceStart: "Start", kitSliceEnd: "End", kitSliceLen: "Length", kitSlicePlay: "Play slice",
+    kitSliceClear: "Clear slice", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceFit: "Fit",
+    kitSliceStored: "Markers are stored on the FM-1, so you can change them without re-uploading the sample.",
+    kitSliceUnsent: "Markers are kept in this kit; send the kit to write them to the FM-1, then you can change them without re-uploading the sample.",
+    kitSliceOld: "Markers need Lowtide 2.8.8 on the FM-1 — they are kept in this kit until then.",
+    kitSliceWritten: "Markers written to the FM-1.",
     needDevice: "Connect the FM-1 to edit.", smpNone: "This firmware has no user sample slots.",
     bankConnect: "Connect the FM-1 to see its user presets too.", bankNone: "This firmware has no user presets.",
     drumNote: "The drum track has no engine or presets. Level, pan and mute: Tracks; the kit and the pattern: Sequencer.",
@@ -5256,7 +5375,7 @@ const TEXT = {
     fm6OtherMaker: "SysEx from another manufacturer", fm6Universal: "Universal SysEx, not voice data",
     fm6Exported: "Bank exported",
     kitStep1: "Your sounds",
-    kitStep1Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to hear it. Each pad has its pitch, gain and length.",
+    kitStep1Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to hear it. Each pad has its pitch, gain and length. Drag a pad to another to swap them, or move it to an empty pad. Click a pad's name to slice it below.",
     kitFitHelp: "Too long? Fit shortens the longest sounds (crashes, open hats) just enough.",
     kitStep2: "Where it goes",
     kitCapBig: "big kit · about 15 s",
@@ -5432,6 +5551,8 @@ function renderPanels() {
     renderKits();
     /* (2.8.4) the builder's note labels follow the drum map: read it if it has not been read yet */
     if (ready && !drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } });
+    /* (2.8.8) the slicing markers, read once per connection */
+    if (ready && !kitSliceLoaded) op(async () => { try { await kitSliceRead(); } catch (e) { report(e); } });
   }
   if (want === "drumpads") { drumPadsRender(); if (ready) { if (!drumPads.loaded) op(async () => { try { await drumPadsRead(); } catch (e) { report(e); } }); op(async () => { try { await drumPadsKitRead(); } catch (e) { report(e); } }); } }
   if (want === "drumsynth" && ready) {                 /* (2.5) the SYN kits, read once per connection */
@@ -8114,7 +8235,7 @@ function smpUseOn(i, k) {
 /* ---------------------------------------------------------- drum kit (2.4) --- */
 /* 16 pads, one per drum lane (DRUM_LANES, the white keys F3..), each a sound kitPad tunes, cuts and levels; the kit
    goes to a USR slot as one zone per lane (kitZones) and the drum track plays it with KIT = USR1..USR3 */
-const kitDraft = { name: "", slot: 4, pads: Array(16).fill(null), sel: -1 };   /* slot 0..3: USR1..4; 4: USR3+4 (a big kit) */
+const kitDraft = { name: "", slot: 4, pads: Array(16).fill(null), sel: -1, picked: null, justPicked: false, dragging: false, sent: false };   /* slot 0..3: USR1..4; 4: USR3+4 (a big kit) */
 const KIT_PAIR = 4;
 const kitSlots = (d = kitDraft.slot) => (d === KIT_PAIR ? [2, 3] : [d]);
 const kitDest = (d = kitDraft.slot) => (d === KIT_PAIR ? "USR3+4" : `USR${d + 1}`);
@@ -8141,6 +8262,7 @@ async function kitAddFiles(list, lane = -1) {
   }
   if (done.length) sayK("kitAssigned", done.join(", ") + (full ? " — " + t("kitFull") : ""));
   else if (full) sayK("kitFull");
+  if (done.length) kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
   renderKits();
 }
 async function kitOpenZip(f) {
@@ -8152,18 +8274,19 @@ async function kitOpenZip(f) {
     sayK("kitLoaded", f.name);
   } catch (e) { sayK("smpDecodeFail", `${f.name} (${e.message})`); }
 }
+/* preview a pad through the browser speakers: the slice when one is set (2.8.8), else the whole pad */
 function kitPlayPad(l) {
   const p = kitDraft.pads[l];
   if (!p) return;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!kitAudio) kitAudio = new Ctx();
   if (kitSrc) try { kitSrc.stop(); } catch (e) { /* ended */ }
-  const s = kitPad(p), buf = kitAudio.createBuffer(1, s.length, SMP.RATE), ch = buf.getChannelData(0);
+  const s = kitPad(p), r = kitSliceRange(p), buf = kitAudio.createBuffer(1, s.length, SMP.RATE), ch = buf.getChannelData(0);
   for (let i = 0; i < s.length; i++) ch[i] = s[i] / 32768;
   kitSrc = kitAudio.createBufferSource();
   kitSrc.buffer = buf;
   kitSrc.connect(kitAudio.destination);
-  kitSrc.start();
+  kitSrc.start(0, r.start / SMP.RATE, (r.end - r.start) / SMP.RATE);
   const pad = kitUi && kitUi.pads[l];
   if (pad) { pad.box.classList.add("playing"); kitSrc.onended = () => pad.box.classList.remove("playing"); }
 }
@@ -8179,6 +8302,129 @@ function kitDrawWave(cv, p) {
     const y = Math.max(1, Math.round(pk / 32768 * (h / 2 - 2)));
     g.fillStyle = a < keep ? col.trim() || "#ff621a" : "#36363c";
     g.fillRect(x, h / 2 - y, 1, y * 2);
+  }
+}
+/* (2.8.8) move a sample assignment: drop a pad on another to swap them, or move it to an empty pad.
+   The pad object (sample, pitch, gain, length, slice) moves whole, so all its settings carry over. */
+function kitPadDrop(from, to) {
+  if (from == null || to == null || from === to) return;
+  const pads = kitDraft.pads, a = pads[from], b = pads[to];
+  if (!a) return;
+  pads[to] = a; pads[from] = b || null;
+  if (kitDraft.sel === from) kitDraft.sel = to;
+  else if (kitDraft.sel === to) kitDraft.sel = from;
+  kitDraft.picked = null;
+  kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
+  renderKits();
+}
+/* ---- the slicing panel (2.8.8): one waveform for the selected pad, below the grid ---- */
+let kitSliceView = { a: 0, b: 0, for: -1 };   /* the visible window, in baked samples of the selected pad */
+let kitSliceDrag = null;   /* {which: "start"|"end"|"pan", x0, a0, b0, toSample} while a marker or the view is dragged */
+function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a full range is no slice) */
+  const p = kitDraft.pads[lane];
+  if (!p) return;
+  const n = kitLen(p);
+  start = Math.max(0, Math.min(n - 1, Math.round(start)));
+  end = Math.max(start + 1, Math.min(n, Math.round(end)));
+  if (start === 0 && end === n) delete p.slice;
+  else p.slice = { start, end };
+  kitSliceRender();
+}
+async function kitSliceCommit() {   /* after a marker change: rebuild the FM-1 store from the draft and write it.
+   Only when this kit has been sent (kitDraft.sent): before that, the FM-1's slot holds another kit, and these
+   markers would slice it — so they stay in the draft until the kit is sent (kitSend writes them). */
+  if (!dev || !kitDraft.sent) return;
+  try { await kitSliceSyncFromDraft(); } catch (e) { report(e); }
+}
+function kitSliceZoom(f) {   /* zoom the waveform in (2) or out (0.5), around the slice's midpoint */
+  const p = kitDraft.pads[kitDraft.sel];
+  if (!p) return;
+  const n = kitLen(p), rng = kitSliceRange(p), mid = (rng.start + rng.end) / 2;
+  const w = Math.max(Math.round(SMP.RATE * 0.02), Math.min(n, Math.round((kitSliceView.b - kitSliceView.a) / f)));
+  kitSliceView.a = Math.max(0, Math.min(n - w, Math.round(mid - w / 2)));
+  kitSliceView.b = kitSliceView.a + w;
+  kitSliceRender();
+}
+function kitSliceFit() {   /* show the whole pad again */
+  const p = kitDraft.pads[kitDraft.sel];
+  if (!p) return;
+  kitSliceView = { a: 0, b: kitLen(p), for: kitDraft.sel };
+  kitSliceRender();
+}
+function kitSliceNudge(which, ms) {   /* fine-adjust a marker by ms (a button click), then commit and preview */
+  const l = kitDraft.sel, p = kitDraft.pads[l];
+  if (!p) return;
+  const rng = kitSliceRange(p), d = Math.round(ms / 1000 * SMP.RATE);
+  if (which === "start") kitSliceSet(l, rng.start + d, rng.end);
+  else kitSliceSet(l, rng.start, rng.end + d);
+  kitSliceCommit();
+  kitPlayPad(l);
+}
+function kitSliceRender() {   /* the panel's title, readouts and buttons, then the waveform */
+  const u = kitUi;
+  if (!u || !u.slice) return;
+  const l = kitDraft.sel, p = l >= 0 ? kitDraft.pads[l] : null;
+  for (const b of u.sliceNudges) b.disabled = !p;
+  if (!p) {
+    u.sliceTitle.textContent = t("kitSliceTitle");
+    u.sliceNote.textContent = t("kitSliceHint");
+    u.sliceCv.hidden = true;
+    for (const b of [u.sliceZoomOut, u.sliceZoomIn, u.sliceFit, u.slicePlay, u.sliceClear]) b.disabled = true;
+    u.sliceStartVal.textContent = u.sliceEndVal.textContent = u.sliceLenVal.textContent = "\u2014";
+    u.sliceZoomVal.textContent = "";
+    kitSliceDraw();
+    return;
+  }
+  const n = kitLen(p), rng = kitSliceRange(p);
+  if (kitSliceView.for !== l || kitSliceView.b > n || kitSliceView.b <= kitSliceView.a) kitSliceView = { a: 0, b: n, for: l };
+  const ms = (v) => (v / SMP.RATE * 1000).toFixed(1) + " ms";
+  u.sliceTitle.textContent = `${t("kitSliceTitle")} \u2014 ${DRUM_LANES[l][1]}`;
+  u.sliceCv.hidden = false;
+  u.sliceZoomVal.textContent = (n / Math.max(1, kitSliceView.b - kitSliceView.a)).toFixed(1) + "\u00d7";
+  u.sliceZoomOut.disabled = kitSliceView.a === 0 && kitSliceView.b >= n;
+  u.sliceZoomIn.disabled = kitSliceView.b - kitSliceView.a <= Math.max(22, Math.round(SMP.RATE * 0.02));
+  u.slicePlay.disabled = false;
+  u.sliceClear.disabled = !p.slice;
+  u.sliceStartVal.textContent = ms(rng.start);
+  u.sliceEndVal.textContent = ms(rng.end);
+  u.sliceLenVal.textContent = ms(rng.end - rng.start);
+  u.sliceNote.textContent = (dev && dev.info && dev.info.proto < 16) ? t("kitSliceOld")
+    : !dev || !kitDraft.sent ? t("kitSliceUnsent") : t("kitSliceStored");
+  kitSliceDraw();
+}
+function kitSliceDraw() {   /* the selected pad's waveform over the visible window, markers and a time ruler */
+  const u = kitUi;
+  if (!u || !u.sliceCv) return;
+  const cv = u.sliceCv, p = kitDraft.pads[kitDraft.sel];
+  const w = cv.width = Math.max(60, cv.clientWidth || 600), h = cv.height = 140, g = cv.getContext("2d");
+  g.clearRect(0, 0, w, h);
+  if (!p) return;
+  const s = kitPad(p), n = s.length, rng = kitSliceRange(p);
+  const a = kitSliceView.a, b = kitSliceView.b, span = Math.max(1, b - a);
+  const cs = getComputedStyle(cv);
+  const col = (cs.getPropertyValue("--c") || "#ff621a").trim() || "#ff621a";
+  const green = (cs.getPropertyValue("--t2") || "#1ecc70").trim() || "#1ecc70";
+  const mid = Math.round(h * 0.5), amp = h / 2 - 14;
+  for (let x = 0; x < w; x++) {   /* one peak per column; outside the markers it is dimmed */
+    const i0 = a + Math.floor(x / w * span), i1 = Math.max(i0 + 1, a + Math.floor((x + 1) / w * span));
+    let pk = 0;
+    for (let i = i0; i < i1 && i < n; i += 2) pk = Math.max(pk, Math.abs(s[i]));
+    const y = Math.max(1, Math.round(pk / 32768 * amp));
+    g.fillStyle = (i0 >= rng.start && i0 < rng.end) ? col : "#36363c";
+    g.fillRect(x, mid - y, 1, y * 2);
+  }
+  const px = (v) => (v - a) / span * w;
+  g.fillStyle = green; g.fillRect(Math.round(px(rng.start)), 0, 2, h);
+  g.fillStyle = col; g.fillRect(Math.round(px(rng.end)), 0, 2, h);
+  g.font = "11px sans-serif"; g.textBaseline = "top";
+  g.fillStyle = green; g.fillText("START", Math.min(w - 44, Math.max(0, px(rng.start) + 4)), 2);
+  g.fillStyle = col; g.fillText("END", Math.min(w - 28, Math.max(0, px(rng.end) - 30)), 2);
+  const durMs = span / SMP.RATE * 1000, stepMs = durMs > 400 ? 100 : durMs > 100 ? 20 : 5;
+  g.fillStyle = "#888"; g.textBaseline = "bottom";
+  for (let ms = Math.ceil(a / SMP.RATE * 1000 / stepMs) * stepMs; ms < b / SMP.RATE * 1000; ms += stepMs) {
+    const x = px(ms / 1000 * SMP.RATE);
+    g.fillRect(Math.round(x), h - 8, 1, 8);
+    g.fillText(ms + " ms", Math.round(x) + 3, h);
   }
 }
 function renderKits() {
@@ -8202,27 +8448,97 @@ function renderKits() {
     u.prog = el("progress", { max: 1, value: 0, hidden: true });
     u.send = el("button", { class: "pri", ic: "symbol_upload", onclick: kitSend });
     u.use = el("button", { ic: "symbol_drum", onclick: () => kitUse(kitDraft.slot) });
-    u.fit = el("button", { onclick: () => { if (kitFit(kitDraft.pads, kitRoom(), kitSlots().length)) renderKits(); } }, t("kitFit"));
+    u.fit = el("button", { onclick: () => { if (kitFit(kitDraft.pads, kitRoom(), kitSlots().length)) { kitDraft.sent = false; renderKits(); } } }, t("kitFit"));
     u.match = el("button", { ic: "symbol_audio", onclick: kitMatch }, t("matchLevels"));
     u.add = el("button", { ic: "symbol_folder_open", onclick: () => { u.want = -1; u.file.click(); } }, t("kitAdd"));
     u.zip = el("button", { ic: "symbol_download", onclick: kitZip }, t("kitZip"));
-    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; renderKits(); } }, t("kitClear"));
+    u.clear = el("button", { class: "warn", ic: "symbol_trash", onclick: () => { kitDraft.pads = Array(16).fill(null); kitDraft.sel = -1; kitDraft.sent = false; renderKits(); } }, t("kitClear"));
+    /* (2.8.8) import / export the whole kit (name, per-pad settings, slicing markers) as a ZIP */
+    u.exp = el("button", { ic: "symbol_download", onclick: kitExport }, t("kitExport"));
+    u.imp = el("button", { ic: "symbol_folder_open", onclick: () => u.kitFile.click() }, t("kitImport"));
+    u.kitFile = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
+    u.kitFile.addEventListener("change", () => { const f = u.kitFile.files[0]; u.kitFile.value = ""; if (f) kitImport(f); });
+    /* (2.8.8) the slicing panel, below the grid: one waveform for the selected pad, markers, zoom, fine-adjust */
+    u.slice = el("div", { class: "slice" });
+    u.sliceTitle = el("h3", {});
+    u.sliceCv = el("canvas", {});
+    u.sliceZoomOut = el("button", { onclick: () => kitSliceZoom(0.5) }, "−");
+    u.sliceZoomIn = el("button", { onclick: () => kitSliceZoom(2) }, "+");
+    u.sliceFit = el("button", { onclick: kitSliceFit }, t("kitSliceFit"));
+    u.sliceZoomVal = el("span", { class: "val" });
+    u.slicePlay = el("button", { onclick: () => kitPlayPad(kitDraft.sel) }, "▶ " + t("kitSlicePlay"));
+    u.sliceClear = el("button", { class: "warn", onclick: () => { const p = kitDraft.pads[kitDraft.sel]; if (p) { delete p.slice; kitSliceCommit(); renderKits(); } } }, t("kitSliceClear"));
+    u.sliceStartVal = el("span", { class: "val" });
+    u.sliceEndVal = el("span", { class: "val" });
+    u.sliceLenVal = el("span", { class: "val" });
+    const nudge = (which, ms) => el("button", { onclick: () => kitSliceNudge(which, ms) }, (ms > 0 ? "+" : "") + ms + " ms");
+    u.sliceNudges = [nudge("start", -10), nudge("start", -1), nudge("start", 1), nudge("start", 10),
+      nudge("end", -10), nudge("end", -1), nudge("end", 1), nudge("end", 10)];
+    u.sliceNote = el("p", { class: "dim" });
+    u.slice.append(u.sliceTitle, u.sliceCv,
+      el("div", { class: "bar" }, u.sliceZoomOut, u.sliceZoomIn, u.sliceFit, u.sliceZoomVal, u.slicePlay, u.sliceClear),
+      el("div", { class: "bar" }, el("span", { text: t("kitSliceStart") }), u.sliceStartVal, ...u.sliceNudges.slice(0, 4)),
+      el("div", { class: "bar" }, el("span", { text: t("kitSliceEnd") }), u.sliceEndVal, ...u.sliceNudges.slice(4)),
+      el("div", { class: "bar" }, el("span", { text: t("kitSliceLen") }), u.sliceLenVal),
+      u.sliceNote);
+    u.sliceCv.addEventListener("pointerdown", (e) => {   /* drag a marker, or drag the view (pan) when zoomed */
+      if (e.button) return;
+      const p = kitDraft.pads[kitDraft.sel];
+      if (!p) return;
+      const r = u.sliceCv.getBoundingClientRect(), x = e.clientX - r.left, rng = kitSliceRange(p);
+      const toSample = (px) => Math.round(kitSliceView.a + (px / r.width) * (kitSliceView.b - kitSliceView.a));
+      const pxOf = (s) => (s - kitSliceView.a) / (kitSliceView.b - kitSliceView.a) * r.width;
+      const which = Math.abs(x - pxOf(rng.start)) <= 10 ? "start" : Math.abs(x - pxOf(rng.end)) <= 10 ? "end" : "pan";
+      kitSliceDrag = { which, x0: e.clientX, a0: kitSliceView.a, b0: kitSliceView.b, toSample };
+      try { u.sliceCv.setPointerCapture(e.pointerId); } catch (err) { /* gone */ }
+      e.preventDefault();
+    });
+    u.sliceCv.addEventListener("pointermove", (e) => {
+      if (!kitSliceDrag) return;
+      const p = kitDraft.pads[kitDraft.sel];
+      if (!p) return;
+      const r = u.sliceCv.getBoundingClientRect(), n = kitLen(p), rng = kitSliceRange(p);
+      const ms1 = Math.max(1, Math.round(SMP.RATE / 1000));   /* a 1 ms floor between the markers */
+      if (kitSliceDrag.which === "start") kitSliceSet(kitDraft.sel, kitSliceDrag.toSample(e.clientX - r.left), rng.end);
+      else if (kitSliceDrag.which === "end") kitSliceSet(kitDraft.sel, rng.start, kitSliceDrag.toSample(e.clientX - r.left));
+      else {   /* pan: shift the view window by the pointer delta, clamped to the pad */
+        const w = kitSliceDrag.b0 - kitSliceDrag.a0, shift = Math.round((kitSliceDrag.x0 - e.clientX) / r.width * w);
+        kitSliceView.a = Math.max(0, Math.min(n - w, kitSliceDrag.a0 + shift));
+        kitSliceView.b = kitSliceView.a + w;
+        kitSliceDraw();
+      }
+    });
+    const sliceEnd = () => {   /* release: the markers are written to the FM-1, and the slice is heard */
+      if (!kitSliceDrag) return;
+      const d = kitSliceDrag; kitSliceDrag = null;
+      if (d.which !== "pan") { kitSliceCommit(); kitPlayPad(kitDraft.sel); renderKits(); }
+    };
+    u.sliceCv.addEventListener("pointerup", sliceEnd);
+    u.sliceCv.addEventListener("pointercancel", sliceEnd);
     const grid = el("div", { class: "pads" });
     u.grid = grid;   /* (2.8.5) the builder's grid, so renderKits can order it by the Drum Pads layout */
     for (let l = 0; l < 16; l++) {
       const pu = {};
       pu.box = el("div", { class: "pad", "data-l": l });
-      pu.cv = el("canvas", { title: t("kitPlay"), onclick: () => kitPlayPad(l) });
+      pu.cv = el("canvas", { title: t("kitPlay"), onclick: () => { if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; } kitPlayPad(l); } });
       pu.fn = el("div", { class: "fn" });
-      pu.empty = el("div", { class: "empty", onclick: () => { u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
+      pu.empty = el("div", { class: "empty", onclick: () => { if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; } u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
       const knob = (lab, min, max, step, key, fmt) => {
         const inp = el("input", { type: "range", min, max, step });
         const val = el("span", { class: "val" });
         inp.addEventListener("input", () => {
           const p = kitDraft.pads[l];
           if (!p) return;
+          kitDraft.sent = false;   /* (2.8.8) the draft no longer matches the FM-1's kit: its markers wait for the next send */
+          const oldLen = kitLen(p);   /* (2.8.8) a retune or a cut re-bakes the pad: its slice follows the audio */
           p[key] = key === "len" ? Math.round(+inp.value / 1000 * SMP.RATE) : +inp.value;
           if (key === "len" && +inp.value >= +inp.max) p.len = 0;
+          if (p.slice && (key === "tune" || key === "len")) {
+            const nl = kitLen(p), s = Math.round(p.slice.start * nl / Math.max(1, oldLen)), e = Math.round(p.slice.end * nl / Math.max(1, oldLen));
+            if (s >= e || s >= nl) delete p.slice;
+            else p.slice = { start: s, end: Math.min(nl, e) };
+            kitSliceRender();
+          }
           kitPadUpdate(l);
           kitMeter();
         });
@@ -8233,14 +8549,45 @@ function renderKits() {
       pu.ctrls = el("div", {}, knob(t("kitTune"), -KIT.TUNE, KIT.TUNE, 1, "tune"), knob(t("kitGain"), KIT.GAIN_MIN, 0, 1, "gain"),
         knob(t("kitLen"), 10, 2000, 5, "len"));
       pu.acts = el("div", { class: "acts" }, el("button", { onclick: () => kitPlayPad(l) }, "▶ " + t("kitPlay")),
-        el("button", { class: "warn", onclick: () => { kitDraft.pads[l] = null; renderKits(); } }, "×"));
+        el("button", { class: "warn", onclick: () => { if (kitDraft.sel === l) kitDraft.sel = -1; kitDraft.pads[l] = null; kitDraft.sent = false; renderKits(); } }, "×"));
       pu.key = el("span", { class: "key" });   /* (2.8.6) no note info: the sound only */
-      pu.box.append(el("div", { class: "ph" }, el("b", { text: DRUM_LANES[l][1] }), pu.key),
-        pu.empty, pu.cv, pu.fn, pu.ctrls, pu.acts);
+      pu.ph = el("div", { class: "ph", onclick: () => {   /* (2.8.8) the name selects the pad for slicing */
+        if (kitDraft.justPicked) { kitDraft.justPicked = false; return; }
+        if (kitDraft.picked) { kitPadDrop(kitDraft.picked.lane, l); return; }
+        kitDraft.sel = kitDraft.pads[l] ? l : -1;
+        renderKits();
+      } }, el("b", { text: DRUM_LANES[l][1] }), pu.key);
+      pu.box.append(pu.ph, pu.empty, pu.cv, pu.fn, pu.ctrls, pu.acts);
+      /* (2.8.8) drag a pad to another to swap it, or move it to an empty pad; long-press picks it up (touch) */
+      pu.box.draggable = true;
+      let lpTimer = 0;
+      pu.box.addEventListener("pointerdown", () => {
+        if (!kitDraft.pads[l]) return;
+        lpTimer = setTimeout(() => {
+          if (kitDraft.dragging) return;
+          kitDraft.picked = { lane: l };
+          kitDraft.justPicked = true;
+          setTimeout(() => { kitDraft.justPicked = false; }, 800);
+          renderKits();
+        }, 450);
+      });
+      const clearLp = () => clearTimeout(lpTimer);
+      pu.box.addEventListener("pointerup", clearLp);
+      pu.box.addEventListener("pointercancel", clearLp);
+      pu.box.addEventListener("pointerleave", clearLp);
+      pu.box.addEventListener("dragstart", (e) => {
+        clearTimeout(lpTimer);
+        if (!kitDraft.pads[l]) { e.preventDefault(); return; }
+        kitDraft.dragging = true;
+        e.dataTransfer.setData("text/plain", JSON.stringify({ from: "kitpad", lane: l }));
+        e.dataTransfer.effectAllowed = "move";
+      });
+      pu.box.addEventListener("dragend", () => { kitDraft.dragging = false; });
       pu.box.addEventListener("dragover", (e) => { e.preventDefault(); pu.box.classList.add("over"); });
       pu.box.addEventListener("dragleave", () => pu.box.classList.remove("over"));
       pu.box.addEventListener("drop", (e) => {
         e.preventDefault(); e.stopPropagation(); pu.box.classList.remove("over");   /* (not the card's drop too) */
+        try { const d = JSON.parse(e.dataTransfer.getData("text/plain")); if (d && d.from === "kitpad") { kitPadDrop(d.lane, l); return; } } catch (err) { /* not a pad drag */ }
         if (e.dataTransfer.files.length) kitAddFiles([...e.dataTransfer.files], l);
       });
       grid.append(pu.box);
@@ -8252,8 +8599,8 @@ function renderKits() {
       el("h2", { ic: "symbol_drum" }, t("kitTitle")),
       el("p", { class: "dim", text: t("kitHelp") }),
       step(1, t("kitStep1"), el("p", { class: "dim", text: t("kitStep1Help") }),
-        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, u.add, u.file, u.zip, u.clear), u.meterBox),
-        grid, el("div", { class: "bar" }, u.match, el("span", { class: "dim", text: t("matchHelp") })),
+        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, u.add, u.file, u.zip, u.exp, u.imp, u.kitFile, u.clear), u.meterBox),
+        grid, u.slice, el("div", { class: "bar" }, u.match, el("span", { class: "dim", text: t("matchHelp") })),
         el("div", { class: "bar" }, u.fit, el("span", { class: "dim", text: t("kitFitHelp") }))),
       step(2, t("kitStep2"), u.dest, u.destNote,
         el("div", { class: "bar" }, el("span", { class: "dim", text: t("kitName") }), u.name)),
@@ -8286,12 +8633,15 @@ function renderKits() {
   u.grid.append(...[...Array(16).keys()].sort((a, b) => kitLaneGridPos(a) - kitLaneGridPos(b) || a - b)
     .map((l) => u.pads[l].box));
   kitMeter();
+  kitSliceRender();
 }
 function kitPadUpdate(l) {
   const pu = kitUi && kitUi.pads[l], p = kitDraft.pads[l];
   if (!pu) return;
   pu.empty.hidden = !!p;
   pu.cv.hidden = pu.fn.hidden = pu.ctrls.hidden = pu.acts.hidden = !p;
+  pu.box.classList.toggle("sel", kitDraft.sel === l);   /* (2.8.8) selected for slicing */
+  pu.box.classList.toggle("picked", !!(kitDraft.picked && kitDraft.picked.lane === l));   /* (2.8.8) picked up to move */
   /* (2.8.6) no note or MIDI info on a sound: just the sound, at its Drum Pads position (renderKits
      orders the pads by kitLaneGridPos). */
   pu.key.textContent = "";
@@ -8341,12 +8691,14 @@ function kitButtons() {
   u.use.disabled = !ok || smpBusy || !sl.some((x) => x && x.zones) || !hasTracks();
   u.use.title = dev && dev.kitNames && kitIndexOf(kitDraft.slot) < 0 ? t("kitNoKit") : "";
   u.zip.disabled = !any;
+  u.exp.disabled = !any;
   u.match.disabled = kitDraft.pads.filter(Boolean).length < 2;
 }
 /* the pads to the same heard level (as they sound with their pitch and length): Gain set on each, by ear after */
 function kitMatch() {
   const g = matchGains(kitDraft.pads.map((p) => (p ? kitPad({ ...p, gain: 0 }) : null)));
   kitDraft.pads.forEach((p, l) => { if (p) p.gain = g[l]; });
+  kitDraft.sent = false;   /* the draft no longer matches the FM-1's kit */
   sayK("levelsMatched");
   renderKits();
 }
@@ -8368,8 +8720,9 @@ async function kitSend() {
       continue;
     }
     const sub = kitDraft.pads.map((p, l) => (parts[j].includes(l) ? p : null));
-    done = await smpUpload(k, kitProg(), false, { name: kitDraft.name || "KIT", files: kitZones(sub) });
+    done = await smpUpload(k, kitProg(), false, { name: kitDraft.name || "KIT", files: kitZones(sub) }, true);
   }
+  if (done) { kitDraft.sent = true; try { await kitSliceSyncFromDraft(); } catch (e) { report(e); } }   /* (2.8.8) this kit's markers, as object 13 */
   if (kitProg()) kitProg().hidden = true;
   renderKits();
   if (done) sayK("kitSent", kitDest(d));
@@ -8392,10 +8745,63 @@ function kitZip() {
   if (!files.length) return;
   downloadBytes(`${fileSlug(kitDraft.name || "kit")}-drumkit.zip`, zipStore(files));
 }
+/* (2.8.8) the whole kit as a ZIP: kit.json (name, per-pad assignment, pitch, gain, length, slice) plus the
+   ORIGINAL samples as WAVs, one per pad — an import rebuilds the draft from them, so a kit round-trips */
+function kitExport() {
+  const pads = [];
+  const files = [];
+  kitDraft.pads.forEach((p, l) => {
+    if (!p) return;
+    const wav = `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.wav`;
+    pads.push({ lane: l, file: p.fname, wav, tune: p.tune, gain: p.gain, len: p.len, slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
+    files.push({ name: wav, data: wavFile(p.s) });
+  });
+  if (!files.length) return;
+  const kit = { format: "lowtide-drum-kit", version: 1, name: kitDraft.name || "KIT", pads };
+  files.unshift({ name: "kit.json", data: new TextEncoder().encode(JSON.stringify(kit, null, 2)) });
+  downloadBytes(`${fileSlug(kitDraft.name || "kit")}-kit.zip`, zipStore(files));
+  sayK("kitExported", kitDraft.name || "KIT");
+}
+async function kitImport(f) {
+  let zip;
+  try { zip = await zipRead(new Uint8Array(await f.arrayBuffer())); }
+  catch (e) { sayK("kitImportBad", t("kitImportBad") + e.message); return; }
+  const json = zip.find((x) => x.name === "kit.json" || x.name.endsWith("/kit.json"));
+  if (!json) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
+  let kit;
+  try { kit = JSON.parse(new TextDecoder().decode(json.data)); }
+  catch (e) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
+  if (!kit || kit.format !== "lowtide-drum-kit" || !Array.isArray(kit.pads)) { sayK("kitImportBad", t("kitImportBad") + "kit.json"); return; }
+  const bad = [];
+  const pads = Array(16).fill(null);
+  for (const e of kit.pads) {
+    const l = e && e.lane;
+    if (typeof l !== "number" || l < 0 || l > 15 || pads[l]) { bad.push(e && e.file ? e.file : "?"); continue; }
+    const wav = zip.find((x) => x.name === e.wav || x.name.endsWith("/" + e.wav) || x.name === e.file || x.name.endsWith("/" + e.file));
+    if (!wav) { bad.push(e.file || "?"); continue; }
+    let dec;
+    try { dec = await decodeFile(new File([wav.data], wav.name)); }
+    catch (err) { bad.push(e.file || "?"); continue; }
+    const p = { s: dec.s, fname: e.file || wav.name, tune: Math.max(-KIT.TUNE, Math.min(KIT.TUNE, +e.tune || 0)),
+      gain: Math.max(KIT.GAIN_MIN, Math.min(0, +e.gain || 0)), len: Math.max(0, Math.round(+e.len || 0)) };
+    if (e.slice && typeof e.slice.start === "number" && typeof e.slice.end === "number") {
+      const n = kitLen(p), s = Math.max(0, Math.min(n - 1, Math.round(e.slice.start))), en = Math.max(s + 1, Math.min(n, Math.round(e.slice.end)));
+      if (s !== 0 || en !== n) p.slice = { start: s, end: en };   /* a full range is no slice */
+    }
+    pads[l] = p;
+  }
+  if (!pads.some(Boolean)) { sayK("kitImportBad", t("kitImportBad") + (bad.join(", ") || f.name)); return; }
+  kitDraft.pads = pads;
+  kitDraft.name = typeof kit.name === "string" && kit.name ? kit.name.slice(0, 8) : kitDraft.name;
+  kitDraft.sel = -1;
+  kitDraft.sent = false;
+  renderKits();
+  sayK("kitImported", kitDraft.name + (bad.length ? ` (${t("kitImportBad")}${bad.join(", ")})` : ""));
+}
 
 async function smpInfo() { dev.smp = parse[CMD.SMP_INFO](await rq(req.smpInfo())); }
 
-async function smpUpload(k, prog, ask = true, d = smpDraft[k]) {   /* (d: the DRUM KIT page's own, not the Samples draft) */
+async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = false) {   /* (d: the DRUM KIT page's own, not the Samples draft) */
   let built, done = false;
   try { built = buildSlot(d.name, d.files.map((f) => ({ s: withGain(f.s, f.gain), root: f.root, lo: f.lo, hi: f.hi,
     loop: f.loop || 0, ls: f.ls, le: f.le }))); }
@@ -8422,6 +8828,9 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k]) {   /* (d: the DR
     }
     r = parse[CMD.SMP_END](await rq(req.smpEnd(k, hdr), { timeout: 2000, retries: 0 }));
     if (r.rc) throw new Error(`end rc ${r.rc} (${SMP_RC[r.rc] || "?"})`);
+    /* (2.8.8) a slot's samples are replaced: its markers must not slice the fresh samples — unless the
+       caller keeps them (a kit upload, whose markers are written right after by kitSend) */
+    if (!keepSlices) { try { await kitSliceClearSlot(k); } catch (e) { report(e); } }
     sayK("smpDone", `${k + 1}  ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     done = true;
   } catch (e) {
