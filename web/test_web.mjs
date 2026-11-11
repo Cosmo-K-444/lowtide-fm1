@@ -827,7 +827,8 @@ async function editorDrumMap() {
   D.drumPads.map[0] = 10; D.drumPads.map[12] = 0;   /* KICK <-> HI TOM */
   ok(D.kitLaneGridPos(0) === 0 && D.kitLaneGridPos(10) === 12,
     "drum pads: kit layout: after a swap, KICK sits at pad 0 and HI TOM at pad 12");
-  ok(/u\.grid\.append\(\.\.\.\[\.\.\.Array\(16\)\.keys\(\)\]\.sort\(\(a, b\) => kitLaneGridPos\(a\) - kitLaneGridPos\(b\)/.test(ed),
+  ok(/const order = \[\.\.\.Array\(16\)\.keys\(\)\]\.sort\(\(a, b\) => kitLaneGridPos\(a\) - kitLaneGridPos\(b\)/.test(ed)
+    && /u\.grid\.append\(\.\.\.order\.map\(\(l\) => u\.pads\[l\]\.box\)\)/.test(ed),
     "drum pads: kit layout: renderKits orders the builder's pads by kitLaneGridPos (the Drum Pads layout)");
   /* (2.8.6) the help text is the new one, exactly: click to preview, tap a physical pad, drag to swap,
      every kit, the preset's sound, and the preset below */
@@ -1825,6 +1826,13 @@ async function editorKit2810() {
     && /prog\.style\.visibility = "visible"/.test(html)
     && /sliderFocused/.test(kitsRender) && /if \(!sliderFocused\)/.test(kitsRender),
     "gain slider: the write progress bar reserves its space (visibility, not hidden) and the grid is not re-appended while a slider has focus");
+  ok(/const order = \[\.\.\.Array\(16\)\.keys\(\)\]/.test(kitsRender) && /const cur = \[\.\.\.u\.grid\.children\]/.test(kitsRender)
+    && /if \(order\.some\(\(l, i\) => l !== cur\[i\]\)\)/.test(kitsRender)
+    && /const y = window\.scrollY;/.test(kitsRender) && /if \(window\.scrollY !== y\) window\.scrollTo\(0, y\);/.test(kitsRender),
+    "#37: the grid is only re-appended when the pad order actually changed, and the scroll position is preserved across it — a slider release does not jump the page");
+  const hdrUpSrc = html.slice(html.indexOf("async function smpUploadHeader"), html.indexOf("async function smpUpload(k,"));
+  ok(!/^\s*renderKits\(\);/m.test(hdrUpSrc),
+    "#37: the header-only write performs no re-render of its own (the kitWriteNow tail re-renders once after the write)");
   ok((html.match(/kind !== "box" && !kitDraft\.pads\[l\]/g) || []).length === 2,
     "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box)");
   ok(/await kitReadSlotKit\(d\)/.test(html) && /sayK\("kitNeedSlot"\)/.test(html) && /if \(kitDraft\.sent\) sayK\("kitImported"/.test(html),
@@ -3492,6 +3500,51 @@ async function editorKit2814() {
   }
 }
 
+async function editorKit2815() {
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+
+  /* #38: the full upload after an import carries the gain — the written header is version 2
+     with pred = gainQ15(gain), and the last-upload record matches what was actually written.
+     Runs the real kitUploadPads -> smpUpload path with an empty kitSent (as after a fresh
+     connect + pick, when the first kit write is always a full upload) against the mock device. */
+  {
+    const { rq, done } = attachMock({});
+    const seenHdr = [];
+    const reqW = { ...E.req, smpEnd: (k, hdr) => { seenHdr.push(new Uint8Array(hdr)); return E.req.smpEnd(k, hdr); } };
+    const upSrc = html.slice(html.indexOf("function kitGainPred()"), html.indexOf("/* read part of a backup object"));
+    const smpSrc = html.slice(html.indexOf("async function smpUpload(k,"), html.indexOf("async function smpErase"));
+    const box = { console, performance, dev: { info: { proto: 19 } },
+      kitSlots: (d) => [d], kitSplit: E.kitSplit, kitRoom: () => E.SMP.MAX_DATA - 64,
+      kitZones: E.kitZones, buildSlot: E.buildSlot, withGain: E.withGain,
+      kitSent: {}, kitSlotKinds: null, kitSlicePending: false,
+      smpUploadHeader: async () => { throw new Error("header path taken"); },
+      kitProg: () => ({ isConnected: true, hidden: false, style: {}, value: 0 }),
+      kitEraseSlot: async () => true,
+      kitSliceSyncPads: async () => {}, kitSlicePollStart: () => {},
+      sayK: () => {}, report: () => {}, bkReport: () => {}, t: (k) => k,
+      rq, req: reqW, parse: E.parse, CMD: E.CMD, SMP: E.SMP, SMP_RC: {}, kib: (n) => `${n} B`,
+      renderSamples: () => {}, renderKits: () => {}, smpInfo: async () => {},
+      smpSentSig: [null, null, null, null], chopSentSig: [null, null, null, null],
+      busy: 0, smpBusy: false, confirm: () => true, kitSliceClearSlot: async () => {} };
+    const U = vm.runInNewContext(upSrc + "\n" + smpSrc + `\n;({ kitUploadPads })`, box);
+    const sig = s(8000), ad = E.imaEncode(sig).data;
+    const pads = Array(16).fill(null);
+    pads[0] = { s: sig, fname: "kick.wav", tune: 0, gain: -6, len: 0, adpcm: ad };
+    ok(await U.kitUploadPads(pads, "KIT", 0) && seenHdr.length === 1,
+      "#38: a kit upload with an empty last-upload record takes the full path and writes one slot header");
+    const dv = new DataView(seenHdr[0].buffer);
+    ok(dv.getUint16(4, true) === 2 && dv.getInt16(54, true) === E.gainQ15(-6),
+      "#38: the full upload writes header version 2 with pred = gainQ15(-6) (16423), not version 1 with pred 0");
+    ok(box.kitSent[0] && box.kitSent[0].hdr.length === seenHdr[0].length
+      && box.kitSent[0].hdr.every((v, i) => v === seenHdr[0][i]),
+      "#38: the last-upload record matches the header actually written (no v2 claim over a v1 write)");
+    const si = E.parse[E.CMD.SMP_INFO](await rq(E.req.smpInfo()));
+    ok(si.slots[0].zones === 1 && si.slots[0].name === "KIT",
+      "#38: the mock device accepted the version-2 slot (one zone, name KIT)");
+    done();
+  }
+}
+
 await editorMock();
 await editorLibrarian();
 await editorLive();
@@ -3511,6 +3564,7 @@ await editorKit2810();
 await editorKit2811();
 await editorKit2813();
 await editorKit2814();
+await editorKit2815();
 await editor25();
 await editorDsyn();
 await editorCart();

@@ -959,7 +959,7 @@
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
       <button id="install" class="pri" data-t="install" hidden></button>
-      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.14.html" data-t="offline"></a><!--/DL-->
+      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.15.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -9154,8 +9154,18 @@ function renderKits() {
      invalidate the scroll anchor and jump the page, so the order waits until the slider is left. */
   const sliderFocused = document.activeElement && document.activeElement.type === "range" && u.grid.contains(document.activeElement);
   if (!sliderFocused) {
-    u.grid.append(...[...Array(16).keys()].sort((a, b) => kitLaneGridPos(a) - kitLaneGridPos(b) || a - b)
-      .map((l) => u.pads[l].box));
+    /* (2.8.15) only re-append when the order actually changed (#37): re-appending the 16 boxes
+       invalidates Chrome's scroll anchor, and a slider release re-renders 3-4 times in ~1 s
+       (kitWriteNow tail + smpUploadHeader start/finally + the delayed kitSlotKindRead render),
+       which jumped the page up and down. On a slider release nothing was remapped, so no nodes
+       move and the anchor is never invalidated, regardless of focus. */
+    const order = [...Array(16).keys()].sort((a, b) => kitLaneGridPos(a) - kitLaneGridPos(b) || a - b);
+    const cur = [...u.grid.children].map((b) => +b.dataset.l);
+    if (order.some((l, i) => l !== cur[i])) {
+      const y = window.scrollY;   /* belt and braces: the page ends up where it was even if a re-append happens */
+      u.grid.append(...order.map((l) => u.pads[l].box));
+      if (window.scrollY !== y) window.scrollTo(0, y);
+    }
   }
   [...u.grid.children].forEach((box, i) => { const pu = u.pads[+box.dataset.l]; pu.key.textContent = DRUMPADS.ableton(DRUMPADS.PAD_NOTES[i]); pu.key.title = ""; });
   kitMeter();
@@ -9447,7 +9457,7 @@ async function kitUploadPads(pads, name, dest) {
       done = sameHdr ? true : await smpUploadHeader(k, built);   /* nothing changed at all: no write */
     } else {
       audioChanged = true;
-      done = await smpUpload(k, kitProg(), false, { name: name || "KIT", files: zones }, true);
+      done = await smpUpload(k, kitProg(), false, { name: name || "KIT", files: zones }, true, { gainPred: gp });   /* (2.8.15) the full path carries the gain too (#38) */
     }
     if (done) kitSent[k] = { data: built.data, hdr: built.hdr };
   }
@@ -9596,7 +9606,8 @@ async function smpUploadHeader(k, built) {
   busy++;
   smpBusy = true;
   renderSamples();
-  renderKits();
+  /* (2.8.15) no renderKits() here (#37): the kitWriteNow tail re-renders once after the write,
+     and the extra renders in the burst invalidated the scroll anchor */
   try {
     let r = parse[CMD.SMP_BEGIN](await rq(req.smpBegin(k), { timeout: 1000, retries: 0 }));
     if (r.rc) throw new Error("begin rc " + r.rc);
@@ -9618,15 +9629,14 @@ async function smpUploadHeader(k, built) {
     smpBusy = false;
     busy--;
     renderSamples();
-    renderKits();
   }
   return done;
 }
 
-async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = false) {   /* (d: the DRUM KIT page's own, not the Samples draft) */
+async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = false, opt) {   /* (d: the DRUM KIT page's own, not the Samples draft) */
   let built, done = false;
   try { built = buildSlot(d.name, d.files.map((f) => ({ s: withGain(f.s, f.gain), adpcm: f.adpcm, root: f.root, lo: f.lo, hi: f.hi,
-    loop: f.loop || 0, ls: f.ls, le: f.le, tune: f.tune || 0 }))); }   /* (2.8.13) a kit zone's tune rides into its zone rate (#35) */
+    loop: f.loop || 0, ls: f.ls, le: f.le, tune: f.tune || 0, gain: f.gain || 0 })), { gainPred: opt && opt.gainPred }); }   /* (2.8.13) a kit zone's tune rides into its zone rate (#35); (2.8.15) its gain rides into its zone pred (#38) */
   catch (e) { sayK("smpFail", e.message); return false; }
   if (ask && !confirm(t("confirmUpload").replace("{n}", k + 1))) return false;
   const { hdr, data } = built;
