@@ -36,7 +36,7 @@ const E = vm.runInNewContext(proto + `
    CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore, crc32,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, GM_DRUM, drumName, parseNotes, fmtValue, F, DRUM_LANES, LV_NAMES, emptyDrum, lockable, MICRO, FC, fillGet, fillSet, pack7, unpack7,
-   loudDb, matchGains, withGain, LEVEL_MIN, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaDecode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, KIT_MIN_CHOP, bkWriteObj, bkReadObj, bkMutex, kitRate, kitPlayLen, kitMinChop })`,
+   loudDb, matchGains, withGain, LEVEL_MIN, gainQ15, gainDbFromQ15, backupCapture, backupRestore, backupObjects, b64enc, b64dec, FM6, KIT, kitPad, kitZones, kitLen, kitBytes, kitFit, kitSplit, kitLaneOf, kitPlace, zipRead, ROLL, SMF, ARR, mockSettings, fm6CartWrite, fm6CartPreset, fm6CartSlots, fm6CartPresets, DSYN, DSYN_MOCK_NAMES, DSYN_MOCK_KITS, SetGate, bkProjFormat, bkDevFormat, bkFwAtLeast, THEME, FM1_PORT_ED: FM1_PORT, fm1Ports, LOOP, LIVE, LVX, SONGF, songCapture, songLoad, songObjects, imaEncode, imaDecode, imaStateAt, kitSliceEntry, kitSlicePutEntry, kitSliceRange, kitSliceDev, KIT_MIN_CHOP, bkWriteObj, bkReadObj, bkMutex, kitRate, kitPlayLen, kitMinChop })`,
 { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 
 async function editorMock() {
@@ -572,7 +572,7 @@ async function editorV9() {
   /* the device: FM6_LIST / GET / PUT / ERASE */
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 18 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 18 (v18 includes v9), FM6 is engine 9");
+  ok(info.proto === 19 && info.nengines === 12 && info.engines[9] === "FM6", "v9: INFO ends with 19 (v19 includes v9), FM6 is engine 9");
   const L = E.parse[C.FM6_LIST](await rq(E.req.fm6List()));
   if (!(L.factory === 8 && L.bank === 27 && L.slots.length === 35)) console.log("  FM6_LIST", L.factory, L.bank, L.slots.length, js(L.slots.slice(0, 10)));
   ok(L.factory === 8 && L.bank === 27 && L.slots.length === 35 && L.slots[0].used, "v9: FM6_LIST: 8 factory patches, 27 bank slots");
@@ -707,8 +707,8 @@ async function editorDrumMap() {
   /* (2.8.6) the drum-pad MIDI learn is gone: DP_LEARN (78) is no command any more — the editor has
      no dpLearn request and no parser for 78, the mock does not answer it, and the protocol is v15.
      DRUM_TRIG (79) stays. */
-  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 18,
-    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v18)");
+  ok(C.DP_LEARN === undefined && !E.req.dpLearn && !E.parse[78] && info.proto === 19,
+    "drum pad learn: DP_LEARN is gone (no command 78, no dpLearn request, no parser; protocol v19)");
   await put12(def);   /* the default map: every pad plays its GM sound */
   const unanswered = await rq([78, [0]], { timeout: 250, retries: 0 }).then(() => "answered", (e) => e.message);
   ok(/^timeout/.test(unanswered) && !(await list()).items.some((x) => x.id === 12),
@@ -1061,7 +1061,7 @@ async function editorV5() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 18 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v18: INFO ends with the protocol version (18: a slice with end == 0 runs to the sample end); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
+  ok(info.proto === 19 && /LOWTIDE/.test(info.version) && info.pcount === 71 && info.gcount === 50 && info.pe0 === 63, "v5..v19: INFO ends with the protocol version (19: pred-as-gain in version-2 user slots); 50 globals (2.5: drum DLY; 2.6: GLO > MIDI, TEXTURE, BEND; 2.7: FX CH, DR MAP, REMOTE, CLK OUT; 2.7.2: FX FADE)");
   /* (2.8.3) the device's INFO version is LOWTIDE, never FELUCCA: editor.c builds "LOWTIDE " + the version,
      and uses the default as-is when it already starts with LOWTIDE (ui.c: "LOWTIDE 2.8.5") */
   const ecVer = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
@@ -1078,11 +1078,11 @@ async function editorV5() {
     && names.indexOf("ED_MICRO_GET") + 1 === C.MICRO_GET && names.indexOf("ED_MICRO_SET") + 1 === C.MICRO_SET
     && names.indexOf("ED_FILL_GET") + 1 === C.FILL_GET && names.indexOf("ED_FILL_SET") + 1 === C.FILL_SET
     && /ED_FM6_GET = 68, ED_FM6_PUT, ED_FM6_LIST, ED_FM6_ERASE/.test(ec) && C.FM6_GET === 68 && C.FM6_ERASE === 71
-    && /#define ED_PROTO 18u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
+    && /#define ED_PROTO 19u/.test(ec) && /ed_b\(ED_PROTO\);/.test(ec)
     && !/ED_DP_LEARN/.test(ec) && C.DP_LEARN === undefined
     && /#define ED_DRUM_TRIG 79u/.test(ec) && C.DRUM_TRIG === 79
     && /enum \{ ED_DSYN_LIST = 72, ED_DSYN_GET, ED_DSYN_PUT, ED_DSYN_STORE, ED_DSYN_PLAY \};/.test(readFileSync(join(HERE, "../firmware/src/editor_dsyn.c"), "utf8"))
-    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v18: command numbers and INFO == editor.c / editor_dsyn.c");
+    && C.DSYN_LIST === 72 && C.DSYN_PLAY === 76, "v5..v19: command numbers and INFO == editor.c / editor_dsyn.c");
   const enumNames = (id) => (new RegExp(`${id}\\[\\] = \\{([^}]*)\\}`).exec(pc) || [])[1].split(",").map((x) => x.trim().replace(/"/g, ""));
   const chord = E.parse[C.DESC](await rq(E.req.desc(0, 49)));
   const gd = [];
@@ -1150,7 +1150,7 @@ async function editorV7() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 18, "v7: INFO ends with 18 (v18 includes v7)");
+  ok(info.proto === 19, "v7: INFO ends with 19 (v19 includes v7)");
   /* the lockable set == seq.c p_lockable (the ids as core.h names them) */
   const sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8"), ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8");
   const ids = {}; let n = 0;
@@ -1215,7 +1215,7 @@ async function editorV8() {
   const C = E.CMD;
   const { m, rq, ev, done } = attachMock({ watchMs: 1000 });
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 18, "v8: INFO ends with 18 (v18 includes v8)");
+  ok(info.proto === 19, "v8: INFO ends with 19 (v19 includes v8)");
   /* the condition codes == core.h FC_*; the bit layout of a 2-bit step field */
   const ch = readFileSync(join(HERE, "../firmware/src/core.h"), "utf8"), sc = readFileSync(join(HERE, "../firmware/src/seq.c"), "utf8");
   ok(/enum \{ FC_NORM, FC_FILL, FC_NOFILL \}/.test(ch) && /uint8_t fill\[NSTEP \/ 4\];/.test(ch)
@@ -1392,6 +1392,7 @@ async function editorKitSlices() {
     imaEncode: E.imaEncode, imaDecode: E.imaDecode, kitWriteNow: () => {},   /* (2.8.9) the export is ADPCM now, and the import writes at once */
     zipStore: E.zipStore, zipRead: E.zipRead, parseWav: E.parseWav, resample: E.resample, KIT_MIN_CHOP: E.KIT_MIN_CHOP, kitMinChop: E.kitMinChop,
     normalize: E.normalize, rootFromName: E.rootFromName, SMP: E.SMP, LOOP: E.LOOP,
+    dev: null,   /* (2.8.14) no device here, so the export takes the old-firmware path: the gain stays baked, kit.json keeps 0 */
     fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch",
     sayK: () => {}, renderKits: () => {}, t: (k) => k };
   const X = vm.runInNewContext(exSrc + "\n" + decSrc + `\n;({ kitExport, kitImport, kitZipParse })`, exBox);
@@ -1495,7 +1496,7 @@ async function editorKit289() {
     "route B: KITS_MODE 80, KITS_STOP 81 (requests and parsers; KITS_STOP never sends 0xFF, masked to 127)");
   const { m, rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
-  ok(info.proto === 18, "route B: protocol version is 18");
+  ok(info.proto === 19, "route B: protocol version is 19");
   const m3 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(3)));
   const st3 = m.state.kitsMode;
   const m5 = E.parse[C.KITS_MODE](await rq(E.req.kitsMode(5)));
@@ -1566,7 +1567,7 @@ async function editorKit289() {
     "route B: showTab calls kitsModeUpdate on leaving the Kits tab, renderPanels on entering it");
 
   /* pick-a-slot gating: the grid and the Chop panel are locked until a slot is picked; the
-     per-slot Import / Export work without a pick; importing into a slot does not select it */
+     per-slot Export works without a pick (the per-slot Import ZIP is gone, #30) */
   ok(/\.kitlocked \.pads, \.kitlocked \.slice \{ opacity: \.38; pointer-events: none; \}/.test(html)
     && /\.kitlocked \.lockbanner \{ display: flex; \}/.test(html)
     && /u\.card\.classList\.toggle\("kitlocked", kitDraft\.slot == null\)/.test(html)
@@ -1574,38 +1575,32 @@ async function editorKit289() {
     "pick-a-slot: no slot picked -> the grid and Chop panel are inert (kitlocked) with a banner; the draft starts with no slot");
   const writeSrc = html.slice(html.indexOf("async function kitWriteNow()"), html.indexOf("function kitWriteSoon"));
   const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
-  ok(/if \(!dev \|\| kitDraft\.slot == null\) return;/.test(writeSrc) && /if \(!dev \|\| kitDraft\.slot == null\) return;/.test(commitSrc),
+  ok(/if \(!dev \|\| kitDraft\.slot == null\) return;/.test(writeSrc) && /if \(!dev \|\| kitDraft\.slot == null\) return "failed";/.test(commitSrc),
     "pick-a-slot: with no slot picked, neither a kit write nor a marker write leaves the editor");
-  ok(/onclick: \(\) => kitExportSlot\(d\)/.test(html) && /kitImportSlot\(f, d\)/.test(html)
+  ok(/onclick: \(\) => kitExportSlot\(d\)/.test(html) && !/kitImportSlot/.test(html) && !/t\("kitImportZip"\)/.test(html) && !/slotFile/.test(html)
     && /async function kitExportSlot\(k\)/.test(html) && /const slots = kitSlots\(k\)/.test(html)
     && !html.slice(html.indexOf("async function kitExportSlot"), html.indexOf("/* (2.8.9) a v2 kit ZIP into the draft")).includes("kitDraft.slot"),
-    "pick-a-slot: each slot card's own Export / Import ZIP works on that slot (kitExportSlot(k), no picked slot needed)");
-  {   /* kitImportSlot, run in a sandbox with a stubbed upload: the slot is written at once, but the
-       draft is only replaced when the slot imported into is the one picked for editing */
+    "pick-a-slot: each slot card's own Export ZIP works on that slot (kitExportSlot(k), no picked slot needed); the Import ZIP button is gone (#30)");
+  {   /* kitZipParse restores the gain from kit.json (2.8.14), clamped to -24..0, and defaults
+       to 0 when an older kit has no gain field (the gain was baked into its audio) */
     const impSrc = html.slice(html.indexOf("async function kitZipParse"), html.indexOf("async function kitUploadPads"));
-    const ups = [];
     const impBox = { console, TextEncoder, TextDecoder, File, Blob, zipRead: E.zipRead, imaDecode: E.imaDecode, KIT_MIN_CHOP: E.KIT_MIN_CHOP, kitMinChop: E.kitMinChop,
-      kitUploadPads: async (pads, name, dest) => { ups.push({ pads, name, dest }); return true; },
-      kitSlotKinds: null, kitDraft: { name: "", slot: null, pads: Array(16).fill(null), sel: -1, sent: true }, kitWrittenSlot: null,
-      renderKits: () => {}, sayK: () => {}, t: (k) => k };
-    const I = vm.runInNewContext(impSrc + `\n;({ kitZipParse, kitImportSlot })`, impBox);
+      kitUploadPads: async () => true, kitSlotKinds: null, kitDraft: { name: "", slot: null, pads: Array(16).fill(null), sel: -1, sent: true }, kitWrittenSlot: null,
+      renderKits: () => {}, sayK: () => {}, t: (k) => k, dev: {} };
+    const I = vm.runInNewContext(impSrc + `\n;({ kitZipParse })`, impBox);
     const ad = E.imaEncode(s(8000)).data;
-    const v2 = E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 2, name: "MYKIT",
-      pads: [{ lane: 0, file: "kick.wav", adpcm: "01 KICK.adpcm", tune: 0, gain: 0, len: 8000, slice: { start: 2000, end: 4000 } }] })) },
+    const mkZip = (gain) => E.zipStore([{ name: "kit.json", data: new TextEncoder().encode(JSON.stringify({ format: "lowtide-drum-kit", version: 2, name: "MYKIT",
+      pads: [{ lane: 0, file: "kick.wav", adpcm: "01 KICK.adpcm", tune: 0, gain, len: 8000, slice: { start: 2000, end: 4000 } }] })) },
       { name: "01 KICK.adpcm", data: ad }]);
-    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 2);
-    ok(ups.length === 1 && ups[0].dest === 2 && ups[0].name === "MYKIT" && impBox.kitDraft.slot === null
-      && impBox.kitDraft.pads.every((p) => !p),
-      "pick-a-slot: importing into a slot works with no slot picked, and does not pick it for editing");
-    impBox.kitDraft.slot = 1;
-    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 2);
-    ok(ups.length === 2 && ups[1].dest === 2 && impBox.kitDraft.slot === 1 && impBox.kitDraft.pads.every((p) => !p),
-      "pick-a-slot: importing into another slot leaves the picked slot (and its draft) alone");
-    await I.kitImportSlot(new File([v2], "mykit-kit.zip"), 1);
-    ok(ups.length === 3 && ups[2].dest === 1 && impBox.kitDraft.pads[0] && impBox.kitDraft.pads[0].fname === "kick.wav"
-      && impBox.kitDraft.pads[0].s.length === 8000 && impBox.kitDraft.pads[0].slice.start === 2000 && impBox.kitDraft.name === "MYKIT"
-      && impBox.kitDraft.sel === -1 && impBox.kitDraft.sent === true,
-      "pick-a-slot: importing into the picked slot replaces the draft (and only then)");
+    const withGain = await I.kitZipParse(new File([mkZip(-6)], "mykit-kit.zip"));
+    ok(withGain.pads[0] && withGain.pads[0].gain === -6 && withGain.pads[0].s.length === 8000 && withGain.pads[0].slice.start === 2000,
+      "pick-a-slot: a kit ZIP with gain -6 in kit.json imports at -6 dB (2.8.14)");
+    const noGain = await I.kitZipParse(new File([mkZip(undefined)], "old-kit.zip"));
+    ok(noGain.pads[0] && noGain.pads[0].gain === 0,
+      "pick-a-slot: a kit ZIP with no gain field imports at 0 dB (an older kit, its gain baked in)");
+    const tooLow = await I.kitZipParse(new File([mkZip(-30)], "loud-kit.zip"));
+    ok(tooLow.pads[0] && tooLow.pads[0].gain === -24,
+      "pick-a-slot: an out-of-range gain in kit.json is clamped to -24 dB on import");
   }
 
   /* the Stop button flips back to Play after the estimated play length (the chop range's length) */
@@ -1756,13 +1751,13 @@ async function editorKit2810() {
   const order = [];
   const nBox = { console, kitDraft: { sel: 0, pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0, slice: { start: 1000, end: 3000 } }] },
     kitSliceRange: E.kitSliceRange, kitRate: E.kitRate, kitSliceSet: () => { order.push("set"); },
-    kitSliceCommit: async () => { await sleep(20); order.push("commit"); }, kitStartLane: () => { order.push("start"); }, SMP: E.SMP };
+    kitSliceCommit: async () => { await sleep(20); order.push("commit"); return "ok"; }, kitStartLane: () => { order.push("start"); }, SMP: E.SMP };
   const N = vm.runInNewContext(nudgeSrc + `\n;({ kitSliceNudge })`, nBox);
   N.kitSliceNudge("start", 10);
   await sleep(50);
   ok(order.join() === "set,commit,start", "slice commit: a nudge writes the markers before the preview plays (commit, then start)");
-  ok(/await kitSliceCommit\(\); kitStartLane\(kitDraft\.sel\)/.test(html),
-    "slice commit: on release the audition awaits the commit, so it plays the new start");
+  ok(/if \(\(await kitSliceCommit\(\)\) === "ok"\) kitStartLane\(kitDraft\.sel\)/.test(html),
+    "slice commit: on release the audition awaits the commit and plays only when it landed, so it plays the new start");
   const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
   const said2 = [];
   const commitBox = { console, dev: {}, kitDraft: { slot: 2, sent: false }, kitWriteNow: async () => { /* the write fails: sent stays false */ },
@@ -2033,21 +2028,21 @@ async function editorKit2811() {
   const reported = [], saidC = [];
   let syncFails = true;
   const stopErr = () => { const e = new Error("stop the song first"); e.code = "bkStop"; return e; };
+  const pollStarts = [];
   const commitBox3 = { console, dev: {}, kitDraft: { slot: 2, sent: false },
     kitWriteNow: async () => { /* the write fails: sent stays false */ },
     kitSliceSyncFromDraft: async () => { if (syncFails) throw stopErr(); },
-    report: () => {}, sayK: (k) => { saidC.push(k); }, bkReport: (e) => { reported.push(e.code); }, kitSlicePending: false };
+    report: () => {}, sayK: (k) => { saidC.push(k); }, bkReport: (e) => { reported.push(e.code); }, kitSlicePending: false,
+    setInterval: (fn, ms) => { pollStarts.push(ms); return pollStarts.length; }, clearInterval: () => {} };
   const K3 = vm.runInNewContext(commitSrc3 + `\n;({ kitSliceCommit })`, commitBox3);
-  await K3.kitSliceCommit();
-  ok(saidC.join() === "kitSliceWriteFail" && commitBox3.kitSlicePending === true,
+  ok((await K3.kitSliceCommit()) === "deferred" && saidC.join() === "kitSliceWriteFail" && commitBox3.kitSlicePending === true,
     "rc-3 deferral: a kit that never landed still fails loudly — and the marker write is pending, not dropped");
   commitBox3.kitDraft.sent = true;
-  await K3.kitSliceCommit();
-  ok(reported.join() === "bkStop" && commitBox3.kitSlicePending === true,
-    "rc-3 deferral: a commit refused while the song plays is deferred (pending set, stop message shown)");
+  ok((await K3.kitSliceCommit()) === "deferred" && saidC.includes("kitSliceStop") && !reported.length
+    && commitBox3.kitSlicePending === true && pollStarts.join() === "1000",
+    "rc-3 deferral: a commit refused while the song plays is deferred (pending set, the marker stop message shown, the transport poll started)");
   syncFails = false;
-  await K3.kitSliceCommit();
-  ok(commitBox3.kitSlicePending === false && reported.length === 1,
+  ok((await K3.kitSliceCommit()) === "ok" && commitBox3.kitSlicePending === false && reported.length === 0,
     "rc-3 deferral: the next marker change retries the deferred commit and clears it once it lands");
 
   /* the kit write's tail flushes a pending marker write once the kit lands — and not when it fails */
@@ -2281,15 +2276,16 @@ async function editorKit2811() {
   ok(/kitSliceLoaded = false;/.test(discSrc) && /kitSliceDev\.fill\(0\)/.test(discSrc) && /kitSlicePending = false;/.test(discSrc),
     "mirror: disconnect clears the marker mirror, its loaded flag and any pending marker write");
   const upSrc = html.slice(html.indexOf("async function kitUploadPads"), html.indexOf("/* read part of a backup object"));
-  ok(/if \(e && e\.code === "bkStop"\) \{ kitSlicePending = true; bkReport\(e\); \}/.test(upSrc)
+  ok(/if \(e && e\.code === "bkStop"\) \{ kitSlicePending = true; sayK\("kitSliceStop"\); kitSlicePollStart\(\); \}/.test(upSrc)
     && /else \{ report\(e\); done = false; \}/.test(upSrc),
-    "kit import: a marker write that fails loses the import's success report (a refused-while-playing commit defers instead)");
+    "kit import: a marker write that fails loses the import's success report (a refused-while-playing commit defers instead, with the marker stop message and the transport poll)");
 
-  /* the protocol doc states the rc-3 rule for object 13, keeps the v18 end == 0 meaning, and has
-     no v19 section: this release changes no protocol */
+  /* the protocol doc states the rc-3 rule for object 13, keeps the v18 end == 0 meaning, and
+     documents v19 (pred-as-gain) and the header version 2 */
   const protoDoc = readFileSync(join(HERE, "EDITOR_PROTOCOL.md"), "utf8");
-  ok(/object 13 answers rc 3\s+while the song plays/i.test(protoDoc) && !/end == 0 is no slice/i.test(protoDoc) && !/## v19/.test(protoDoc),
-    "protocol doc: object-13 commits answer rc 3 while the song plays; no stale pre-v18 'end == 0 is no slice'; no v19 (no protocol change)");
+  ok(/object 13 answers rc 3\s+while the song plays/i.test(protoDoc) && !/end == 0 is no slice/i.test(protoDoc) && /## v19/.test(protoDoc)
+    && /pred-as-gain/i.test(protoDoc) && /header version 2/i.test(protoDoc),
+    "protocol doc: object-13 commits answer rc 3 while the song plays; no stale pre-v18 'end == 0 is no slice'; v19 documents pred-as-gain and header version 2");
 
   /* Lowtide 2.8.12: the 120 ms minimum chop (#9), the kit-name reset on Clear all (#32),
      and the kitSlotKinds cache invalidated on every slot write (#31) */
@@ -2656,7 +2652,7 @@ async function editorLivePage() {
   const info = E.parse[C.INFO](await rq(E.req.info()));
   let s = await live(L.STATE);
   const raw = await rq(E.req.live(L.STATE));
-  ok(info.proto === 18 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
+  ok(info.proto === 19 && raw.length === 50 && s.pro && s.master === -1 && s.dtw.length === 16 && s.dtw[0].tune === 0 && !s.playing && s.ready === 1 && s.tracks.length === 4 && s.bpm === m.state.g[0] && s.sec === -1 && s.fx === -1,
     "live page: the state (50 bytes as editor_live.c): stopped, 4 tracks, BPM, no section, no effect, A stored, the master on its knob, the pads as the kit");
   s = await live(L.PLAY, 1);
   ok(s.playing && m.state.playing, "live page: PLAY plays");
@@ -3347,6 +3343,155 @@ async function editorKit2813() {
   }
 }
 
+/* ------------------------------------------- Lowtide 2.8.14: #36, #30, pred-as-gain --- */
+async function editorKit2814() {
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+
+  /* #36: a pending marker write is flushed when the transport state flips playing -> stopped,
+     and no write is attempted while the song still plays */
+  {
+    const commitSrc = html.slice(html.indexOf("async function kitSliceCommit"), html.indexOf("function kitSliceZoom"));
+    const { rq, done } = attachMock({});
+    await rq(E.req.live(E.LIVE.PLAY, 1));   /* the mock song is playing now */
+    let syncs = 0, refuse = true;
+    const stopErr = () => { const e = new Error("stop the song first"); e.code = "bkStop"; return e; };
+    const pollFns = [], cleared = [];
+    const box = { console, dev: { info: { proto: 18 }, link: { idle: true } },
+      kitDraft: { slot: 2, sent: true }, kitWriteNow: async () => {}, busy: 0,
+      kitSliceSyncFromDraft: async () => { syncs++; if (refuse) throw stopErr(); },
+      report: () => {}, sayK: () => {}, bkReport: () => {}, kitSlicePending: false,
+      rq, req: E.req, parse: E.parse, CMD: E.CMD, LIVE: E.LIVE,
+      setInterval: (fn, ms) => { pollFns.push(fn); return pollFns.length; },
+      clearInterval: (id) => { cleared.push(id); } };
+    const K = vm.runInNewContext(commitSrc + `\n;({ kitSliceCommit, kitSlicePollTick, kitSlicePollStop })`, box);
+    ok((await K.kitSliceCommit()) === "deferred" && box.kitSlicePending === true && pollFns.length === 1,
+      "#36: a marker commit refused while the song plays defers and starts the transport poll (once a second)");
+    await K.kitSlicePollTick();   /* still playing: the state is read, but no write is attempted */
+    ok(syncs === 1 && box.kitSlicePending === true && cleared.length === 0,
+      "#36: while the song still plays, the poll reads the state and attempts no write");
+    refuse = false;
+    await rq(E.req.live(E.LIVE.PLAY, 0));   /* the song stops */
+    await K.kitSlicePollTick();
+    ok(syncs === 2 && box.kitSlicePending === false && cleared.length === 1,
+      "#36: when the transport flips to stopped, the poll commits once and stops");
+    done();
+  }
+  /* #36: the drag-release and nudge previews are gated on the commit landing */
+  ok(/if \(\(await kitSliceCommit\(\)\) === "ok"\) kitStartLane\(kitDraft\.sel\);/.test(html),
+    "#36: sliceEnd previews only when the marker commit landed (a deferred commit plays nothing)");
+  ok(/kitSliceCommit\(\)\.then\(\(r\) => \{ if \(r === "ok"\) kitStartLane\(l\); \}\);/.test(html),
+    "#36: the nudge buttons preview only when the marker commit landed");
+
+  /* #30: no Import ZIP button remains anywhere in the editor (no button, label, handler or
+     file input for it), and nothing references the removed code; Export ZIP stays */
+  ok(!/t\("kitImportZip"\)/.test(html) && !/kitImportSlot/.test(html) && !/slotFile/.test(html) && !/kitImportZip:/.test(html)
+    && /onclick: \(\) => kitExportSlot\(d\)/.test(html),
+    "#30: no Import ZIP button remains (no button, label, handler or file input); Export ZIP stays");
+
+  /* pred-as-gain: the Q15 values, the zone pred and the header version */
+  {
+    ok(E.gainQ15(0) === 32767 && E.gainQ15(-24) === 2068 && E.gainQ15(-6) === 16423
+      && E.gainDbFromQ15(32767) === 0 && E.gainDbFromQ15(2068) === -24,
+      "gain fast path: gainQ15 (0 dB -> 32767, -24 dB -> 2068) and back");
+    const sig = s(6000), ad = E.imaEncode(sig).data;
+    const predAt = (b, j) => new DataView(b.hdr.buffer).getInt16(32 + j * 28 + 22, true);
+    const verOf = (b) => new DataView(b.hdr.buffer).getUint16(4, true);
+    const withPred = E.buildSlot("KIT", [{ s: sig, adpcm: ad, root: 36, gain: -6 }], { gainPred: true });
+    const plain = E.buildSlot("KIT", [{ s: sig, adpcm: ad, root: 36, gain: -6 }]);
+    ok(verOf(withPred) === 2 && predAt(withPred, 0) === 16423 && verOf(plain) === 1 && predAt(plain, 0) === 0,
+      "gain fast path: buildSlot writes the gain into the zone pred as Q15 with header version 2 (version 1 and the predictor pred on the old path)");
+    ok(withPred.data.length === plain.data.length && withPred.data.every((v, i) => v === plain.data[i]),
+      "gain fast path: the audio bytes are identical with and without a gain (the gain is not baked into the audio)");
+    const p = { s: sig, fname: "k.wav", tune: 0, gain: -6, len: 0, adpcm: ad };
+    const pk = (x) => x.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
+    ok(Math.abs(pk(E.kitPad(p)) / 20000 - 0.501) < 0.03 && Math.abs(pk(E.kitPad(p, { gainPred: true })) / 20000 - 1) < 0.03,
+      "gain fast path: kitPad bakes the gain on the old path and leaves the audio alone with pred-gain");
+    ok(E.kitZones([p])[0].adpcm !== ad && E.kitZones([p], { gainPred: true })[0].adpcm === ad
+      && E.kitZones([p], { gainPred: true })[0].gain === -6,
+      "gain fast path: a gain-only pad reuses its original ADPCM with pred-gain (and the zone carries the gain); the old path re-encodes it");
+  }
+  /* pred-as-gain: a gain-only change is a header-only write on protocol 19, and still a full
+     re-upload on protocol 18 */
+  {
+    const upSrc = html.slice(html.indexOf("async function kitUploadPads"), html.indexOf("/* read part of a backup object"));
+    const hdrCalls = [], fullCalls = [], syncCalls = [];
+    const upBox = { console, dev: { info: { proto: 19 } }, kitSlots: (d) => [d], kitSplit: E.kitSplit, kitRoom: () => E.SMP.MAX_DATA - 64,
+      kitZones: E.kitZones, buildSlot: E.buildSlot, kitSent: {}, kitSlotKinds: null, kitSlicePending: false,
+      smpUploadHeader: async (k) => { hdrCalls.push(k); return true; },
+      smpUpload: async () => { fullCalls.push(1); return true; },
+      kitProg: () => ({}), kitEraseSlot: async () => true,
+      kitSliceSyncPads: async () => { syncCalls.push(1); },
+      sayK: () => {}, report: () => {}, bkReport: () => {}, kitSlicePollStart: () => {}, t: (k) => k,
+      kitGainPred: () => upBox.dev.info.proto >= 19 };
+    const U = vm.runInNewContext(upSrc + `\n;({ kitUploadPads })`, upBox);
+    const sig = s(8000), ad = E.imaEncode(sig).data;
+    const pads = Array(16).fill(null);
+    pads[0] = { s: sig, fname: "kick.wav", tune: 0, gain: 0, len: 0, adpcm: ad };
+    ok(await U.kitUploadPads(pads, "KIT", 0) && fullCalls.length === 1 && hdrCalls.length === 0,
+      "gain fast path: the first upload is still a full upload (nothing sent yet)");
+    pads[0].gain = -6;
+    ok(await U.kitUploadPads(pads, "KIT", 0) && hdrCalls.length === 1 && fullCalls.length === 1,
+      "gain fast path: a gain-only change on protocol 19 is a header-only write (sameAudio true, smpUploadHeader taken, no full upload)");
+    upBox.dev.info.proto = 18;
+    const prev18 = E.buildSlot("KIT", E.kitZones([{ ...pads[0], gain: 0 }]));
+    upBox.kitSent[0] = { data: prev18.data, hdr: prev18.hdr };
+    hdrCalls.length = 0; fullCalls.length = 0;
+    ok(await U.kitUploadPads(pads, "KIT", 0) && fullCalls.length === 1 && hdrCalls.length === 0,
+      "gain fast path: on protocol 18 the same gain change still bakes the gain and re-uploads the whole slot");
+  }
+  /* pred-as-gain: the export stores the original audio + the gain in kit.json, and the import
+     restores it; reading a slot back restores the gain from the zone pred (v2 only) */
+  {
+    const exportSrc = html.slice(html.indexOf("function kitExport()"), html.indexOf("async function kitZipParse"));
+    const zipSrc = html.slice(html.indexOf("async function kitZipParse"), html.indexOf("async function kitUploadPads"));
+    const saved = [];
+    const sig = s(8000), ad = E.imaEncode(sig).data;
+    const exBox = { console, TextEncoder, TextDecoder, File, Blob, zipStore: E.zipStore, zipRead: E.zipRead,
+      imaEncode: E.imaEncode, imaDecode: E.imaDecode, kitPad: E.kitPad, DRUM_LANES: E.DRUM_LANES,
+      KIT_MIN_CHOP: E.KIT_MIN_CHOP, kitMinChop: E.kitMinChop, dev: { info: { proto: 19 } },
+      kitDraft: { name: "MYKIT", slot: 0, pads: Array(16).fill(null), sel: -1, sent: true },
+      downloadBytes: (name, bytes) => { saved.push({ name, bytes }); },
+      fileSlug: (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      sayK: () => {}, t: (k) => k,
+      kitUploadPads: async () => true, kitSlotKinds: null, kitWrittenSlot: null, renderKits: () => {} };
+    exBox.kitDraft.pads[0] = { s: sig, fname: "kick.wav", tune: 0, gain: -6, len: 0, adpcm: ad };
+    const X = vm.runInNewContext(exportSrc + "\n" + zipSrc + `\n;({ kitExport, kitZipParse, kitGainPred })`, exBox);
+    X.kitExport();
+    ok(saved.length === 1, "gain fast path: the export writes one ZIP");
+    const entries = await E.zipRead(saved[0].bytes);
+    const json = JSON.parse(new TextDecoder().decode(entries.find((x) => x.name === "kit.json").data));
+    ok(json.pads[0].gain === -6, "gain fast path: a 2.8.14 export stores the gain in kit.json");
+    const blob = entries.find((x) => x.name === "01 KICK.adpcm");
+    ok(blob && blob.data.length === ad.length && blob.data.every((v, i) => v === ad[i]),
+      "gain fast path: a 2.8.14 export stores the original (unbaked) audio");
+    const parsed = await X.kitZipParse(new File([saved[0].bytes], "mykit-kit.zip"));
+    ok(parsed.pads[0] && parsed.pads[0].gain === -6 && parsed.pads[0].s.length === 8000,
+      "gain fast path: the exported kit imports back at -6 dB");
+    exBox.dev.info.proto = 18; saved.length = 0;
+    X.kitExport();
+    const json18 = JSON.parse(new TextDecoder().decode((await E.zipRead(saved[0].bytes)).find((x) => x.name === "kit.json").data));
+    ok(json18.pads[0].gain === 0, "gain fast path: on protocol 18 the export still bakes the gain and stores 0 in kit.json");
+  }
+  {
+    const padsSrc = html.slice(html.indexOf("function kitPadsFromRaws"), html.indexOf("function kitExport()"));
+    const hdrSrc = html.slice(html.indexOf("/* a slot's header:"), html.indexOf("/* (2.8.9) what each USR slot holds"));
+    const box = { console, TextDecoder, DRUM_LANES: E.DRUM_LANES, imaDecode: E.imaDecode, kitSliceEntry: E.kitSliceEntry, SMP: E.SMP, gainDbFromQ15: E.gainDbFromQ15 };
+    const F = vm.runInNewContext(padsSrc + "\n" + hdrSrc + `\n;({ kitPadsFromRaws })`, box);
+    const sig = s(8000), ad = E.imaEncode(sig).data;
+    const mkRaw = (gainPred) => {
+      const b = E.buildSlot("KIT", [{ s: sig, adpcm: ad, root: 36, gain: -6 }], gainPred ? { gainPred: true } : undefined);
+      const raw = new Uint8Array(E.SMP.DATA_OFF + b.data.length);
+      raw.set(b.hdr, 0); raw.set(b.data, E.SMP.DATA_OFF);
+      return raw;
+    };
+    E.kitSliceDev.fill(0);
+    ok(F.kitPadsFromRaws([2], [mkRaw(true)]).pads[0].gain === -6,
+      "gain fast path: reading a version-2 slot back restores the gain from the zone pred (-6 dB)");
+    ok(F.kitPadsFromRaws([2], [mkRaw(false)]).pads[0].gain === 0,
+      "gain fast path: reading a version-1 slot back keeps the gain at 0 (its pred is the ADPCM predictor, not a gain)");
+  }
+}
+
 await editorMock();
 await editorLibrarian();
 await editorLive();
@@ -3365,6 +3510,7 @@ await editorKit289();
 await editorKit2810();
 await editorKit2811();
 await editorKit2813();
+await editorKit2814();
 await editor25();
 await editorDsyn();
 await editorCart();

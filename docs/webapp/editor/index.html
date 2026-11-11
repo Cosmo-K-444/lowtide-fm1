@@ -527,8 +527,8 @@
   .dest button:disabled { opacity: .35; }
   .destnote { color: var(--fg2); margin: 0 0 10px; }
   .destnote .warn, .warn-t { color: var(--t3); }
-  /* (2.8.9) pick-a-slot-first: each destination is a card — the pick area on top, its own Export / Import ZIP
-     strip flush in the footer, so the buttons share the card's edges and stay enabled without picking */
+  /* (2.8.9) pick-a-slot-first: each destination is a card — the pick area on top, its own Export ZIP
+     button flush in the footer, so it shares the card's edges and stays enabled without picking */
   .dest .cell { display: flex; flex-direction: column; min-width: 0; background: var(--bg); border: 1px solid var(--s3); }
   .dest .cell.big { grid-column: span 2; }
   .dest .cell:hover { border-color: var(--dim); }
@@ -959,7 +959,7 @@
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
       <button id="install" class="pri" data-t="install" hidden></button>
-      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.13.html" data-t="offline"></a><!--/DL-->
+      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.14.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -2120,6 +2120,12 @@ function withGain(s, db) {
   const g = Math.pow(10, Math.max(LEVEL_MIN, Math.min(0, db)) / 20);
   return Int16Array.from(s, (v) => Math.round(v * g));
 }
+/* (2.8.14) a gain in dB (-24..0) as the Q15 multiplier a version-2 slot carries in its zone
+   pred (firmware drums.c: 32767 = 0 dB, 2068 = -24 dB), and back. The full scale is 32768
+   clamped to 32767, so 0 dB reads exactly 32767 and -24 dB exactly 2068 (32767 x 10^(-24/20)
+   would round to 2067, one LSB under the firmware's stated value). */
+function gainQ15(db) { return Math.min(32767, Math.round(32768 * Math.pow(10, Math.max(-24, Math.min(0, db || 0)) / 20))); }
+function gainDbFromQ15(q) { return Math.max(-24, Math.min(0, Math.round(20 * Math.log10(Math.max(1, q || 0) / 32767)))); }
 
 /* root from a file name like "piano_C4" or "F#3" (C4 = 60), else 60 (sampleio.note_from_name) */
 function rootFromName(name) {
@@ -2158,8 +2164,12 @@ const LOOP = {
   },
 };
 
-/* zones: [{s: Int16Array (22050 Hz), root, lo?, hi?, loop?, ls?, le?}] -> {hdr (480 B), data, zones} (sampleio.user_slot) */
-function buildSlot(name, zonesIn) {
+/* zones: [{s: Int16Array (22050 Hz), root, lo?, hi?, loop?, ls?, le?}] -> {hdr (480 B), data, zones} (sampleio.user_slot).
+   opt.gainPred (2.8.14): the zones are drum-kit pads for a protocol-19 firmware — the gain is
+   NOT baked into the audio but carried in the zone pred as a Q15 multiplier (gainQ15), and the
+   header version is 2. Without it (the Samples page, or an older firmware) the header stays
+   version 1 and pred is the ADPCM predictor state, as before. */
+function buildSlot(name, zonesIn, opt) {
   const zones = [], parts = [];
   let len = 0;
   for (const z of zonesIn) {
@@ -2172,8 +2182,12 @@ function buildSlot(name, zonesIn) {
        +-12 is 16384..65536, inside the firmware's (0, 262144] (eng_sample.c:80). A zone without
        a tune keeps the plain 22050 Hz rate, as before. */
     const rate = z.tune ? pyRound(SMP.RATE / 44100 * 65536 * Math.pow(2, z.tune / 12)) : pyRound(SMP.RATE / 44100 * 65536);
+    /* (2.8.14) pred-as-gain: with gainPred the zone pred is the gain, not the ADPCM predictor —
+       the firmware only reads it as a gain for version-2 slots, and kit zones are one-shots, so
+       the loop-restart branch that would read it as a predictor can never fire for them. */
+    const pred = opt && opt.gainPred ? gainQ15(z.gain) : e.pred;
     zones.push({ off: len, n: z.s.length, ls, le, looped: z.loop ? 2 : 0, root: z.root, lo: z.lo ?? null, hi: z.hi ?? null,
-      pred: e.pred, idx: e.idx, rate });
+      pred, idx: e.idx, rate });
     parts.push(e.data);
     len += e.data.length;
   }
@@ -2191,7 +2205,7 @@ function buildSlot(name, zonesIn) {
   });
   const hdr = new Uint8Array(SMP.HDR_LEN), v = new DataView(hdr.buffer);
   v.setUint32(0, 0x504D5346, true);
-  v.setUint16(4, 1, true);
+  v.setUint16(4, opt && opt.gainPred ? 2 : 1, true);   /* (2.8.14) version 2: the zone preds carry gains, not ADPCM predictor state */
   hdr[6] = zones.length;
   const nm = String(name).toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8);
   for (let i = 0; i < nm.length; i++) hdr[8 + i] = nm.charCodeAt(i);
@@ -3166,7 +3180,7 @@ function makeMockDevice(opt = {}) {
     14, 14, 15, 15, 13, 13, 15, 15, 13, 13, 7, 7, 7, 14, 14, 15, 15];
   const laneOf = (n) => (n < 35 ? 0 : n > 81 ? 13 : LANE_OF_GM[n - 35]);
   const v5 = !opt.legacy && !opt.v3;              /* SLOOP 2.0: steps with level / ratchet, DRUM_STEP, TRACK solo */
-  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : opt.v15 ? 15 : opt.v16 ? 16 : 18;   /* INFO's protocol (2.8.10: a slice with end == 0 runs to the sample end; 2.8.9: KITS_MODE / KITS_STOP; 2.8.8: the kit slices are object 13) */
+  const mockProto = opt.noBackup ? 5 : opt.v7 ? 7 : opt.v8 ? 8 : opt.v9 ? 9 : opt.v10 ? 10 : opt.v11 ? 11 : opt.v12 ? 12 : opt.v13 ? 13 : opt.v15 ? 15 : opt.v16 ? 16 : opt.v18 ? 18 : 19;   /* INFO's protocol (2.8.14: pred-as-gain in version-2 user slots; 2.8.10: a slice with end == 0 runs to the sample end; 2.8.9: KITS_MODE / KITS_STOP; 2.8.8: the kit slices are object 13) */
   /* the drum step as an old (v1..v4) step: its first 4 lanes as GM notes, ACC when one is hard (editor.c ed_dstep_old) */
   const dOld = (d) => {
     const notes = [];
@@ -3718,7 +3732,7 @@ function makeMockDevice(opt = {}) {
         if (a.length < 2 || a[0] >= st.smp.length) return null;
         const u = st.smp[a[0]], hd = unpack7(a.slice(1)), dv = new DataView(hd.buffer);
         let rc = 0;
-        if (hd.length < SMP.HDR_LEN || dv.getUint32(0, true) !== 0x504D5346 || dv.getUint16(4, true) !== 1) rc = 2;
+        if (hd.length < SMP.HDR_LEN || dv.getUint32(0, true) !== 0x504D5346 || (dv.getUint16(4, true) !== 1 && dv.getUint16(4, true) !== 2)) rc = 2;   /* (2.8.14) the firmware accepts header v1 or v2 (ed_smp_end) */
         else if (!hd[6] || hd[6] > 16) rc = 5;
         else {
           const len = dv.getUint32(16, true);
@@ -4240,12 +4254,14 @@ function kitSliceRange(p) {   /* the stored samples to play: the slice, clamped 
    defined" on every marker write (2.8.11, #29). */
 /* a pad as it goes to the slot: cut, faded out, its gain. (2.8.13) the tune is NOT baked here
    anymore (#35): the stored audio stays the original and the tune lives in the zone rate
-   (buildSlot), so a pitch change re-uploads no audio at all. Gain stays baked: there is no
-   per-zone gain parameter, so a gain change still needs the full re-bake + re-upload. */
-function kitPad(p) {
+   (buildSlot), so a pitch change re-uploads no audio at all. (2.8.14) with opt.gainPred the
+   gain is not baked either: it lives in the zone pred (buildSlot), so a gain-only change is a
+   header-only update too — the pad keeps its original audio. Without it (an older firmware)
+   the gain stays baked, as before. */
+function kitPad(p, opt) {
   const x = Array.from(p.s);
   const n = Math.max(1, Math.min(x.length, p.len > 0 ? Math.round(p.len) : x.length));
-  const g = Math.pow(10, Math.max(KIT.GAIN_MIN, Math.min(0, p.gain || 0)) / 20), out = new Int16Array(n);
+  const g = opt && opt.gainPred ? 1 : Math.pow(10, Math.max(KIT.GAIN_MIN, Math.min(0, p.gain || 0)) / 20), out = new Int16Array(n);
   const fade = n < x.length ? Math.min(KIT.FADE, n) : 0;   /* a cut sound ends in 4 ms, not with a click */
   for (let i = 0; i < n; i++) {
     const f = fade && i >= n - fade ? (n - i) / fade : 1;
@@ -4256,13 +4272,16 @@ function kitPad(p) {
 /* the slot's zones: one per pad, lo = hi = root = its lane's note. A pad's ADPCM rides along: an
    unchanged pad (no gain or cut) keeps its original bytes, so the upload sends them bit-exact;
    a baked pad is encoded from its baked audio, each zone separately from predictor 0 / index 0.
-   (2.8.13) tune no longer dirties the ADPCM (#35): it lives in the zone rate (buildSlot). */
-function kitZones(pads) {
+   (2.8.13) tune no longer dirties the ADPCM (#35): it lives in the zone rate (buildSlot).
+   (2.8.14) with opt.gainPred neither does gain: it lives in the zone pred, so a gain-only pad
+   keeps its original bytes too, and the zone carries the gain for buildSlot. */
+function kitZones(pads, opt) {
   const zs = [];
   pads.forEach((p, l) => {
     if (!p) return;
-    const s = kitPad(p), clean = !p.gain && !p.len && p.adpcm;
-    zs.push({ s, adpcm: clean ? p.adpcm : imaEncode(s).data, root: DRUM_LANES[l][0], lo: DRUM_LANES[l][0], hi: DRUM_LANES[l][0], lane: l, fname: p.fname, tune: p.tune || 0 });
+    const gp = !!(opt && opt.gainPred);
+    const s = kitPad(p, opt), clean = !p.len && p.adpcm && (gp || !p.gain);
+    zs.push({ s, adpcm: clean ? p.adpcm : imaEncode(s).data, root: DRUM_LANES[l][0], lo: DRUM_LANES[l][0], hi: DRUM_LANES[l][0], lane: l, fname: p.fname, tune: p.tune || 0, gain: p.gain || 0 });
   });
   return zs;
 }
@@ -5081,14 +5100,14 @@ const TEXT = {
     kitFull: "16 パッドとも埋まっています", kitLoaded: "ZIP を読み込みました: ",
     kitExport: "キットを保存", kitImport: "キットを開く", kitExported: "キットを保存しました: ", kitImported: "キットを読み込みました: ",
     kitImportBad: "キットファイルが読めません: ",
-    kitExportZip: "ZIP で保存", kitImportZip: "ZIP を開く",
+    kitExportZip: "ZIP で保存",
     kitImportOld: "このキットは古いバージョン 1（WAV）形式で、読み込めません。",
     kitImportNotKit: "この ZIP はドラムキットではありません。楽器を入れるには「サンプル」タブを使ってください。",
     kitSlotEmpty: "{x} は空です — 保存するものがありません。", kitExportedInst: "楽器を保存しました: ",
     kitSwitchConfirm: "このキットを {x} に書き込みますか？そこにあるものは置き換わります。{y} には書き込み済みのものが残ります。",
     kitPickConfirm: "{x} のキットを読み込みますか？今編集中のキットは置き換わります。",
     kitNeedSlot: "まずステップ 1 で置き場所を選んでください — キットは用意できました。選んだ場所に書き込まれます。",
-    kitNoSlot: "まだ置き場所が選ばれていません — 下のパッドはロックされています。各カードの ZIP 保存／読み込みボタンはもう使えます。",
+    kitNoSlot: "まだ置き場所が選ばれていません — 下のパッドはロックされています。各カードの ZIP 保存ボタンはもう使えます。",
     kitInstrument: "楽器",
     kitSlotLocked: "ロックされています — ステップ 1 で置き場所を選ぶと作り始められます。",
     kitMeterNoSlot: "— 置き場所を選ぶと空きが表示されます",
@@ -5102,6 +5121,7 @@ const TEXT = {
     kitSliceOld: "マーカーには FM-1 の Lowtide 2.8.8 が必要です — それまではこのキット内に保持されます。",
     kitSliceWritten: "マーカーを FM-1 に書き込みました。",
     kitSliceWriteFail: "マーカーを書き込めませんでした：キット自体が FM-1 に届いていません。",
+    kitSliceStop: "曲を止めてください (PLAY) — 止まったらマーカーが書き込まれます。",
     needDevice: "FM-1 を接続すると編集できます。", smpNone: "このファームウェアにはユーザーサンプルのスロットがありません。",
     bankConnect: "FM-1 を接続すると本体のユーザープリセットも扱えます。", bankNone: "このファームウェアにはユーザープリセットがありません。",
     drumNote: "ドラムトラックにはエンジンもプリセットもありません。レベル・パン・ミュートは「トラック」、キットとパターンは「シーケンサー」で。",
@@ -5152,7 +5172,7 @@ const TEXT = {
     fm6OtherMaker: "別のメーカーの SysEx です", fm6Universal: "音色ではない汎用 SysEx です",
     fm6Exported: "バンクを書き出しました",
     kitStep1: "置き場所",
-    kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードには ZIP 保存と ZIP 読み込みのボタンがあり、選ばなくても使えます。まず中身を保存したり、キットを入れたりしてから選べます。パッドは置き場所を選ぶまでロックされています。",
+    kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードには ZIP 保存のボタンがあり、選ばなくても使えます。まず中身を保存してから選べます。パッドは置き場所を選ぶまでロックされています。",
     kitStep2: "音",
     kitStep2Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックするとチョップ用に選んで試聴します。パッドごとにピッチと音量、全体の長さがあります。波形をドラッグすると音だけ、タイトルをドラッグすると箱ごと移動します。音の横の音名は位置のもの（左下が C1）で、箱が動いても変わりません。",
     kitFitHelp: "長すぎるとき: 長い音（クラッシュ、オープンハット）を短くして収めます。",
@@ -5442,14 +5462,14 @@ const TEXT = {
     kitFull: "All 16 pads are taken", kitLoaded: "ZIP opened: ",
     kitExport: "Export kit", kitImport: "Import kit", kitExported: "Kit exported: ", kitImported: "Kit imported: ",
     kitImportBad: "Kit file rejected: ",
-    kitExportZip: "Export ZIP", kitImportZip: "Import ZIP",
+    kitExportZip: "Export ZIP",
     kitImportOld: "This kit is the old version 1 (WAV) format and can't be imported.",
     kitImportNotKit: "This ZIP is not a drum kit. To import an instrument, use the Samples tab.",
     kitSlotEmpty: "{x} is empty — nothing to export.", kitExportedInst: "Instrument exported: ",
     kitSwitchConfirm: "Write this kit to {x} instead? It replaces what is there now. {y} keeps the copy already written to it.",
     kitPickConfirm: "Load the kit in {x}? The kit in the editor now will be replaced.",
     kitNeedSlot: "Pick a slot in step 1 first — the kit is ready in the editor, and it will be written to the slot you pick.",
-    kitNoSlot: "No slot picked yet — the pads below are locked. The Export / Import ZIP buttons on each card already work.",
+    kitNoSlot: "No slot picked yet — the pads below are locked. The Export ZIP button on each card already works.",
     kitInstrument: "instrument",
     kitSlotLocked: "Locked — pick a slot in step 1 to start building the kit.",
     kitMeterNoSlot: "— pick a slot to see how much room the kit has",
@@ -5463,6 +5483,7 @@ const TEXT = {
     kitSliceOld: "Markers need Lowtide 2.8.8 on the FM-1 — they are kept in this kit until then.",
     kitSliceWritten: "Markers written to the FM-1.",
     kitSliceWriteFail: "The markers were not written: the kit itself did not go to the FM-1.",
+    kitSliceStop: "Stop the song (PLAY) — the markers will land when it stops.",
     needDevice: "Connect the FM-1 to edit.", smpNone: "This firmware has no user sample slots.",
     bankConnect: "Connect the FM-1 to see its user presets too.", bankNone: "This firmware has no user presets.",
     drumNote: "The drum track has no engine or presets. Level, pan and mute: Tracks; the kit and the pattern: Sequencer.",
@@ -5513,7 +5534,7 @@ const TEXT = {
     fm6OtherMaker: "SysEx from another manufacturer", fm6Universal: "Universal SysEx, not voice data",
     fm6Exported: "Bank exported",
     kitStep1: "Where it goes",
-    kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export ZIP and Import ZIP buttons, and they work without picking: back up what's in a slot, or load a kit into it, first. The pads stay locked until a slot is chosen.",
+    kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export ZIP button, and it works without picking: back up what's in a slot first. The pads stay locked until a slot is chosen.",
     kitStep2: "Your sounds",
     kitStep2Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to select it for Chop and hear it. Each pad has its pitch and gain, and its whole length. Drag a waveform to move a sample, drag a title to move the box. The note next to a sound belongs to its position, C1 at the bottom-left.",
     kitFitHelp: "Too long? Fit shortens the longest sounds (crashes, open hats) just enough.",
@@ -6364,7 +6385,7 @@ async function connect() {
     dev = { link, input, output, info: null, pdesc: [], gdesc: [], names: [], dump: null, steps: [], slotUsed: [null, null, null, null],
       keys: null, watch: false, bank: null };
     sets.clear();                                    /* (another FM-1, maybe) */
-    kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false;   /* (2.8.11) the marker mirror is read again for this FM-1 */
+    kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false; kitSlicePollStop();   /* (2.8.11) the marker mirror is read again for this FM-1 */
     setLabel($("connect"), t("disconnect"));
     renderLive();
     await load(dev);
@@ -6386,7 +6407,7 @@ function disconnect(reasonKey = "disconnected") {
   smpStopPlay();   /* (2.8.9) a Samples preview's stop timer ends too */
   chopStopAudition();   /* (2.8.9) a chop audition's stop timer ends too */
   kitSlotKinds = null; kitKitsModeSent = null; kitSent = {};   /* (2.8.13) the last-upload record belongs to the last FM-1: a different one may hold other audio in the slot */
-  kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false;   /* (2.8.11) the marker mirror belongs to the last FM-1: read it again on the next connection */
+  kitSliceLoaded = false; kitSliceDev.fill(0); kitSlicePending = false; kitSlicePollStop();   /* (2.8.11) the marker mirror belongs to the last FM-1: read it again on the next connection */
   if (dev) {
     dev.link.close();
     dev.input.onmidimessage = null;
@@ -8685,7 +8706,7 @@ function kitSliceSyncPads(pads, dest) {   /* rebuild the mirror for a kit's slot
     const s = kitSliceOf(p);
     if (!s) return;
     if (s.end <= s.start) return;   /* (2.8.10) never write a degenerate range: under v18 end == 0 with a real start means "to the sample end", so the editor always writes an explicit end (only all-zero is no slice) */
-    const baked = kitPad(p), [pred, idx] = imaStateAt(baked, s.start);
+    const baked = kitPad(p, { gainPred: kitGainPred() }), [pred, idx] = imaStateAt(baked, s.start);   /* (2.8.14) the ADPCM state at the slice start is taken from the audio as the FM-1 holds it: unbaked when the gain lives in pred, baked on an older firmware */
     kitSlicePutEntry(kitSliceSlotFor(l, dest, pads), l, s.start, s.end, pred, idx);
   });
   return kitSliceWrite();
@@ -8701,17 +8722,43 @@ async function kitSliceCommit() {   /* after a marker change: write the markers 
    when a slot is picked: before that, the FM-1's slot holds another kit, and these markers would
    slice it. If the kit itself has never been written, write it first, then its markers.
    (2.8.11) a commit refused while the song plays (bkStop, rc 3) is DEFERRED, not dropped: it is
-   retried on the next kit write or marker change, once the FM-1 has stopped. */
-  if (!dev || kitDraft.slot == null) return;
+   retried on the next kit write or marker change, once the FM-1 has stopped. (2.8.14, #36) it is
+   also retried when the song stops: the refusal starts the transport poll (kitSlicePollStart),
+   which reads LIVE.STATE once a second and commits once, when the song is stopped.
+   Returns "ok" when the markers landed, "deferred" when the song plays (or the kit never
+   landed), "failed" otherwise — so the caller can preview only when the markers landed. */
+  if (!dev || kitDraft.slot == null) return "failed";
   try {
     if (!kitDraft.sent) await kitWriteNow();
-    if (!kitDraft.sent) { kitSlicePending = true; sayK("kitSliceWriteFail"); return; }   /* (2.8.10) the kit never landed (its write failed, or one is busy): say so, instead of silently leaving the old markers */
+    if (!kitDraft.sent) { kitSlicePending = true; sayK("kitSliceWriteFail"); return "deferred"; }   /* (2.8.10) the kit never landed (its write failed, or one is busy): say so, instead of silently leaving the old markers */
     await kitSliceSyncFromDraft();   /* only when the kit is on the FM-1: otherwise the markers would slice the old kit in the slot */
     kitSlicePending = false;
+    return "ok";
   } catch (e) {
-    if (e && e.code === "bkStop") { kitSlicePending = true; bkReport(e); return; }   /* the song plays: the markers wait until it stops */
+    if (e && e.code === "bkStop") { kitSlicePending = true; sayK("kitSliceStop"); kitSlicePollStart(); return "deferred"; }   /* the song plays: the markers wait until it stops */
     report(e);
+    return "failed";
   }
+}
+let kitSlicePollTimer = 0;   /* (2.8.14, #36) the transport poll's timer, 0 when it is not running */
+function kitSlicePollStop() {   /* stop the transport poll, if it is running */
+  if (kitSlicePollTimer) { clearInterval(kitSlicePollTimer); kitSlicePollTimer = 0; }
+}
+function kitSlicePollStart() {   /* (2.8.14, #36) start the transport poll: once a second, only while a
+   marker write is pending. A second start while it runs is a no-op. */
+  if (kitSlicePollTimer) return;
+  kitSlicePollTimer = setInterval(kitSlicePollTick, 1000);
+}
+async function kitSlicePollTick() {   /* (2.8.14, #36) one transport-poll tick: read the song state, and
+   commit once, when the song has stopped. The state read is cheap; the write is never attempted
+   while the song still plays. A commit refused again re-arms the flag and restarts the poll. */
+  if (!kitSlicePending) { kitSlicePollStop(); return; }
+  if (!dev || !dev.info || dev.info.proto < 12) { kitSlicePollStop(); return; }   /* LIVE needs protocol 12; markers need 16, so this always holds for a marker write */
+  if ((typeof busy !== "undefined" && busy) || !dev.link || !dev.link.idle) return;   /* the idle-link guard of the 1-second poll: never crowd the Link */
+  let s;
+  try { s = parse[CMD.LIVE](await rq(req.live(LIVE.STATE), { key: "live:state", retries: 0, quiet: true })); }
+  catch (e) { return; }   /* a lost reply: try again on the next tick */
+  if (s && !s.playing) { kitSlicePollStop(); await kitSliceCommit(); }
 }
 function kitSliceZoom(f) {   /* zoom the waveform in (2) or out (0.5), around the slice's midpoint */
   const p = kitDraft.pads[kitDraft.sel];
@@ -8744,7 +8791,7 @@ function kitSliceNudge(which, ms) {   /* fine-adjust a marker by ms (a button cl
   const rng = kitSliceRange(p), d = Math.round(ms / 1000 * SMP.RATE * kitRate(p));   /* (2.8.13) ms of playback are stored samples at the tuned rate (#35) */
   if (which === "start") kitSliceSet(l, rng.start + d, rng.end);
   else kitSliceSet(l, rng.start, rng.end + d);
-  kitSliceCommit().then(() => kitStartLane(l));   /* (2.8.10) the audition waits for the commit, so it plays the new start */
+  kitSliceCommit().then((r) => { if (r === "ok") kitStartLane(l); });   /* (2.8.10) the audition waits for the commit, so it plays the new start; (2.8.14) when the commit is deferred, nothing plays — the old chop would be the wrong sound */
 }
 function kitSliceRender() {   /* the panel's title, readouts and buttons, then the waveform */
   const u = kitUi;
@@ -8856,22 +8903,20 @@ function renderKits() {
     u.name = el("input", { type: "text", class: "name", maxlength: 8, spellcheck: "false", placeholder: "NAME",
       oninput: () => { const v = u.name.value.toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8); if (v !== u.name.value) u.name.value = v; kitDraft.name = v; kitButtons(); kitWriteSoon(); } });   /* (2.8.9) a name change writes with the 500 ms settle delay */
     /* (2.8.9) where the kit goes, picked first: each slot is a card — the pick area on top, its own
-       Export ZIP / Import ZIP strip in the footer. The strip belongs to the slot, so it works without
-       picking; importing into a slot does not select it for editing */
+       Export ZIP button in the footer. The button belongs to the slot, so it works without
+       picking. (2.8.14, #30) the per-slot "Import ZIP" button is gone: it never imported
+       anything, and the per-slot Import (import kit) does the same job. */
     u.dest = el("div", { class: "dest", role: "radiogroup", "aria-label": t("kitStep1") }, ...[KIT_PAIR, 0, 1, 2, 3].map((d) => {
       const cell = el("div", { class: "cell" + (d === KIT_PAIR ? " big" : "") });
       const pick = el("button", { type: "button", role: "radio", "data-d": d, class: "pick" + (d === KIT_PAIR ? " big" : ""),
         onclick: () => kitPickSlot(d) },
         el("b", { text: kitDest(d) }), el("span", { class: "cap", text: d === KIT_PAIR ? t("kitCapBig") : t("kitCapOne") }), el("span", { class: "now" }));
       const io = el("div", { class: "slot-io" },
-        el("button", { type: "button", onclick: () => kitExportSlot(d) }, t("kitExportZip")),
-        el("button", { type: "button", onclick: () => { u.slotFile.dataset.d = d; u.slotFile.click(); } }, t("kitImportZip")));
+        el("button", { type: "button", onclick: () => kitExportSlot(d) }, t("kitExportZip")));
       cell.append(pick, io);
       return cell;
     }));
     u.destNote = el("p", { class: "destnote" });
-    u.slotFile = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
-    u.slotFile.addEventListener("change", () => { const f = u.slotFile.files[0], d = +u.slotFile.dataset.d; u.slotFile.value = ""; if (f) kitImportSlot(f, d); });
     u.lock = el("p", { class: "lockbanner", onclick: () => { const first = u.dest.querySelector(".pick:not([disabled])"); if (first) first.focus(); } },
       el("span", { text: t("kitSlotLocked") }), el("u", { text: t("kitStep1") }));
     u.meter = el("progress", { max: SMP.MAX_DATA, value: 0 });
@@ -8954,7 +8999,7 @@ function renderKits() {
     const sliceEnd = async () => {   /* release: the markers are written to the FM-1, and the slice is heard */
       if (!kitSliceDrag) return;
       const d = kitSliceDrag; kitSliceDrag = null;
-      if (d.which !== "pan") { await kitSliceCommit(); kitStartLane(kitDraft.sel); renderKits(); }   /* (2.8.10) the audition waits for the commit, so it plays the new start */
+      if (d.which !== "pan") { if ((await kitSliceCommit()) === "ok") kitStartLane(kitDraft.sel); renderKits(); }   /* (2.8.10) the audition waits for the commit, so it plays the new start; (2.8.14) when the commit is deferred, nothing plays — the old chop would be the wrong sound, and the markers land silently when the song stops */
     };
     u.sliceCv.addEventListener("pointerup", sliceEnd);
     u.sliceCv.addEventListener("pointercancel", sliceEnd);
@@ -9293,7 +9338,7 @@ function kitPadsFromRaws(slots, raws) {   /* (2.8.10) a slot's raw image + its m
    (the ADPCM kept as-is, so an unchanged upload sends the original bytes bit-exact) */
   const pads = Array(16).fill(null), files = [];
   raws.forEach((raw, j) => {
-    const { name, zones } = parseSlotHeader(raw), slot = slots[j];
+    const { name, zones, version } = parseSlotHeader(raw), slot = slots[j];
     for (const z of zones) {
       const lane = DRUM_LANES.findIndex((x) => x[0] === z.root);
       if (lane < 0) continue;
@@ -9302,7 +9347,10 @@ function kitPadsFromRaws(slots, raws) {   /* (2.8.10) a slot's raw image + its m
       const e = kitSliceEntry(slot, lane);
       /* (2.8.13) the tune comes back from the zone rate (#35): rate 32768 x 2^(tune/12) */
       const tune = z.rate ? Math.max(-12, Math.min(12, Math.round(12 * Math.log2(z.rate / 32768)))) : 0;
-      pads[lane] = { s: imaDecode(data, z.n), adpcm: data, fname: name || `USR${slot + 1}`, tune, gain: 0, len: 0 };
+      /* (2.8.14) the gain comes back from the zone pred — but only for a version-2 slot: a
+         version-1 slot carries a real ADPCM predictor there, which must never be read as a gain */
+      const gain = version === 2 ? gainDbFromQ15(z.pred) : 0;
+      pads[lane] = { s: imaDecode(data, z.n), adpcm: data, fname: name || `USR${slot + 1}`, tune, gain, len: 0 };
       if (e) { const en = e.end === 0 ? z.n : e.end; if (e.start !== 0 || en !== z.n) pads[lane].slice = { start: e.start, end: en }; }   /* (v18) end == 0 is a slice to the sample end */
       files.push({ name: adpcm, data });
     }
@@ -9313,15 +9361,19 @@ function kitPadsFromRaws(slots, raws) {   /* (2.8.10) a slot's raw image + its m
    samples as ADPCM, one blob per pad — the audio as it plays (gain and length baked in, so gain is 0
    and len is the blob's sample count), each blob self-contained from predictor 0. (2.8.13) the tune
    is NOT baked anymore (#35): it lives in the zone rate, so kit.json stores it and the import
-   restores it — a kit with a nonzero tune needs 2.8.13+ to import at the right pitch. */
+   restores it — a kit with a nonzero tune needs 2.8.13+ to import at the right pitch. (2.8.14)
+   the gain is NOT baked anymore either, on a protocol-19 firmware: it lives in the zone pred,
+   so kit.json stores it and the import restores it — a kit with a nonzero gain needs 2.8.14+
+   to import at the right gain. On an older firmware the gain stays baked and kit.json keeps 0. */
 function kitExport() {
   const pads = [];
   const files = [];
+  const gp = kitGainPred();   /* (2.8.14) the export stores the original audio + the gain, like the tune */
   kitDraft.pads.forEach((p, l) => {
     if (!p) return;
     const adpcm = `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.adpcm`;
-    const s = kitPad(p), data = imaEncode(s).data;
-    pads.push({ lane: l, file: p.fname, adpcm, tune: p.tune || 0, gain: 0, len: s.length, slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
+    const s = kitPad(p, { gainPred: gp }), data = imaEncode(s).data;
+    pads.push({ lane: l, file: p.fname, adpcm, tune: p.tune || 0, gain: gp ? (p.gain || 0) : 0, len: s.length, slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
     files.push({ name: adpcm, data });
   });
   if (!files.length) return;
@@ -9352,7 +9404,7 @@ async function kitZipParse(f) {
     const blob = zip.find((x) => x.name === e.adpcm || x.name.endsWith("/" + e.adpcm));
     const len = Math.max(0, Math.round(+e.len || 0));
     if (!blob || blob.data.length < Math.ceil(len / 2)) { bad.push(e.file || "?"); continue; }
-    const p = { s: imaDecode(blob.data, len), adpcm: blob.data, fname: e.file || blob.name, tune: Math.max(-12, Math.min(12, Math.round(+e.tune || 0))), gain: 0, len: 0 };   /* (2.8.13) the tune survives the round-trip in kit.json (#35); gain stays baked, so it is 0 here */
+    const p = { s: imaDecode(blob.data, len), adpcm: blob.data, fname: e.file || blob.name, tune: Math.max(-12, Math.min(12, Math.round(+e.tune || 0))), gain: Math.max(-24, Math.min(0, Math.round(+e.gain || 0))), len: 0 };   /* (2.8.13) the tune survives the round-trip in kit.json (#35); (2.8.14) so does the gain — a missing gain is 0, as before */
     if (e.slice && typeof e.slice.start === "number" && typeof e.slice.end === "number") {
       const mc = kitMinChop(p);   /* (2.8.13) the 120 ms minimum chop in stored samples at the tuned rate (#35) */
       const st = Math.max(0, Math.min(len - 1, Math.round(e.slice.start))), en = Math.min(len, Math.max(st + mc, Math.min(len, Math.round(e.slice.end))));   /* (2.8.12) an imported slice is clamped to the 120 ms minimum chop (#9), where the sample allows it */
@@ -9362,40 +9414,31 @@ async function kitZipParse(f) {
   }
   return { name: typeof kit.name === "string" ? kit.name.slice(0, 8) : "", pads, bad };
 }
-/* (2.8.9) import a kit ZIP straight into a slot (its own Import ZIP button): the slot is written
-   at once, but it is NOT selected for editing — the user picks it explicitly to work on it */
-async function kitImportSlot(f, dest) {
-  let parsed;
-  try { parsed = await kitZipParse(f); }
-  catch (e) { sayK("kitImportBad", e.message); return; }
-  if (!parsed.pads.some(Boolean)) { sayK("kitImportBad", t("kitImportBad") + (parsed.bad.join(", ") || f.name)); return; }
-  const ok = await kitUploadPads(parsed.pads, parsed.name || "KIT", dest);
-  if (ok) {
-    kitSlotKinds = null;   /* the slot's kind may have changed: read again on the next render */
-    if (dest === kitDraft.slot) { kitDraft.pads = parsed.pads; kitDraft.name = parsed.name || kitDraft.name; kitDraft.sel = -1; kitDraft.sent = true; kitWrittenSlot = dest; }
-    renderKits();
-    sayK("kitImported", (parsed.name || "KIT") + (parsed.bad.length ? ` (${t("kitImportBad")}${parsed.bad.join(", ")})` : ""));
-  }
-}
+/* (2.8.14) does this FM-1 carry a kit pad's gain in its zone pred (protocol 19)? On an older
+   firmware the gain stays baked into the audio, exactly as before. */
+function kitGainPred() { return !!(dev && dev.info && dev.info.proto >= 19); }
 /* the pads to a slot (or split over USR3+4): upload each part, erase a part the kit leaves empty,
    then write the kit's markers. Returns false when a part fails or the kit does not fit.
    (2.8.13) a part whose audio bytes are unchanged since the last kit upload to that slot is a
    header-only update (#35: pitch lives in the zone rate, so a pitch-only change sends BEGIN +
    a rewrite of the first sector's data bytes + END — at most 16 requests instead of ~320 — and
    no marker sync, since the markers are stored-sample indices and did not move; a pitch change
-   sends no BK traffic at all, so it cannot hit the #33 race). */
+   sends no BK traffic at all, so it cannot hit the #33 race). (2.8.14) a gain-only change is
+   header-only too, on a protocol-19 firmware: the gain lives in the zone pred, so the audio
+   bytes do not change with it. */
 async function kitUploadPads(pads, name, dest) {
   const ks = kitSlots(dest);
   const parts = ks.length > 1 ? kitSplit(pads, kitRoom()) : [pads.map((p, l) => (p ? l : -1)).filter((l) => l >= 0)];
   if (!parts) { sayK("kitOver"); return false; }
   let done = true, audioChanged = false;
+  const gp = kitGainPred();   /* (2.8.14) one branch for the whole upload: pred-gain on protocol 19, baked gain before */
   for (let j = 0; j < ks.length && done; j++) {
     const k = ks[j];
     if (!parts[j].length) { done = await kitEraseSlot(k); audioChanged = true; kitSent[k] = null; continue; }
     const sub = pads.map((p, l) => (parts[j].includes(l) ? p : null));
-    const zones = kitZones(sub);
+    const zones = kitZones(sub, { gainPred: gp });
     let built;
-    try { built = buildSlot(name || "KIT", zones); }
+    try { built = buildSlot(name || "KIT", zones, { gainPred: gp }); }
     catch (e) { sayK("smpFail", e.message); done = false; break; }
     const prev = kitSent[k];
     const sameAudio = prev && prev.data.length === built.data.length && prev.data.every((v, i) => v === built.data[i]);
@@ -9412,11 +9455,11 @@ async function kitUploadPads(pads, name, dest) {
     if (audioChanged) {
       try { await kitSliceSyncPads(pads, dest); }
       catch (e) {
-        if (e && e.code === "bkStop") { kitSlicePending = true; bkReport(e); }   /* the song plays: the samples landed, the markers wait */
+        if (e && e.code === "bkStop") { kitSlicePending = true; sayK("kitSliceStop"); kitSlicePollStart(); }   /* the song plays: the samples landed, the markers wait */
         else { report(e); done = false; }   /* (2.8.11) markers lost: the upload does not report success */
       }
     }
-    kitSlotKinds = null;   /* (2.8.12) the slot's kind may have changed: read again on the next render (#31) — covers kitWriteNow, kitImportSlot and kitImport. (2.8.13) set only after the marker write (#33, defence in depth) */
+    kitSlotKinds = null;   /* (2.8.12) the slot's kind may have changed: read again on the next render (#31) — covers kitWriteNow and kitImport. (2.8.13) set only after the marker write (#33, defence in depth) */
   }
   return done;
 }
@@ -9457,7 +9500,7 @@ async function bkReadSlot(k) {   /* a USR slot's raw image (backup object 32+k):
    whole slot image or just its 480-byte header — the zones live in the header. Root is stored ×16. */
 function parseSlotHeader(raw) {
   const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
-  if (v.getUint32(0, true) !== 0x504D5346) return { name: "", zones: [] };
+  if (v.getUint32(0, true) !== 0x504D5346) return { name: "", zones: [], version: 0 };
   const nz = raw[6], name = new TextDecoder().decode(raw.subarray(8, 16)).replace(/\0.*$/, "");
   const zones = [];
   for (let j = 0; j < nz && j < 16; j++) {
@@ -9466,7 +9509,7 @@ function parseSlotHeader(raw) {
       le: v.getUint32(o + 12, true), rate: v.getUint32(o + 16, true), root: v.getInt16(o + 20, true) / 16,
       pred: v.getInt16(o + 22, true), idx: raw[o + 24], lo: raw[o + 25], hi: raw[o + 26], looped: raw[o + 27] });
   }
-  return { name, zones };
+  return { name, zones, version: v.getUint16(4, true) };   /* (2.8.14) the header version: 2 means the zone preds carry gains */
 }
 function kitSlotKind(raw) {   /* "kit": every zone is one lane note (lo = hi = root); "empty": no zones; else "inst" */
   const { zones } = parseSlotHeader(raw);
@@ -9475,7 +9518,7 @@ function kitSlotKind(raw) {   /* "kit": every zone is one lane note (lo = hi = r
   return zones.every((z) => z.lo === z.hi && z.lo === z.root && laneNotes.has(z.root)) ? "kit" : "inst";
 }
 /* (2.8.9) what each USR slot holds — a kit, an instrument, or nothing — read lazily when the Kits
-   tab opens, from the slot headers only. The Import / Export buttons stay enabled for instruments. */
+   tab opens, from the slot headers only. The Export button stays enabled for instruments. */
 async function kitSlotKindRead() {
   if (!dev) return;
   const kinds = [];
@@ -9507,7 +9550,7 @@ async function kitExportSlot(k) {
     const pads = [];
     draftPads.forEach((p, l) => {
       if (!p) return;
-      pads.push({ lane: l, file: p.fname, adpcm: `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.adpcm`, tune: p.tune || 0, gain: 0, len: p.s.length,
+      pads.push({ lane: l, file: p.fname, adpcm: `${String(l + 1).padStart(2, "0")} ${DRUM_LANES[l][1]}.adpcm`, tune: p.tune || 0, gain: p.gain || 0, len: p.s.length,
         slice: p.slice ? { start: p.slice.start, end: p.slice.end } : null });
     });
     const kit = { format: "lowtide-drum-kit", version: 2, name: name || kitDest(k), pads };

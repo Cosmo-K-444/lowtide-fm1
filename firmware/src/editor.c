@@ -39,10 +39,12 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 /* v16 (Lowtide 2.8.8): backup object 13 = the kit slices (drums.c kit_slice) */
 /* v17 (Lowtide 2.8.9): KITS_MODE = 80, KITS_STOP = 81 — the Kits tab's live kit playback (drums.c kits_mode) */
 /* v18 (Lowtide 2.8.10): a kit slice with end == 0 runs to the end of the sample (drums.c kit_slice) */
+/* v19 (Lowtide 2.8.14): version-2 user slots carry the kit gain in the zone pred field (Q15);
+ * drum_on_kit applies it (drums.c), gated on the slot version (eng_sample.c usr_ver) */
 #define ED_DRUM_TRIG 79u   /* (2.8.5) the last live drum hit, pushed while the editor WATCHes */
 #define ED_KITS_MODE 80u   /* (2.8.9) kits mode: 0 off, 1..4 USR1..USR4, 5 USR3+4 */
 #define ED_KITS_STOP 81u   /* (2.8.9) stop a kit voice: lane 0..15, 127 = all (0xFF on the wire is 127: 7-bit SysEx) */
-#define ED_PROTO 18u                                   /* the protocol version INFO ends with (2.8.10: a slice with end == 0 runs to the sample end) */
+#define ED_PROTO 19u                                   /* the protocol version INFO ends with (2.8.14: pred-as-gain in version-2 user slots) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -123,6 +125,7 @@ UI_SMALL static int ed_smp_erase(uint32_t k, uint32_t all)  /* header sector, or
     uint32_t i, took;
     int rc = 0;
     usr_nz[k] = 0;
+    usr_ver[k] = 0;                                     /* (2.8.14) the slot is invalid: no version either */
     for (i = 0; i < 16u; i++)
         usr_zone[k][i].n = 0;                     /* a sounding voice ends instead of reading 0xFF */
     for (i = 0; i < (all ? SMP_USER_SIZE / 0x1000u : 1u) && !rc; i++) {
@@ -140,9 +143,9 @@ UI_SMALL static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
         return 6;                                  /* no BEGIN first (a header over a header: flash ANDs them) */
     if (ed_unpack7(a, na, ed_smp_buf, sizeof(smp_user_hdr_t)) != sizeof(smp_user_hdr_t))
         return 1;
-    if (h->magic != SMP_USER_MAGIC || h->version != 1 || !h->nz || h->nz > 16u ||
+    if (h->magic != SMP_USER_MAGIC || (h->version != 1 && h->version != 2) || !h->nz || h->nz > 16u ||
         h->data_len > SMP_USER_SIZE - SMP_USER_DATA)
-        return 2;
+        return 2;                                       /* (2.8.14) v2 accepted, as smp_user_scan does */
     for (i = 0; i < h->nz; i++)                    /* the zones checked before anything is written */
         if (!smp_zone_ok(&h->zone[i], h->data_len))
             return 2;
@@ -504,7 +507,7 @@ UI_SMALL static const uint8_t *ed_bk_obj(uint32_t id, uint32_t *len)   /* 0 = no
     }
     if (id >= 32u && id < 32u + SMP_USER_SLOTS) {
         const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(id - 32u);
-        if (h->magic == SMP_USER_MAGIC && h->version == 1u && h->nz && h->nz <= 16u &&
+        if (h->magic == SMP_USER_MAGIC && (h->version == 1u || h->version == 2u) && h->nz && h->nz <= 16u &&
             h->data_len <= SMP_USER_SIZE - SMP_USER_DATA)
             *len = SMP_USER_DATA + h->data_len;
         return smp_user_xip(id - 32u);
@@ -794,7 +797,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
-        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices, 17: kits mode, 18: a slice with end == 0 runs to the sample end) */
+        ed_b(ED_PROTO);                                   /* v5..: the protocol version (9: FM6 patches, 10: SYN kits, 13: drum-pad learn, 15: the learn is gone, 16: the kit slices, 17: kits mode, 18: a slice with end == 0 runs to the sample end, 19: pred-as-gain in version-2 user slots) */
         break;
     }
     case ED_GET:

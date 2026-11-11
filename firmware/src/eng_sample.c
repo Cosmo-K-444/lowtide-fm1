@@ -9,7 +9,9 @@ typedef struct {
     uint32_t off, n, ls, le;     /* byte offset, samples, loop start / end (sample index) */
     uint32_t rate;               /* source rate / 44100, Q16 */
     int16_t root16;              /* root pitch in 1/16 semitone */
-    int16_t pred;                /* ADPCM state at the loop start */
+    int16_t pred;                /* ADPCM state at the loop start — except in a version-2 user slot's kit zones,
+                                  * where it is the zone gain, Q15 (32767 = 0 dB, 2068 = -24 dB); drum_on_kit
+                                  * (drums.c) applies it, gated on the slot version (usr_ver) */
     uint8_t idx, lo, hi, looped; /* looped: 0 one-shot, 1 loops [ls, le] (the factory sets), 2 (2.7, user slots: the
                                   * editor's LOOP and LOOP+TAIL) loops while the note is held, then plays on to the end */
 } smp_zone_t;
@@ -58,6 +60,10 @@ typedef struct {
 } smp_user_hdr_t;                                   /* 32 + 16 x 28 = 480 B, data at +512 */
 static smp_zone_t usr_zone[SMP_USER_SLOTS][16];     /* RAM copy, off rebased onto SMP_DATA */
 static uint8_t usr_nz[SMP_USER_SLOTS];
+/* (2.8.14) the header version smp_user_scan last read per slot: 0 = none / invalid, 1 = v1 (pred is the
+ * ADPCM predictor), 2 = v2 (pred is the kit gain, Q15). drum_on_kit (drums.c) consults it so pred-as-gain
+ * is applied only to v2 slots; v1 slots keep their real predictor. */
+static uint8_t usr_ver[SMP_USER_SLOTS];
 static const char *const SMP_ALL_NAMES[SMP_NALL] = {SMP_SET_NAMES_INIT, "USR1", "USR2", "USR3", "USR4"};
 
 #ifndef SMP_USER_XIP                                /* host tests: a RAM image of the slots */
@@ -86,8 +92,9 @@ static void smp_user_scan(uint32_t k)
     uint32_t i, base;
     smp_user_gen++;
     usr_nz[k] = 0;                                  /* (from here no new voice takes the slot) */
+    usr_ver[k] = 0;                                 /* (2.8.14) no version until a header reads valid */
     slc_user_scan(k, 0);
-    if (h->magic != SMP_USER_MAGIC || h->version != 1 || !h->nz || h->nz > 16u ||
+    if (h->magic != SMP_USER_MAGIC || (h->version != 1 && h->version != 2) || !h->nz || h->nz > 16u ||
         h->data_len > SMP_USER_SIZE - SMP_USER_DATA)
         return;
     base = (uint32_t)(uintptr_t)(smp_user_xip(k) + SMP_USER_DATA) - (uint32_t)(uintptr_t)SMP_DATA;
@@ -101,6 +108,7 @@ static void smp_user_scan(uint32_t k)
     for (i = 0; i < h->nz; i++)
         usr_zone[k][i] = zs[i];
     usr_nz[k] = h->nz;
+    usr_ver[k] = (uint8_t)h->version;               /* (2.8.14) 1 or 2: the gate drum_on_kit reads */
     fm1_irq_on();
     slc_user_scan(k, 1);
 }

@@ -124,10 +124,10 @@ checked byte for byte by `web/test_web.mjs`): header at 0, ADPCM data at 512.
 
 | Offset | Field |
 | --- | --- |
-| 0 | magic `"FSMP"` (u32 0x504D5346), u16 version 1, u8 zone count 1..16, u8 0 |
+| 0 | magic `"FSMP"` (u32 0x504D5346), u16 version (1, or 2 when the zone preds carry gains — v19, below), u8 zone count 1..16, u8 0 |
 | 8 | name, 8 ASCII bytes (0-padded) |
 | 16 | u32 data length (bytes), u32 CRC-32 (zlib) of the data, 8 bytes 0 |
-| 32 | 16 zones × 28 bytes: u32 off (in the data), n (samples), loop start, loop end, rate (Hz / 44100 × 65536); i16 root × 16 (MIDI note), ADPCM predictor at the loop start; u8 step index at the loop start, lo note, hi note, looped (0 one-shot, 1 always, 2 while the note is held then the rest to the end: SLOOP 2.7, the editor's LOOP and LOOP+TAIL; 2.6 plays 2 as 1) |
+| 32 | 16 zones × 28 bytes: u32 off (in the data), n (samples), loop start, loop end, rate (Hz / 44100 × 65536); i16 root × 16 (MIDI note), ADPCM predictor at the loop start — or, in a version-2 slot (v19), the zone gain as a Q15 multiplier; u8 step index at the loop start, lo note, hi note, looped (0 one-shot, 1 always, 2 while the note is held then the rest to the end: SLOOP 2.7, the editor's LOOP and LOOP+TAIL; 2.6 plays 2 as 1) |
 
 Data is IMA ADPCM, 4 bit, low nibble first, starting from predictor 0 and step index 0.
 All little endian.
@@ -596,6 +596,27 @@ in kits mode ignored the End marker whenever the editor sent 0 for "to the end".
 slice" is unchanged: an entry with start 0 and end 0 still plays the zone whole. A set entry is
 still validated on read (its start before its effective end, its step index 0..88, its end inside
 the slot's data); a bad one reads as off.
+
+## v19: pred-as-gain in version-2 user slots (Lowtide 2.8.14)
+
+`INFO` ends with 19. A user slot's header version is 2 when the editor writes a kit pad's gain
+into the zone `pred` field; v18 and older editors write version 1. In a version-2 slot `pred`
+holds the gain as a Q15 multiplier (32767 = 0 dB, 2068 = −24 dB; gain −24..0 dB in 1 dB steps),
+and the firmware applies it to kit voices at note-on (firmware `drums.c drum_on_kit`, gated on
+the slot version — version-2 slots only: a version-1 slot's `pred` is still the ADPCM predictor
+state at the loop start, and must never be read as a gain). The SAMPLE engine does not read it:
+a version-2 slot played through SAMPLE ignores the gain, exactly as a version-1 slot's predictor
+is ignored by kit voices. The audio bytes are the original, unbaked audio, so a gain-only change
+is a header-only update (the same fast path as a pitch-only change — the tune lives in the zone
+rate since the 2.8.13 #35 fix — `smpUploadHeader`, at most 16 requests instead of ~320), and a kit
+ZIP stores the gain in kit.json alongside the tune: a kit exported with a nonzero gain needs
+2.8.14+ to import at the right gain, exactly as a kit with a nonzero tune needs 2.8.13+. The
+editor branches on the protocol version: it writes pred-gain (header version 2) only for a
+protocol-19 firmware, and keeps baking the gain into the audio (header version 1) for an older
+one. A version-2 slot on an older firmware reads as empty (that firmware only accepts version 1),
+so a downgrade loses the kit rather than playing it at the wrong gain. The loop-restart hazard
+is documented with the firmware: `pred` is still read as ADPCM state on a loop restart, so a kit
+zone carrying gain in `pred` must stay a one-shot (`looped` = 0), as all kit zones are.
 
 ## Notes for the editor
 

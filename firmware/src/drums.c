@@ -435,6 +435,24 @@ static int drum_on_kit(uint32_t note, uint32_t vel, int32_t kit_force)
         v->s[3] = sample_next(z, v, 0);
         /* (after 2.8.3) clamped: a user kit zone's root is not checked (a typed root of 300 shifted by 2^20) */
         v->s[5] = (int32_t)((pow2_q16(clamp((int32_t)note * 16 - z->root16, -1536, 2047)) >> 8) * (z->rate >> 8));
+        /* (2.8.14) pred-as-gain: a version-2 user slot carries the zone gain in pred, not the ADPCM
+         * predictor — a Q15 multiplier (32767 = 0 dB, 2068 = -24 dB). Scale the voice velocity by it:
+         * velocity is only used for gain in the sampled-kit mix (drums_mix: g = mulq15(lvl, v->vel * 258)),
+         * so this is exactly the baked gain, and it applies uniformly to preview, physical pad and
+         * sequencer. Gated on usr_ver: v1 slots (all existing user slots, and all built-in sets) carry
+         * a real predictor in pred, which must never be read as a gain. Only user kits reach here
+         * (kit >= DRUM_USR; the GM set plays SMP_ZONES, the synthesised kits return earlier), and
+         * uslot is the slot the zone came from (DRUM_PAIR: whichever of USR3 / USR4 held it).
+         * LOOP HAZARD: pred is still read as ADPCM state on a loop restart (sample_next, eng_sample.c,
+         * and the TEXTURE USR source, fx.c) when loop != 0 AND z->looped != 0. Kit zones are one-shots
+         * (looped = 0), so that branch can never fire for them today — but looped must stay 0 for any
+         * kit zone carrying gain in pred, or the SAMPLE engine / texture would read the gain as a
+         * predictor on restart. The gain is clamped to 0..32767 (a malformed v2 header cannot drive
+         * the velocity negative or past 127); vel * gain <= 127 * 32767 fits in 32 bits, +16383 rounds. */
+        if (kit >= DRUM_USR && uslot < SMP_USER_SLOTS && usr_ver[uslot] == 2u) {
+            int32_t gain = clamp((int32_t)z->pred, 0, 32767);
+            v->vel = (uint8_t)clamp(((int32_t)vel * gain + 16383) / 32767, 0, 127);
+        }
     }
     {
         uint32_t vi = (uint32_t)(v - drums.v);
