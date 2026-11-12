@@ -1531,7 +1531,7 @@ async function editorKit289() {
   const modeBox = { console, dev: { info: { proto: 18 } }, tab: "kits", SMP: E.SMP,
     req: E.req, rq: async (r) => { sent.push(r); }, report: () => {},
     confirm: () => true, t: (k) => k, kitWriteNow: async () => { writes.push(1); }, renderKits: () => {}, setTimeout, clearTimeout,
-    bkReadRange: async () => new Uint8Array(480), kitSlotKind: () => "kit" };   /* (2.8.10) every slot reads as holding a kit, so a pick asks first */
+    bkReadRange: async () => new Uint8Array(480), kitSlotKind: () => "kit" };   /* (2.8.10) every slot reads as holding a kit; (2.8.17) a pick asks first only when the draft is unsent */
   const M = vm.runInNewContext(modeSrc + "\n" + pickSrc + `\n;({ kitDraft, kitsModeUpdate, kitsStopSend, kitPickSlot })`, modeBox);
   await M.kitsModeUpdate();
   await M.kitsModeUpdate();   /* the same value again: not sent twice */
@@ -1550,6 +1550,7 @@ async function editorKit289() {
     "route B: picking another slot with the kit already written reads the new slot back (empty here); the old slot keeps its copy");
   modeBox.confirm = () => false;
   M.kitDraft.pads[0] = { s: s(1000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  M.kitDraft.sent = false;   /* (2.8.17) the draft is unsent now, so the pick asks (kitSwitchConfirm) and can be refused — a safe draft no longer asks at all */
   await M.kitPickSlot(0);
   ok(M.kitDraft.slot === 3 && sent.at(-1).join() === "80,4" && writes.length === 0,
     "route B: refusing the pick keeps the slot, the mode and the kit (no read-back, no write)");
@@ -1581,7 +1582,7 @@ async function editorKit289() {
   ok(/onclick: \(\) => kitExportSlot\(d\)/.test(html) && !/kitImportSlot/.test(html) && !/t\("kitImportZip"\)/.test(html) && !/slotFile/.test(html)
     && /async function kitExportSlot\(k\)/.test(html) && /const slots = kitSlots\(k\)/.test(html)
     && !html.slice(html.indexOf("async function kitExportSlot"), html.indexOf("/* (2.8.9) a v2 kit ZIP into the draft")).includes("kitDraft.slot"),
-    "pick-a-slot: each slot card's own Export ZIP works on that slot (kitExportSlot(k), no picked slot needed); the Import ZIP button is gone (#30)");
+    "pick-a-slot: each slot card's own Export works on that slot (kitExportSlot(k), no picked slot needed); the Import ZIP button is gone (#30)");
   {   /* kitZipParse restores the gain from kit.json (2.8.14), clamped to -24..0, and defaults
        to 0 when an older kit has no gain field (the gain was baked into its audio) */
     const impSrc = html.slice(html.indexOf("async function kitZipParse"), html.indexOf("async function kitUploadPads"));
@@ -1705,8 +1706,8 @@ async function editorKit2810() {
   ok(RB.kitDraft.slot === 2 && RB.kitDraft.name === "TESTKIT" && RB.kitDraft.pads[0] && RB.kitDraft.pads[0].fname === "TESTKIT"
     && RB.kitDraft.pads[0].s.length === 8000 && eq(RB.kitDraft.pads[0].adpcm, kitAdpcm)
     && RB.kitDraft.pads[0].slice && RB.kitDraft.pads[0].slice.start === 1000 && RB.kitDraft.pads[0].slice.end === 3000
-    && writes.length === 0 && sent.at(-1).join() === "80,3" && confirms.join() === "kitPickConfirm",
-    "slot read-back: picking a slot loads its kit (name, ADPCM as-is, chop markers) and asks first — it does not overwrite the slot");
+    && writes.length === 0 && sent.at(-1).join() === "80,3" && confirms.join() === "",
+    "slot read-back: picking a slot loads its kit (name, ADPCM as-is, chop markers) without asking — it does not overwrite the slot");
   await RB.kitPickSlot(3);
   ok(RB.kitDraft.slot === 3 && RB.kitDraft.name === "" && RB.kitDraft.pads.every((p) => !p) && writes.length === 0,
     "slot read-back: picking an empty slot empties the draft");
@@ -1719,8 +1720,8 @@ async function editorKit2810() {
   await RB.kitPickSlot(3);
   ok(RB.kitDraft.slot === 2 && writes.length === 1 && confirms.at(-1) === "kitSwitchConfirm",
     "slot read-back: refusing the pick keeps the slot and the draft");
-  ok(confirms.join() === "kitPickConfirm,kitPickConfirm,kitConfirm,kitSwitchConfirm",
-    "slot read-back: the pick asks with the load message when the draft is safe, the write message when it is not");
+  ok(confirms.join() === "kitConfirm,kitSwitchConfirm",
+    "slot read-back: the pick asks with the write message when the draft is unsent, and does not ask when the target is a kit and the draft is safe");
 
   /* #12: importing a kit ZIP with no slot picked waits in the draft (no success reported) until a slot is picked */
   const exSrc = html.slice(html.indexOf("function kitExport()"), html.indexOf("async function smpInfo()"));
@@ -1813,14 +1814,16 @@ async function editorKit2810() {
     && /u\.use\.textContent = t\("kitUse"\)/.test(html) && !/u\.use\.disabled/.test(html),
     "use label: the drum-track button is a label now (no button, no onclick, no kitUse)");
   ok(!/function kitZip\(\)/.test(html) && !/u\.zip/.test(html) && !/kitZip: "/.test(html),
-    "save as ZIP: the button and the old WAV export are gone (Export kit and per-slot Export ZIP stay)");
+    "save as ZIP: the button and the old WAV export are gone (Export kit and per-slot Export stay)");
   ok(/\.slot-io button \{[^}]*min-height: 0;/.test(html) && /\.dest \.cell\.selected \.slot-io button \{ background: var\(--s2\);/.test(html),
     "slot cards: the footer strip is thin (min-height 0, not the pick button's 92 px) and the picked highlight covers the whole card");
   ok(/kitStep2: "Drum Kit Constructor",/.test(html), "step 2: the duplicate kitStep2 key reads 'Drum Kit Constructor'");
   ok(!/−½/.test(html) && !/\+½/.test(html) && /kitSliceFine: "Fine"/.test(html)
     && /title: "Fine zoom out \(0\.5 zoom level\)"/.test(html) && /title: "Fine zoom in \(0\.5 zoom level\)"/.test(html)
-    && /class: "fine" \}, el\("span", \{ text: t\("kitSliceFine"\) \}\)/.test(html),
-    "fine zoom: its own Fine group with plain − / + buttons (no ½ labels) and tooltips for the 0.5 zoom-level step");
+    && /class: "zoombox" \}, el\("span", \{ text: t\("kitSliceZoom"\) \}\)/.test(html)
+    && /class: "zoombox" \}, el\("span", \{ text: t\("kitSliceFineZoom"\) \}\)/.test(html)
+    && /kitSliceZoom: "Zoom"/.test(html) && /kitSliceFineZoom: "Fine Zoom"/.test(html),
+    "zoom boxes: the 1.0x zoom is in its own Zoom box and the 0.5x zoom in its own Fine Zoom box, with plain − / + buttons (no ½ labels) and tooltips for the 0.5 zoom-level step");
   const kitsRender = html.slice(html.indexOf("function renderKits()"), html.indexOf("function kitPadUpdate"));
   ok(/u\.prog = el\("progress", \{ max: 1, value: 0, style: "visibility:hidden" \}\)/.test(kitsRender)
     && /prog\.style\.visibility = "visible"/.test(html)
@@ -1833,6 +1836,21 @@ async function editorKit2810() {
   const hdrUpSrc = html.slice(html.indexOf("async function smpUploadHeader"), html.indexOf("async function smpUpload(k,"));
   ok(!/^\s*renderKits\(\);/m.test(hdrUpSrc),
     "#37: the header-only write performs no re-render of its own (the kitWriteNow tail re-renders once after the write)");
+  ok(/const scrollY0 = window\.scrollY;/.test(kitsRender) && /holdScroll\(\);/.test(kitsRender) && /requestAnimationFrame\(holdScroll\);/.test(kitsRender),
+    "#40: renderKits holds the scroll position across the whole render (a slider release or a write completion does not jump the page)");
+  const fullUpSrc = html.slice(html.indexOf("async function smpUpload(k,"), html.indexOf("async function smpErase"));
+  ok((fullUpSrc.match(/renderKits\(\);/g) || []).length === 1 && /finally \{[\s\S]*?renderKits\(\);/.test(fullUpSrc),
+    "#40: the full write re-renders only in its finally (no render at its start — the kitWriteNow tail re-renders once after the write)");
+  ok(/if \(lpFired && !kitDraft\.dragging && kitDraft\.picked && kitDraft\.picked\.lane === l && kitDraft\.picked\.kind === kind\)/.test(kitsRender)
+    && /kitDraft\.picked = null;[\s\S]{0,400}?kitDraft\.justPicked = true;/.test(kitsRender),
+    "long-press pick-up: releasing on the same box without dragging disarms the move (picked cleared, outline gone) and re-arms the click swallow, so the release click does not select or play the pad");
+  ok(/kitFullWrite = true;/.test(html) && !/kitFullWrite = true;/.test(hdrUpSrc)
+    && /\.kitwriting \.pads, \.kitwriting \.kithead \.bar/.test(html) && /\.kitlocked \.kithead \.bar/.test(html),
+    "write lock: only a full upload sets kitFullWrite, and the grid + header bar lock while it is in flight (and with no slot picked)");
+  ok(/kitExportZip: "Export"/.test(html) && /kitExportZip: "エクスポート"/.test(html),
+    "export rename: the per-slot button reads Export (エクスポート in Japanese)");
+  ok(/if \(msg && !confirm\(msg\)\)/.test(html) && /currently contains an instrument sound/.test(html),
+    "kit-load prompt: picking a kit slot no longer asks, the instrument prompt remains");
   ok((html.match(/kind !== "box" && !kitDraft\.pads\[/g) || []).length === 2,
     "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box; dragstart reads the picked lane)");
   ok(/await kitReadSlotKit\(d\)/.test(html) && /sayK\("kitNeedSlot"\)/.test(html) && /if \(kitDraft\.sent\) sayK\("kitImported"/.test(html),
@@ -3391,10 +3409,10 @@ async function editorKit2814() {
     "#36: the nudge buttons preview only when the marker commit landed");
 
   /* #30: no Import ZIP button remains anywhere in the editor (no button, label, handler or
-     file input for it), and nothing references the removed code; Export ZIP stays */
+     file input for it), and nothing references the removed code; Export stays */
   ok(!/t\("kitImportZip"\)/.test(html) && !/kitImportSlot/.test(html) && !/slotFile/.test(html) && !/kitImportZip:/.test(html)
     && /onclick: \(\) => kitExportSlot\(d\)/.test(html),
-    "#30: no Import ZIP button remains (no button, label, handler or file input); Export ZIP stays");
+    "#30: no Import ZIP button remains (no button, label, handler or file input); Export stays");
 
   /* pred-as-gain: the Q15 values, the zone pred and the header version */
   {

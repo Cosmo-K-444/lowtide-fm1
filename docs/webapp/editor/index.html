@@ -489,10 +489,10 @@
   .slice .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
   .slice .bar .val { color: var(--fg2); min-width: 78px; }
   .slice .bar button { padding: 3px 8px; }
-  /* (2.8.10) the fine zoom pair is its own group, with a "Fine" label over its − / + buttons */
-  .slice .fine { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-  .slice .fine > span { font-size: 11px; color: var(--dim); line-height: 1; }
-  .slice .fine .bar { margin: 0; }
+  /* (2.8.17) each zoom pair is its own labelled box, with the label over its − / + buttons */
+  .slice .zoombox { display: flex; flex-direction: column; align-items: center; gap: 1px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px 3px; }
+  .slice .zoombox > span { font-size: 11px; color: var(--dim); line-height: 1; }
+  .slice .zoombox .bar { margin: 0; }
 
   /* ---- drum pads: the 16-pad block (MIDI notes 36-51), Ableton Drum Rack order ---- */
   .dpgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
@@ -527,7 +527,7 @@
   .dest button:disabled { opacity: .35; }
   .destnote { color: var(--fg2); margin: 0 0 10px; }
   .destnote .warn, .warn-t { color: var(--t3); }
-  /* (2.8.9) pick-a-slot-first: each destination is a card — the pick area on top, its own Export ZIP
+  /* (2.8.9) pick-a-slot-first: each destination is a card — the pick area on top, its own Export
      button flush in the footer, so it shares the card's edges and stays enabled without picking */
   .dest .cell { display: flex; flex-direction: column; min-width: 0; background: var(--bg); border: 1px solid var(--s3); }
   .dest .cell.big { grid-column: span 2; }
@@ -543,6 +543,11 @@
   .slot-io button:disabled { opacity: .35; cursor: not-allowed; }
   /* (2.8.9) the kit is locked until a slot is picked: grid and chop panel inert, with a banner pointing at step 1 */
   .kitlocked .pads, .kitlocked .slice { opacity: .38; pointer-events: none; }
+  /* (2.8.17) the section-2 header bar locks with it too (name, Choose files, Export, Import, Clear all),
+     and, as .kitwriting, while a full write is in flight — grid only there, the Chop panel is not locked,
+     and no banner: the banner is the pick-a-slot prompt, not a write prompt */
+  .kitlocked .kithead .bar { opacity: .38; pointer-events: none; }
+  .kitwriting .pads, .kitwriting .kithead .bar { opacity: .38; pointer-events: none; }
   .lockbanner { display: none; align-items: center; gap: 10px; border: 1px dashed var(--t3); color: var(--t3);
                 background: rgba(255, 198, 24, .06); padding: 9px 12px; margin: 10px 0 0; cursor: pointer; }
   .kitlocked .lockbanner { display: flex; }
@@ -961,7 +966,7 @@
       <button id="connect" class="pri" data-t="connect" data-ic="port_usb_c"></button>
       <div class="links"><a class="dim" href="../installer/" data-t="installer"></a><button class="lang" id="lang"></button></div>
       <button id="install" class="pri" data-t="install" hidden></button>
-      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.16.html" data-t="offline"></a><!--/DL-->
+      <!--DL--><a class="dim" id="offline" href="lowtide-editor.html" download="lowtide-editor-2.8.17.html" data-t="offline"></a><!--/DL-->
     </div>
   </aside>
 
@@ -5102,14 +5107,14 @@ const TEXT = {
     kitFull: "16 パッドとも埋まっています", kitLoaded: "ZIP を読み込みました: ",
     kitExport: "キットを保存", kitImport: "キットを開く", kitExported: "キットを保存しました: ", kitImported: "キットを読み込みました: ",
     kitImportBad: "キットファイルが読めません: ",
-    kitExportZip: "ZIP で保存",
+    kitExportZip: "エクスポート",
     kitImportOld: "このキットは古いバージョン 1（WAV）形式で、読み込めません。",
     kitImportNotKit: "この ZIP はドラムキットではありません。楽器を入れるには「サンプル」タブを使ってください。",
     kitSlotEmpty: "{x} は空です — 保存するものがありません。", kitExportedInst: "楽器を保存しました: ",
     kitSwitchConfirm: "このキットを {x} に書き込みますか？そこにあるものは置き換わります。{y} には書き込み済みのものが残ります。",
     kitPickConfirm: "{x} のキットを読み込みますか？今編集中のキットは置き換わります。",
     kitNeedSlot: "まずステップ 1 で置き場所を選んでください — キットは用意できました。選んだ場所に書き込まれます。",
-    kitNoSlot: "まだ置き場所が選ばれていません — 下のパッドはロックされています。各カードの ZIP 保存ボタンはもう使えます。",
+    kitNoSlot: "まだ置き場所が選ばれていません — 下のパッドはロックされています。各カードのエクスポートボタンはもう使えます。",
     kitInstrument: "楽器",
     kitSlotLocked: "ロックされています — ステップ 1 で置き場所を選ぶと作り始められます。",
     kitMeterNoSlot: "— 置き場所を選ぶと空きが表示されます",
@@ -5117,7 +5122,7 @@ const TEXT = {
     kitChop: "ファイン・チョップ",
     kitSliceTitle: "チョップ", kitSliceHint: "パッドの波形をクリックするとチョップします。",
     kitSliceStart: "開始", kitSliceEnd: "終了", kitSliceLen: "長さ", kitSlicePlay: "チョップを試聴",
-    kitSliceClear: "チョップを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceFit: "全体", kitSliceFine: "微調整",
+    kitSliceClear: "チョップを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceZoom: "ズーム", kitSliceFineZoom: "微調整ズーム", kitSliceFit: "全体", kitSliceFine: "微調整",
     kitSliceStored: "マーカーは FM-1 に保存されるので、サンプルを再送せずに変えられます。",
     kitSliceUnsent: "マーカーはこのキット内に保持されます。置き場所を選ぶと FM-1 に書き込まれ、その後はサンプルを再送せずに変えられます。",
     kitSliceOld: "マーカーには FM-1 の Lowtide 2.8.8 が必要です — それまではこのキット内に保持されます。",
@@ -5174,7 +5179,7 @@ const TEXT = {
     fm6OtherMaker: "別のメーカーの SysEx です", fm6Universal: "音色ではない汎用 SysEx です",
     fm6Exported: "バンクを書き出しました",
     kitStep1: "置き場所",
-    kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードには ZIP 保存のボタンがあり、選ばなくても使えます。まず中身を保存してから選べます。パッドは置き場所を選ぶまでロックされています。",
+    kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードにはエクスポートのボタンがあり、選ばなくても使えます。まず中身を保存してから選べます。パッドは置き場所を選ぶまでロックされています。",
     kitStep2: "音",
     kitStep2Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックするとチョップ用に選んで試聴します。パッドごとにピッチと音量、全体の長さがあります。波形をドラッグすると音だけ、タイトルをドラッグすると箱ごと移動します。波形を長押しすると音だけを持ち上げます（波形の周りに破線の枠）。押したまま別のパッドへドラッグするか、別のパッドをタップして置きます。音の横の音名は位置のもの（左下が C1）で、箱が動いても変わりません。",
     kitFitHelp: "長すぎるとき: 長い音（クラッシュ、オープンハット）を短くして収めます。",
@@ -5464,14 +5469,14 @@ const TEXT = {
     kitFull: "All 16 pads are taken", kitLoaded: "ZIP opened: ",
     kitExport: "Export kit", kitImport: "Import kit", kitExported: "Kit exported: ", kitImported: "Kit imported: ",
     kitImportBad: "Kit file rejected: ",
-    kitExportZip: "Export ZIP",
+    kitExportZip: "Export",
     kitImportOld: "This kit is the old version 1 (WAV) format and can't be imported.",
     kitImportNotKit: "This ZIP is not a drum kit. To import an instrument, use the Samples tab.",
     kitSlotEmpty: "{x} is empty — nothing to export.", kitExportedInst: "Instrument exported: ",
     kitSwitchConfirm: "Write this kit to {x} instead? It replaces what is there now. {y} keeps the copy already written to it.",
     kitPickConfirm: "Load the kit in {x}? The kit in the editor now will be replaced.",
     kitNeedSlot: "Pick a slot in step 1 first — the kit is ready in the editor, and it will be written to the slot you pick.",
-    kitNoSlot: "No slot picked yet — the pads below are locked. The Export ZIP button on each card already works.",
+    kitNoSlot: "No slot picked yet — the pads below are locked. The Export button on each card already works.",
     kitInstrument: "instrument",
     kitSlotLocked: "Locked — pick a slot in step 1 to start building the kit.",
     kitMeterNoSlot: "— pick a slot to see how much room the kit has",
@@ -5479,7 +5484,7 @@ const TEXT = {
     kitChop: "Fine Chop",
     kitSliceTitle: "Chop", kitSliceHint: "Click a pad's waveform to chop it.",
     kitSliceStart: "Start", kitSliceEnd: "End", kitSliceLen: "Length", kitSlicePlay: "Play chop",
-    kitSliceClear: "Clear chop", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceFit: "Fit", kitSliceFine: "Fine",
+    kitSliceClear: "Clear chop", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceZoom: "Zoom", kitSliceFineZoom: "Fine Zoom", kitSliceFit: "Fit", kitSliceFine: "Fine",
     kitSliceStored: "Markers are stored on the FM-1, so you can change them without re-uploading the sample.",
     kitSliceUnsent: "Markers are kept in this kit; pick a slot to write them to the FM-1, then you can change them without re-uploading the sample.",
     kitSliceOld: "Markers need Lowtide 2.8.8 on the FM-1 — they are kept in this kit until then.",
@@ -5536,7 +5541,7 @@ const TEXT = {
     fm6OtherMaker: "SysEx from another manufacturer", fm6Universal: "Universal SysEx, not voice data",
     fm6Exported: "Bank exported",
     kitStep1: "Where it goes",
-    kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export ZIP button, and it works without picking: back up what's in a slot first. The pads stay locked until a slot is chosen.",
+    kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export button, and it works without picking: back up what's in a slot first. The pads stay locked until a slot is chosen.",
     kitStep2: "Your sounds",
     kitStep2Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to select it for Chop and hear it. Each pad has its pitch and gain, and its whole length. Drag a waveform to move a sample, drag a title to move the box. Long-press a waveform to pick the sample up (a dashed outline around the waveform), then drag it to another pad while still holding, or tap another pad to drop it. The note next to a sound belongs to its position, C1 at the bottom-left.",
     kitFitHelp: "Too long? Fit shortens the longest sounds (crashes, open hats) just enough.",
@@ -8464,6 +8469,7 @@ const kitDest = (d = kitDraft.slot) => (d == null ? "—" : d === KIT_PAIR ? "US
 const kitHas4 = () => !!dev && !!dev.smp && dev.smp.nslots >= 4;
 const kitPlaying = new Map();   /* (2.8.9) lane -> the timer that flips its Stop button back to Play (the FM-1 sends no "finished") */
 let kitWriteTimer = null, kitWriteBusy = false, kitWritePending = false, kitHoldWrite = 0, kitSlotKinds = null, kitWrittenSlot = null;   /* (2.8.9) kinds are read lazily, null = not yet read from the FM-1; written: the slot the draft was last written to */
+let kitFullWrite = false;   /* (2.8.17) a full smpUpload() is in flight: the kit grid and the header bar stay locked until it lands. The quick smpUploadHeader() never sets this, and smpBusy alone cannot tell them apart */
 let kitSent = {};   /* (2.8.13) slot -> {data, hdr} of the last kit upload to it (#35): a pitch-only change
    reuses the same audio bytes, so the next write is a header-only update instead of a full re-upload */
 let kitKitsModeSent = null;   /* the KITS_MODE value the FM-1 last got (null: never sent) */
@@ -8915,6 +8921,13 @@ function kitMiniHit(lane, x, w) {   /* (2.8.16) which marker a pointer at x on a
 function renderKits() {
   const box = $("kit");
   if (!box) return;
+  /* (2.8.17, #40) the write-completion burst re-renders 2-5 times in ~1 s, and the height changes
+     inside it (a pad going empty/full, wrapping flex bars) invalidate Chrome's scroll anchor once
+     per render: hold the scroll position across the whole render, not just the grid re-append. A
+     user's own scroll cannot happen during this synchronous call, so the restore only undoes what
+     the render itself moved; the rAF catches any anchor adjustment the browser applies after layout. */
+  const scrollY0 = window.scrollY;
+  const holdScroll = () => { if (window.scrollY !== scrollY0) window.scrollTo(0, scrollY0); };
   const ok = !!dev && !!dev.smp;
   if (!kitUi || kitUi.lang !== lang) {
     const u = kitUi = { lang, pads: [] };
@@ -8923,7 +8936,7 @@ function renderKits() {
     u.name = el("input", { type: "text", class: "name", maxlength: 8, spellcheck: "false", placeholder: "NAME",
       oninput: () => { const v = u.name.value.toUpperCase().replace(/[^\x20-\x7E]/g, "").slice(0, 8); if (v !== u.name.value) u.name.value = v; kitDraft.name = v; kitButtons(); kitWriteSoon(); } });   /* (2.8.9) a name change writes with the 500 ms settle delay */
     /* (2.8.9) where the kit goes, picked first: each slot is a card — the pick area on top, its own
-       Export ZIP button in the footer. The button belongs to the slot, so it works without
+       Export button in the footer. The button belongs to the slot, so it works without
        picking. (2.8.14, #30) the per-slot "Import ZIP" button is gone: it never imported
        anything, and the per-slot Import (import kit) does the same job. */
     u.dest = el("div", { class: "dest", role: "radiogroup", "aria-label": t("kitStep1") }, ...[KIT_PAIR, 0, 1, 2, 3].map((d) => {
@@ -8960,7 +8973,8 @@ function renderKits() {
     u.sliceCv = el("canvas", {});
     u.sliceZoomOut = el("button", { onclick: () => kitSliceZoom(0.5) }, "−");
     u.sliceZoomIn = el("button", { onclick: () => kitSliceZoom(2) }, "+");
-    /* (2.8.10) fine zoom, 0.5x a click: its own "Fine" group, plain − / + (the ½ label read as half speed) */
+    /* (2.8.10) fine zoom, 0.5x a click, plain − / + (the ½ label read as half speed); (2.8.17) both
+       zooms are labelled boxes now ("Zoom" / "Fine Zoom") */
     u.sliceZoomFineOut = el("button", { title: "Fine zoom out (0.5 zoom level)", onclick: () => kitSliceZoomStep(-0.5) }, "−");
     u.sliceZoomFineIn = el("button", { title: "Fine zoom in (0.5 zoom level)", onclick: () => kitSliceZoomStep(0.5) }, "+");
     u.sliceFit = el("button", { onclick: kitSliceFit }, t("kitSliceFit"));
@@ -8976,8 +8990,9 @@ function renderKits() {
       nudge("end", -10), nudge("end", -1), nudge("end", 1), nudge("end", 10)];
     u.sliceNote = el("p", { class: "dim" });
     u.slice.append(u.sliceTitle, u.sliceCv,
-      el("div", { class: "bar" }, u.sliceZoomOut, u.sliceZoomIn,
-        el("div", { class: "fine" }, el("span", { text: t("kitSliceFine") }), el("div", { class: "bar" }, u.sliceZoomFineOut, u.sliceZoomFineIn)),
+      el("div", { class: "bar" },
+        el("div", { class: "zoombox" }, el("span", { text: t("kitSliceZoom") }), el("div", { class: "bar" }, u.sliceZoomOut, u.sliceZoomIn)),
+        el("div", { class: "zoombox" }, el("span", { text: t("kitSliceFineZoom") }), el("div", { class: "bar" }, u.sliceZoomFineOut, u.sliceZoomFineIn)),
         u.sliceFit, u.sliceZoomVal, u.slicePlay, u.sliceClear),
       el("div", { class: "bar" }, el("span", { text: t("kitSliceStart") }), u.sliceStartVal, ...u.sliceNudges.slice(0, 4)),
       el("div", { class: "bar" }, el("span", { text: t("kitSliceEnd") }), u.sliceEndVal, ...u.sliceNudges.slice(4)),
@@ -9081,7 +9096,8 @@ function renderKits() {
       pu.ph = el("div", { class: "ph" }, el("b", { text: DRUM_LANES[l][1] }), pu.key);
       pu.box.append(pu.ph, pu.empty, pu.cv, pu.fn, pu.ctrls, pu.lenInfo, pu.acts);
       /* (2.8.9) drag the waveform to move the sample, drag the title to move the box; long-press picks
-         it up the same way (touch). A picked-up pad drops on a click, or on a drag onto another box */
+         it up the same way (touch). (2.8.17) releasing on the same box disarms the pick-up again:
+         a move only happens by dragging onto another box while still holding */
       const pickUp = (kind) => {
         if (kitDraft.dragging || (kind !== "box" && !kitDraft.pads[l])) return;   /* (2.8.10) an empty box's label can still be picked up: a box move is map-only */
         kitDraft.picked = { lane: l, kind };
@@ -9090,10 +9106,26 @@ function renderKits() {
         renderKits();
       };
       const armLp = (target, kind) => {
-        let lpTimer = 0;
-        target.addEventListener("pointerdown", () => { lpTimer = setTimeout(() => pickUp(kind), 450); });
+        let lpTimer = 0, lpFired = false;   /* (2.8.17) true once this press's 450 ms timer actually picked the pad up */
+        target.addEventListener("pointerdown", () => { lpFired = false; lpTimer = setTimeout(() => { pickUp(kind); lpFired = !!(kitDraft.picked && kitDraft.picked.lane === l && kitDraft.picked.kind === kind); }, 450); });
         const clearLp = () => clearTimeout(lpTimer);
-        target.addEventListener("pointerup", clearLp);
+        target.addEventListener("pointerup", () => {
+          clearTimeout(lpTimer);
+          /* (2.8.17) long-press + release on the same box, without dragging: disarm the pick-up —
+             nothing moves and the dashed outline goes (renderKits). justPicked stays true, so the
+             click that follows the pointerup is still swallowed by the cv / empty onclick guards;
+             the 800 ms timeout in pickUp() clears it. A drag never disarms here: while a drag runs
+             pointerup does not fire on the source, and after one dragEnd already cleared picked. */
+          if (lpFired && !kitDraft.dragging && kitDraft.picked && kitDraft.picked.lane === l && kitDraft.picked.kind === kind) {
+            kitDraft.picked = null;
+            /* (2.8.17) re-arm the click swallow: pickUp()'s 800 ms timeout may already have
+               expired on a long hold, and the release click must still not select/play the pad */
+            kitDraft.justPicked = true;
+            setTimeout(() => { kitDraft.justPicked = false; }, 800);
+            renderKits();
+          }
+          lpFired = false;
+        });
         target.addEventListener("pointercancel", clearLp);
         target.addEventListener("pointerleave", clearLp);
         return () => clearTimeout(lpTimer);
@@ -9187,9 +9219,9 @@ function renderKits() {
       el("p", { class: "dim", text: t("kitHelp") }),
       step(1, t("kitStep1"), el("p", { class: "dim", text: t("kitStep1Help") }),
         u.dest, u.destNote,
-        el("div", { class: "bar" }, u.use, u.prog, u.wrote), u.where),
+        el("div", { class: "bar" }, u.use, u.wrote), u.where),
       step(2, t("kitStep2"), el("p", { class: "dim", text: t("kitStep2Help") }),
-        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, el("span", { class: "dim", text: t("kitName") }), u.name, u.add, u.file, u.exp, u.imp, u.kitFile, u.clear), u.meterBox),
+        el("div", { class: "kithead" }, el("div", { class: "bar", style: "margin:0" }, el("span", { class: "dim", text: t("kitName") }), u.name, u.add, u.file, u.exp, u.imp, u.kitFile, u.clear), u.meterBox, u.prog),   /* (2.8.17) the write progress bar moved here from step 1, on its own row under the header bar (kithead's second grid row); it still reserves its space (visibility, not hidden), so showing it never shifts the page */
         u.lock, grid, u.slice, el("div", { class: "bar" }, u.match, el("span", { class: "dim", text: t("matchHelp") })),
         el("div", { class: "bar" }, u.fit, el("span", { class: "dim", text: t("kitFitHelp") }))));
     const card = u.card;
@@ -9201,6 +9233,7 @@ function renderKits() {
   if (document.activeElement !== u.name) u.name.value = kitDraft.name;
   if (!kitHas4() && ok && kitDraft.slot >= 3) kitDraft.slot = 2;   /* (a firmware without USR4) */
   u.card.classList.toggle("kitlocked", kitDraft.slot == null);   /* (2.8.9) no slot picked: the pads and the Chop panel are locked */
+  u.card.classList.toggle("kitwriting", kitFullWrite);   /* (2.8.17) a full write in flight: the grid and the header bar are locked the same way (the Chop panel is not); a render mid-write keeps the lock applied */
   if (ok && kitSlotKinds == null) op(async () => { await kitWriteDrain(); try { await kitSlotKindRead(); } catch (e) { report(e); } });   /* (2.8.13) the background re-read waits for a kit write to drain first (#33, defence in depth: the mutex is the real fix) */
   for (const cell of u.dest.children) {
     const b = cell.querySelector(".pick"), d = +b.dataset.d, sl = kitSlots(d).map((k) => ok && dev.smp.slots[k]);
@@ -9245,6 +9278,8 @@ function renderKits() {
   [...u.grid.children].forEach((box, i) => { const pu = u.pads[+box.dataset.l]; pu.key.textContent = DRUMPADS.ableton(DRUMPADS.PAD_NOTES[i]); pu.key.title = ""; });
   kitMeter();
   kitSliceRender();
+  holdScroll();   /* (2.8.17, #40) the page ends up where it was, whatever the render moved */
+  requestAnimationFrame(holdScroll);
 }
 function kitPadUpdate(l) {
   const pu = kitUi && kitUi.pads[l], p = kitDraft.pads[l];
@@ -9365,7 +9400,8 @@ async function kitEraseSlot(k) {   /* erase one slot (a pair part the kit leaves
    (2.8.10) picking a slot loads that slot's kit into the draft instead: the draft becomes what the
    slot holds (an empty slot, or an instrument: an empty draft). Only a draft that was never written
    anywhere — an imported kit with no slot yet — is written to the picked slot instead, so the
-   import is not lost. A pick into a non-empty slot asks first, either way. */
+   import is not lost. A pick into a non-empty slot asks first when it would overwrite something —
+   an instrument, or an unsent draft. A kit slot with no unsent draft is picked without asking. */
 async function kitPickSlot(d) {
   if (kitDraft.slot === d) return;
   const had = kitDraft.slot, any = kitDraft.pads.some(Boolean);
@@ -9377,8 +9413,8 @@ async function kitPickSlot(d) {
       ? `${kitDest(d)} currently contains an instrument sound. Selecting this slot will overwrite it. Export it first if you want to save it.`
       : unsent
         ? (had != null ? t("kitSwitchConfirm").replace("{x}", kitDest(d)).replace("{y}", kitDest(had)) : t("kitConfirm").replace("{x}", kitDest(d)))
-        : t("kitPickConfirm").replace("{x}", kitDest(d));
-    if (!confirm(msg)) { renderKits(); return; }
+        : null;   /* (2.8.17) a kit in the slot and no unsent draft: pick it without asking */
+    if (msg && !confirm(msg)) { renderKits(); return; }
   }
   if (unsent) {   /* an imported kit with no slot yet: the pick is where it lands */
     kitDraft.slot = d;
@@ -9615,7 +9651,7 @@ async function kitSlotKindRead() {
   kitSlotKinds = kinds;
   renderKits();
 }
-/* (2.8.9) back up a slot as a ZIP (its own Export ZIP button): the slot's raw bytes, read from the
+/* (2.8.9) back up a slot as a ZIP (its own Export button): the slot's raw bytes, read from the
    FM-1, plus its chop markers. A drum kit becomes a v2 kit ZIP (its ADPCM as-is, no decode to WAV);
    an instrument becomes a ZIP of its raw slot image, for the Samples tab; an empty slot has nothing */
 async function kitExportSlot(k) {
@@ -9718,8 +9754,11 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = fals
   const { hdr, data } = built;
   busy++;
   smpBusy = true;
+  kitFullWrite = true;   /* (2.8.17) a full write is in flight: lock the kit grid and the header bar (the quick header-only write never sets this) */
+  if (typeof kitUi !== "undefined" && kitUi && kitUi.card) kitUi.card.classList.add("kitwriting");   /* applied directly: no renderKits() at the start of a write (#40) */
   renderSamples();
-  renderKits();
+  /* (2.8.17, #40) no renderKits() here: the finally render below and the kitWriteNow tail already
+     re-render once after the write, and the extra render in the burst invalidated the scroll anchor */
   if (!prog || !prog.isConnected)                   /* (the Samples page was drawn again just now: its new bar) */
     prog = $("smpslots").querySelector(`[data-k="${k}"] progress[max="1"]`) || { value: 0, hidden: true };
   prog.hidden = false;
@@ -9751,6 +9790,8 @@ async function smpUpload(k, prog, ask = true, d = smpDraft[k], keepSlices = fals
   } finally {
     try { if (dev) await smpInfo(); } catch (e) { /* shown by the next action */ }
     smpBusy = false;
+    kitFullWrite = false;   /* (2.8.17) the full write is over, pass or fail: the grid and the header bar unlock (the renderKits below re-applies the toggle) */
+    if (typeof kitUi !== "undefined" && kitUi && kitUi.card) kitUi.card.classList.remove("kitwriting");
     busy--;
     renderSamples();
     renderKits();

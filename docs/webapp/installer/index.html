@@ -98,7 +98,7 @@
   <p id="status"></p>
   <pre id="log"></pre>
   <a class="ed" href="../editor/" data-t="editor"></a>
-  <p class="small"><a href="../editor/lowtide-editor.html" download="lowtide-editor-2.8.16.html" data-t="edOffline"></a></p>
+  <p class="small"><a href="../editor/lowtide-editor.html" download="lowtide-editor-2.8.17.html" data-t="edOffline"></a></p>
   <p><button id="app" class="ed" hidden data-t="appInstall"></button></p>
   <hr>
   <p class="small" data-t="direct"></p>
@@ -544,7 +544,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
-const meta = {"version": "2.8.16", "product": "FM-1_928", "pkg": "../../firmware/lowtide-2.8.16.fwsc", "sha256": "52a55e8fd7aa5b534e90228ff23e99d4ab4b247c26bcc29938b2116c216c2fe3"};
+const meta = {"version": "2.8.17", "product": "FM-1_928", "pkg": "../../firmware/lowtide-2.8.17.fwsc", "sha256": "d3e848daf101fcf2d59dba8ab35e8207b2e28cfacbd7e98dc9b14fe937824597"};
 $("ver").textContent = `Lowtide ${meta.version} · ${meta.product}`;   /* (2.8.5) the version it is about to install, before INSTALL is pressed — set at once, so it shows even when the package fails to load */
 
 let writing = false;
