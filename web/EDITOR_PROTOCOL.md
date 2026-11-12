@@ -618,6 +618,10 @@ so a downgrade loses the kit rather than playing it at the wrong gain. The loop-
 is documented with the firmware: `pred` is still read as ADPCM state on a loop restart, so a kit
 zone carrying gain in `pred` must stay a one-shot (`looped` = 0), as all kit zones are.
 
+<!-- 2.8.15, 12 Nov 2026: this line only, to re-trigger a GitHub Pages deployment after the
+     2.8.15 deploy failed at startup (run 43097460000, startup_failure, zero jobs) and its
+     re-run stuck in queued. No code, firmware, or protocol change. -->
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.
