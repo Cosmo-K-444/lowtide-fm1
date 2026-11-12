@@ -1156,10 +1156,19 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
     case ED_KITS_MODE: {                                   /* (2.8.9) v17: kits mode: 0 off, 1..4 USR1..USR4, 5 USR3+4
                                                             * -> the mode. The editor sends it when it enters / leaves
                                                             * the Kits tab and when the picked slot changes; while it
-                                                            * is on, live drum hits play that user kit (drums.c) */
+                                                            * is on, live drum hits play that user kit (drums.c).
+                                                            * (2.8.16) on a real change the display is forced to
+                                                            * redraw (it now shows the slot, drums.c kits_disp_kit),
+                                                            * and selecting a slot stops the sequencer: it would
+                                                            * otherwise keep playing the preset while the display
+                                                            * shows the slot. A duplicate mode changes nothing. */
         if (na < 1u || a[0] > 5u)
             return;
-        kits_mode_set(a[0]);
+        if (kits_mode_set(a[0])) {
+            ui.force = 1;
+            if (a[0] && (song.playing || transport_req))
+                transport_req = 2;                          /* (the LIVE PLAY-stop request: seq_stop on the next block) */
+        }
         ed_b(a[0]);
         break;
     }

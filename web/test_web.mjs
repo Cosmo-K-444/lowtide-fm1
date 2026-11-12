@@ -1787,7 +1787,7 @@ async function editorKit2810() {
   const rects = [];
   const fakeCtx = { fillStyle: "", fillRect: (x, y, w, h) => { rects.push([x, y, w, h]); }, clearRect: () => {} };
   const waveCv = { clientWidth: 200, width: 0, height: 0, getContext: () => fakeCtx };
-  const waveBox = { console, kitLen: E.kitLen,
+  const waveBox = { console, kitLen: E.kitLen, kitSliceRange: E.kitSliceRange,
     getComputedStyle: () => ({ getPropertyValue: (k) => (k === "--t2" ? "#1ecc70" : "#ff621a") }) };
   const W = vm.runInNewContext(waveSrc + `\n;({ kitDrawWave })`, waveBox);
   W.kitDrawWave(waveCv, { s: s(8000), fname: "k.wav", tune: 12, gain: 0, len: 0, slice: { start: 2000, end: 4000 } });
@@ -1833,8 +1833,8 @@ async function editorKit2810() {
   const hdrUpSrc = html.slice(html.indexOf("async function smpUploadHeader"), html.indexOf("async function smpUpload(k,"));
   ok(!/^\s*renderKits\(\);/m.test(hdrUpSrc),
     "#37: the header-only write performs no re-render of its own (the kitWriteNow tail re-renders once after the write)");
-  ok((html.match(/kind !== "box" && !kitDraft\.pads\[l\]/g) || []).length === 2,
-    "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box)");
+  ok((html.match(/kind !== "box" && !kitDraft\.pads\[/g) || []).length === 2,
+    "empty box: the label can be the drag source (pick-up and dragstart drop the !pads guard for kind box; dragstart reads the picked lane)");
   ok(/await kitReadSlotKit\(d\)/.test(html) && /sayK\("kitNeedSlot"\)/.test(html) && /if \(kitDraft\.sent\) sayK\("kitImported"/.test(html),
     "slot read-back / import: the pick reads the slot back, and the import only reports success once written");
 }
@@ -3545,6 +3545,117 @@ async function editorKit2815() {
   }
 }
 
+/* ------------------------------------------- Lowtide 2.8.16: #39, markers on the miniatures, the kits-mode display, long-press the sample --- */
+async function editorKit2816() {
+  const s = (n, a = 20000) => Int16Array.from({ length: n }, (_, i) => Math.round(a * Math.sin(i / 7)));
+
+  /* #39: the flash is on the box itself, not only on its waveform canvas — an empty box hides
+     its canvas, so the canvas-only outline was invisible on it. The canvas rule stays for full boxes. */
+  ok(/\.pad\.flash \{ outline: 1px solid var\(--c\); outline-offset: -2px; \}/.test(html)
+    && /\.pad\.flash canvas \{ outline: 1px solid var\(--c\); \}/.test(html),
+    "#39: the flash outlines the pad box itself (visible on an empty box), and still the canvas on a full one");
+  const flashSrc = html.slice(html.indexOf("function kitFlashLane"), html.indexOf("function kitDrawWave"));
+  ok(/clearTimeout\(kitFlashTimers\.get\(l\)\)/.test(flashSrc) && /kitFlashTimers\.set\(l, setTimeout\(/.test(flashSrc)
+    && /pu\.box\.classList\.add\("flash"\)/.test(flashSrc),
+    "#39: a re-hit restarts the 140 ms flash timer (per-lane timers, as drumPadsFlash does)");
+
+  /* A: the miniature greys out outside the chop and always shows its markers — an unchopped pad
+     shows them at its start and end. Runs the real kitDrawWave in the vm harness. */
+  const waveSrc = html.slice(html.indexOf("function kitDrawWave"), html.indexOf("/* (2.8.8) move a sample assignment"));
+  ok(/const rng = kitSliceRange\(p\);/.test(waveSrc),
+    "miniature markers: kitDrawWave reads the chop range (the whole pad when unchopped), not p.slice");
+  const draws = [];
+  const fakeCtx = { fillStyle: "", fillRect: (x, y, w, h) => { draws.push([x, y, w, h, fakeCtx.fillStyle]); }, clearRect: () => {} };
+  const waveCv = { clientWidth: 200, width: 0, height: 0, getContext: () => fakeCtx };
+  const waveBox = { console, kitLen: E.kitLen, kitSliceRange: E.kitSliceRange,
+    getComputedStyle: () => ({ getPropertyValue: (k) => (k === "--t2" ? "#1ecc70" : "#ff621a") }) };
+  const W = vm.runInNewContext(waveSrc + `\n;({ kitDrawWave })`, waveBox);
+  W.kitDrawWave(waveCv, { s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 });
+  const marks0 = draws.filter((r) => r[2] === 2 && r[1] === 0 && r[3] === 48).map((r) => r[0]);
+  ok(JSON.stringify(marks0) === "[1,198]",
+    "miniature markers: an unchopped pad shows its markers at both edges (1 and w-2 over 200 px)");
+  draws.length = 0;
+  W.kitDrawWave(waveCv, { s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0, slice: { start: 2000, end: 4000 } });
+  const cols = draws.filter((r) => r[2] === 1);
+  ok(cols.length === 200 && cols.every((r) => (r[0] >= 50 && r[0] < 100 ? r[4] === "#ff621a" : r[4] === "#36363c")),
+    "miniature markers: outside the chop the waveform is dimmed (columns 0-49 and 100-199), inside it is the pad colour");
+  const marks1 = draws.filter((r) => r[2] === 2 && r[1] === 0 && r[3] === 48).map((r) => r[0]);
+  ok(JSON.stringify(marks1) === "[50,100]",
+    "miniature markers: a chopped pad keeps its markers at the chop (start 2000, end 4000, of 8000 over 200 px)");
+
+  /* A: the miniature hit test — the nearest marker line within ±10 px, or null; no tabs, no zoom. */
+  const miniHitSrc = html.slice(html.indexOf("function kitMiniHit"), html.indexOf("function renderKits"));
+  const miniBox = { console, kitLen: E.kitLen, kitSliceRange: E.kitSliceRange,
+    kitDraft: { pads: [{ s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0, slice: { start: 2000, end: 4000 } }] } };
+  const M = vm.runInNewContext(miniHitSrc + `\n;({ kitMiniHit })`, miniBox);
+  ok(M.kitMiniHit(0, 55, 200) === "start" && M.kitMiniHit(0, 95, 200) === "end" && M.kitMiniHit(0, 150, 200) === null
+    && M.kitMiniHit(0, 58, 200) === "start" && M.kitMiniHit(0, 73, 200) === null,
+    "miniature hit test: the nearer marker wins (start at 55, end at 95), and mid-waveform grabs nothing");
+  miniBox.kitDraft.pads[0] = { s: s(8000), fname: "k.wav", tune: 0, gain: 0, len: 0 };
+  ok(M.kitMiniHit(0, 5, 200) === "start" && M.kitMiniHit(0, 195, 200) === "end",
+    "miniature hit test: an unchopped pad's edge markers grab (start at 5, end at 195 over 200 px)");
+
+  /* A: the miniature drag wiring — claim on pointerdown (long-press cleared, HTML5 drag off,
+     pointer captured), live redraw while dragging, commit-then-preview on release; the hover
+     cursor is ew-resize on a marker, pointer elsewhere; touch must not scroll off a waveform. */
+  const kitsRender = html.slice(html.indexOf("function renderKits()"), html.indexOf("function kitPadUpdate"));
+  ok(/kitMiniHit\(l, e\.clientX - r\.left, r\.width\)/.test(kitsRender) && /clearCvLp\(\);/.test(kitsRender)
+    && /pu\.cv\.draggable = false;/.test(kitsRender) && /pu\.cv\.setPointerCapture\(e\.pointerId\)/.test(kitsRender)
+    && /kitDraft\.sel = l;/.test(kitsRender),
+    "miniature drag: a marker grab clears the long-press timer, turns the HTML5 drag off, captures the pointer and selects the pad");
+  ok(/const miniEnd = async/.test(kitsRender) && /if \(\(await kitSliceCommit\(\)\) === "ok"\) kitStartLane\(l\)/.test(kitsRender)
+    && /miniSuppressClick = true;/.test(kitsRender) && /kitDrawWave\(pu\.cv, p\);/.test(kitsRender),
+    "miniature drag: on release the markers are committed before the preview plays, the click is suppressed, and the miniature redraws live");
+  ok(/if \(kitSliceDrag\.which !== "pan"\) \{ const pu = kitUi\.pads\[kitDraft\.sel\]; if \(pu\) kitDrawWave\(pu\.cv, p\); \}/.test(kitsRender),
+    "miniature drag: a Chop-panel marker drag redraws the pad miniature live too (not only on release)");
+  ok(/pu\.cv\.style\.cursor = kitMiniHit\(l, e\.clientX - r\.left, r\.width\) \? "ew-resize" : "pointer";/.test(kitsRender)
+    && /\.pad canvas \{[^}]*touch-action: none;/.test(html),
+    "miniature drag: hovering a marker shows ew-resize (pointer elsewhere), and touch does not scroll off a pad waveform");
+
+  /* A: the Chop button is now "Fine Chop" (both locales); the Chop panel's heading stays "Chop". */
+  ok(/kitChop: "Fine Chop",/.test(html) && /kitChop: "ファイン・チョップ",/.test(html)
+    && /kitSliceTitle: "Chop",/.test(html) && /kitSliceTitle: "チョップ",/.test(html),
+    "fine chop: the per-pad button reads 'Fine Chop' (EN) / 'ファイン・チョップ' (JA); the panel heading is still 'Chop'");
+
+  /* B: the firmware shows the kits-mode slot on all four display sites, redraws on a real mode
+     change, and stops the sequencer when a slot is selected. The EDIT-page KIT param still shows
+     the stored preset. */
+  const drumsC = readFileSync(join(HERE, "../firmware/src/drums.c"), "utf8");
+  const edC = readFileSync(join(HERE, "../firmware/src/editor.c"), "utf8");
+  const studioC = readFileSync(join(HERE, "../firmware/src/ui_studio.c"), "utf8");
+  const drawC = readFileSync(join(HERE, "../firmware/src/ui_draw.c"), "utf8");
+  const paramsC = readFileSync(join(HERE, "../firmware/src/params.c"), "utf8");
+  ok(/static uint32_t kits_disp_kit\(void\) \{ return kits_mode \? kits_kit\(\) : drum_kit\(\); \}/.test(drumsC)
+    && /static uint32_t kits_mode_set\(uint32_t mode\)/.test(drumsC),
+    "kits display: kits_disp_kit() returns the slot while kits mode is on, the preset otherwise; kits_mode_set reports a real change");
+  ok(/kit = kits_disp_kit\(\)/.test(studioC) && (studioC.match(/DRUM_KIT_NAMES\[kits_disp_kit\(\)\]/g) || []).length === 3
+    && !/DRUM_KIT_NAMES\[drum_kit\(\)\]/.test(studioC) && /DRUM_KIT_NAMES\[kits_disp_kit\(\)\]/.test(drawC)
+    && !/DRUM_KIT_NAMES\[drum_kit\(\)\]/.test(drawC),
+    "kits display: the DRUMS screen, TRACKS row and both REC rows (studio) and the footer (draw) all read the display kit, never the preset");
+  const kitsModeHandler = edC.slice(edC.indexOf("case ED_KITS_MODE"), edC.indexOf("case ED_KITS_STOP"));
+  ok(/if \(kits_mode_set\(a\[0\]\)\) \{/.test(kitsModeHandler) && /ui\.force = 1;/.test(kitsModeHandler)
+    && /if \(a\[0\] && \(song\.playing \|\| transport_req\)\)/.test(kitsModeHandler) && /transport_req = 2;/.test(kitsModeHandler),
+    "kits display: on a real mode change the handler forces a redraw, and selecting a slot stops the sequencer (transport request 2)");
+  ok(/PE\("KIT", DRUM_KIT_NAMES, 0\)/.test(paramsC),
+    "kits display: the EDIT-page KIT parameter still shows the stored preset");
+
+  /* C: the pick-up outline follows the kind — the waveform for a sample, the box for a box — and
+     the release click of a long-press is swallowed, as on the Drum Pads tab. A drag after a
+     pick-up is the picked kind, and a cancelled drag leaves no stale pick-up behind. */
+  ok(/\.pad canvas\.picked \{ outline: 2px dashed var\(--fg\); outline-offset: -2px; \}/.test(html)
+    && /pu\.box\.classList\.toggle\("picked", !!\(kitDraft\.picked && kitDraft\.picked\.lane === l && kitDraft\.picked\.kind === "box"\)\)/.test(html)
+    && /pu\.cv\.classList\.toggle\("picked", !!\(kitDraft\.picked && kitDraft\.picked\.lane === l && kitDraft\.picked\.kind === "sample"\)\)/.test(html),
+    "long-press sample: the dashed outline is on the waveform for a sample pick-up, on the box for a box pick-up");
+  ok((html.match(/if \(kitDraft\.justPicked\) \{ kitDraft\.justPicked = false; return; \}/g) || []).length === 2,
+    "long-press sample: the waveform and empty-area clicks swallow the long-press release click (justPicked, as on the Drum Pads tab)");
+  ok(/if \(kitDraft\.picked\) kind = kitDraft\.picked\.kind;/.test(kitsRender)
+    && /const fromLane = kitDraft\.picked \? kitDraft\.picked\.lane : l;/.test(kitsRender)
+    && /if \(kitDraft\.picked\) \{ kitDraft\.picked = null; renderKits\(\); \}/.test(kitsRender),
+    "long-press sample: a drag after a pick-up moves the picked kind and lane, and a cancelled drag clears the pick-up");
+  ok(/Long-press a waveform to pick the sample up/.test(html) && /波形を長押しすると音だけを持ち上げます/.test(html),
+    "long-press sample: the help text says so (EN and JA)");
+}
+
 await editorMock();
 await editorLibrarian();
 await editorLive();
@@ -3565,6 +3676,7 @@ await editorKit2811();
 await editorKit2813();
 await editorKit2814();
 await editorKit2815();
+await editorKit2816();
 await editor25();
 await editorDsyn();
 await editorCart();

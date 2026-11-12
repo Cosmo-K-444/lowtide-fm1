@@ -995,6 +995,16 @@ static void t_drmap_remap(void)
         note_in(dch, 50, 100);
         note_in(dch, 50, 0);
         check(pen_lane == 99u && drum_trig_pending == 0u, "DRUM TRIG: a silent pad records nothing");
+        drum_trig_pending = 0;                                /* (2.8.16, #39) kits mode on, the slot empty: a physical
+                                                                 * key hit still records DRUM_TRIG — the empty box plays
+                                                                 * nothing, but the editor's flash must fire */
+        kits_mode_set(1);                                     /* USR1: no samples in this harness */
+        song.sel = TRK_DRUM;
+        kb_grid = 0;
+        key_down(0);                                          /* KICK's key, lane 0 */
+        check(drum_trig_pending == 1u && drum_trig_lane == 0u,
+              "DRUM TRIG: a physical hit on an empty kits box still records (nothing plays, the editor flashes it)");
+        kits_mode_set(0);
     }
     dm_clear();
     render(8);

@@ -471,7 +471,7 @@
   .pad .ph { display: flex; align-items: baseline; gap: 8px; }
   .pad .ph b { font-weight: 400; color: var(--c); text-transform: uppercase; }
   .pad .ph .key { color: var(--s3); margin-left: auto; }
-  .pad canvas { width: 100%; height: 48px; display: block; background: var(--s1); cursor: pointer; }
+  .pad canvas { width: 100%; height: 48px; display: block; background: var(--s1); cursor: pointer; touch-action: none; }   /* (2.8.16) no touch scrolling off a pad waveform: a marker drag on touch must reach the pointer handlers, not scroll the page */
   .pad .fn { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pad .empty { flex: 1; display: grid; place-content: center; color: var(--s3); text-align: center; cursor: pointer; border: 1px dashed var(--s3); }
   .pad .empty:hover { color: var(--fg2); border-color: var(--dim); }
@@ -553,7 +553,9 @@
   .pad .ph b { cursor: grab; }
   .pad .ph b:active { cursor: grabbing; }
   .pad .leninfo { color: var(--fg2); font-size: 12px; }   /* (2.8.9) Length: the whole (baked) sample length */
+  .pad.flash { outline: 1px solid var(--c); outline-offset: -2px; }   /* (2.8.16, #39) the flash is on the box itself: an empty box hides its waveform canvas, so the canvas-only outline below was invisible on it */
   .pad.flash canvas { outline: 1px solid var(--c); }
+  .pad canvas.picked { outline: 2px dashed var(--fg); outline-offset: -2px; }   /* (2.8.16, #C) a picked-up sample: the dashed outline is around the waveform, not the whole box (later than .pad.playing canvas, so it wins over it) */
   .slice .bar button.play { color: var(--t2); }
   .slice .bar button.play.stop { color: var(--red); }
   /* (2.8.9) the chop panel's audition: the green triangle, the red stop square while it plays */
@@ -5110,7 +5112,7 @@ const TEXT = {
     kitSlotLocked: "ロックされています — ステップ 1 で置き場所を選ぶと作り始められます。",
     kitMeterNoSlot: "— 置き場所を選ぶと空きが表示されます",
     kitWrote: "{x} に書き込みました · ", kitWriting: "{x} に書き込み中…",
-    kitChop: "チョップ",
+    kitChop: "ファイン・チョップ",
     kitSliceTitle: "チョップ", kitSliceHint: "パッドの波形をクリックするとチョップします。",
     kitSliceStart: "開始", kitSliceEnd: "終了", kitSliceLen: "長さ", kitSlicePlay: "チョップを試聴",
     kitSliceClear: "チョップを消す", kitSliceZoomIn: "拡大", kitSliceZoomOut: "縮小", kitSliceFit: "全体", kitSliceFine: "微調整",
@@ -5172,7 +5174,7 @@ const TEXT = {
     kitStep1: "置き場所",
     kitStep1Help: "このキットをどこに置くか選びます。選ぶまで FM-1 には何も書き込まれません — 作りかけのキットが、昔の既定の USR3+4 に黙って入ることはありません。各スロットのカードには ZIP 保存のボタンがあり、選ばなくても使えます。まず中身を保存してから選べます。パッドは置き場所を選ぶまでロックされています。",
     kitStep2: "音",
-    kitStep2Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックするとチョップ用に選んで試聴します。パッドごとにピッチと音量、全体の長さがあります。波形をドラッグすると音だけ、タイトルをドラッグすると箱ごと移動します。音の横の音名は位置のもの（左下が C1）で、箱が動いても変わりません。",
+    kitStep2Help: "WAV をパッドにドロップ、またはまとめて選ぶとファイル名で振り分けます（kick, bd, snare, hh, open, crash…）。波形をクリックするとチョップ用に選んで試聴します。パッドごとにピッチと音量、全体の長さがあります。波形をドラッグすると音だけ、タイトルをドラッグすると箱ごと移動します。波形を長押しすると音だけを持ち上げます（波形の周りに破線の枠）。押したまま別のパッドへドラッグするか、別のパッドをタップして置きます。音の横の音名は位置のもの（左下が C1）で、箱が動いても変わりません。",
     kitFitHelp: "長すぎるとき: 長い音（クラッシュ、オープンハット）を短くして収めます。",
     kitCapBig: "大きなキット · 約 15 秒",
     kitCapOne: "約 7 秒",
@@ -5472,7 +5474,7 @@ const TEXT = {
     kitSlotLocked: "Locked — pick a slot in step 1 to start building the kit.",
     kitMeterNoSlot: "— pick a slot to see how much room the kit has",
     kitWrote: "Written to {x} · ", kitWriting: "Writing to {x}…",
-    kitChop: "Chop",
+    kitChop: "Fine Chop",
     kitSliceTitle: "Chop", kitSliceHint: "Click a pad's waveform to chop it.",
     kitSliceStart: "Start", kitSliceEnd: "End", kitSliceLen: "Length", kitSlicePlay: "Play chop",
     kitSliceClear: "Clear chop", kitSliceZoomIn: "Zoom in", kitSliceZoomOut: "Zoom out", kitSliceFit: "Fit", kitSliceFine: "Fine",
@@ -5534,7 +5536,7 @@ const TEXT = {
     kitStep1: "Where it goes",
     kitStep1Help: "Pick where this kit will live. Nothing is written to the FM-1 until you choose — so a kit in progress can never silently land on the old default, USR3+4. Each slot card has its own Export ZIP button, and it works without picking: back up what's in a slot first. The pads stay locked until a slot is chosen.",
     kitStep2: "Your sounds",
-    kitStep2Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to select it for Chop and hear it. Each pad has its pitch and gain, and its whole length. Drag a waveform to move a sample, drag a title to move the box. The note next to a sound belongs to its position, C1 at the bottom-left.",
+    kitStep2Help: "Drop a WAV on a pad, or choose several files: they are sorted onto the pads by name (kick, bd, snare, hh, open, crash…). Click a wave to select it for Chop and hear it. Each pad has its pitch and gain, and its whole length. Drag a waveform to move a sample, drag a title to move the box. Long-press a waveform to pick the sample up (a dashed outline around the waveform), then drag it to another pad while still holding, or tap another pad to drop it. The note next to a sound belongs to its position, C1 at the bottom-left.",
     kitFitHelp: "Too long? Fit shortens the longest sounds (crashes, open hats) just enough.",
     kitStep2: "Drum Kit Constructor",
     kitCapBig: "big kit · about 15 s",
@@ -8570,35 +8572,38 @@ function kitPlayUi(l) {   /* the pad's play button: green triangle, or red stop 
     kitUi.slicePlay.textContent = on ? "\u25a0" : "\u25b6";
   }
 }
+const kitFlashTimers = new Map();   /* (2.8.16, #39) per-lane flash timers, like drumPadsFlashTimers: a re-hit restarts the 140 ms instead of being cut short by the first timeout */
 function kitFlashLane(l) {   /* a physical hit on an empty box: the box flashes, nothing plays */
   const pu = kitUi && kitUi.pads[l];
   if (!pu) return;
+  clearTimeout(kitFlashTimers.get(l));
   pu.box.classList.add("flash");
-  setTimeout(() => pu.box.classList.remove("flash"), 140);
+  kitFlashTimers.set(l, setTimeout(() => { pu.box.classList.remove("flash"); kitFlashTimers.delete(l); }, 140));
 }
 function kitDrawWave(cv, p) {
   const w = cv.width = Math.max(60, cv.clientWidth || 200), h = cv.height = 48, g = cv.getContext("2d");
   g.clearRect(0, 0, w, h);
   const s = p.s, n = s.length, keep = kitLen(p);   /* (2.8.13) the waveform is the stored audio (#35) */
+  const rng = kitSliceRange(p);   /* (2.8.16) the chop range, or the whole pad when unchopped */
   const col = getComputedStyle(cv).getPropertyValue("--c") || "#ff621a";
   for (let x = 0; x < w; x++) {
     const a = Math.floor(x / w * n), b = Math.max(a + 1, Math.floor((x + 1) / w * n));
     let pk = 0;
     for (let i = a; i < b && i < n; i += 4) pk = Math.max(pk, Math.abs(s[i]));
     const y = Math.max(1, Math.round(pk / 32768 * (h / 2 - 2)));
-    g.fillStyle = a < keep ? col.trim() || "#ff621a" : "#36363c";
+    g.fillStyle = (a < keep && a >= rng.start && a < rng.end) ? col.trim() || "#ff621a" : "#36363c";   /* (2.8.16) outside the chop the waveform is dimmed, as in the Chop panel */
     g.fillRect(x, h / 2 - y, 1, y * 2);
   }
-  /* (2.8.9) the chop markers, once the sample has been chopped: the slice is in stored samples,
-     the waveform in the same ones, so the markers need no scaling (2.8.13: no retune rescaling, #35) */
-  if (p.slice) {
-    const cs = getComputedStyle(cv);
-    const green = (cs.getPropertyValue("--t2") || "#1ecc70").trim() || "#1ecc70";
-    const x0 = Math.max(0, Math.min(w - 1, Math.round(p.slice.start / n * w)));
-    const x1 = Math.max(0, Math.min(w - 1, Math.round(p.slice.end / n * w)));
-    g.fillStyle = green; g.fillRect(x0, 0, 2, h);
-    g.fillStyle = (col.trim() || "#ff621a"); g.fillRect(x1, 0, 2, h);
-  }
+  /* (2.8.16) the chop markers, from the range — so an unchopped pad shows them at its start and end
+     too. The slice is in stored samples, the waveform in the same ones, so the markers need no scaling
+     (2.8.13: no retune rescaling, #35). Clamped 1 / w-2 like the Chop panel, so the edge markers stay
+     visible against the pad border. No START / END tabs here: the 2 px lines are the grab targets. */
+  const cs = getComputedStyle(cv);
+  const green = (cs.getPropertyValue("--t2") || "#1ecc70").trim() || "#1ecc70";
+  const x0 = Math.max(1, Math.min(w - 2, Math.round(rng.start / n * w)));
+  const x1 = Math.max(1, Math.min(w - 2, Math.round(rng.end / n * w)));
+  g.fillStyle = green; g.fillRect(x0, 0, 2, h);
+  g.fillStyle = (col.trim() || "#ff621a"); g.fillRect(x1, 0, 2, h);
 }
 /* (2.8.8) move a sample assignment: drop a pad on another to swap them, or move it to an empty pad.
    The pad object (sample, pitch, gain, length, slice) moves whole, so all its settings carry over. */
@@ -8641,6 +8646,7 @@ function kitBoxDrop(fromLane, toLane) {
 /* ---- the slicing panel (2.8.8): one waveform for the selected pad, below the grid ---- */
 let kitSliceView = { a: 0, b: 0, for: -1 };   /* the visible window, in baked samples of the selected pad */
 let kitSliceDrag = null;   /* {which: "start"|"end"|"pan", x0, a0, b0, toSample} while a marker or the view is dragged */
+let kitMiniDrag = null;   /* (2.8.16) {lane, which: "start"|"end", x0, toSample, moved} while a marker on a pad miniature is dragged */
 function kitSliceSet(lane, start, end) {   /* set a pad's slice in the draft (a full range is no slice) */
   const p = kitDraft.pads[lane];
   if (!p) return;
@@ -8890,6 +8896,20 @@ function kitSliceHit(x, y) {   /* (2.8.10) which marker a pointer at (x, y) on t
   if (Math.min(ds, de) <= 10) return ds <= de ? "start" : "end";   /* the nearest marker, not Start first */
   return "pan";
 }
+function kitMiniHit(lane, x, w) {   /* (2.8.16) which marker a pointer at x on a pad miniature grabs:
+   the nearest marker line (±10 px), or null. No tabs, no zoom: the miniature always shows the whole
+   sample, and the markers are the chop range (the pad's edges when unchopped). */
+  const p = kitDraft.pads[lane];
+  if (!p || !w) return null;
+  const n = kitLen(p);
+  if (!n) return null;
+  const rng = kitSliceRange(p);
+  const xs = Math.max(1, Math.min(w - 2, Math.round(rng.start / n * w)));
+  const xe = Math.max(1, Math.min(w - 2, Math.round(rng.end / n * w)));
+  const ds = Math.abs(x - xs), de = Math.abs(x - xe);
+  if (Math.min(ds, de) <= 10) return ds <= de ? "start" : "end";
+  return null;
+}
 function renderKits() {
   const box = $("kit");
   if (!box) return;
@@ -8993,6 +9013,7 @@ function renderKits() {
         kitSliceView.b = kitSliceView.a + w;
         kitSliceDraw();
       }
+      if (kitSliceDrag.which !== "pan") { const pu = kitUi.pads[kitDraft.sel]; if (pu) kitDrawWave(pu.cv, p); }   /* (2.8.16) the miniature follows live during a panel drag too: kitSliceSet redraws the panel only */
     });
     const sliceEnd = async () => {   /* release: the markers are written to the FM-1, and the slice is heard */
       if (!kitSliceDrag) return;
@@ -9011,17 +9032,20 @@ function renderKits() {
     u.grid = grid;   /* (2.8.5) the builder's grid, so renderKits can order it by the Drum Pads layout */
     for (let l = 0; l < 16; l++) {
       const pu = {};
+      let miniSuppressClick = false;   /* (2.8.16) set when a marker drag ends: the click that follows is the drag's, not a play */
       pu.box = el("div", { class: "pad", "data-l": l });
       /* (2.8.9) the waveform is the sample: click it to select the pad for Chop and hear it; the title
          is the box: drag it to move the box. Long-press follows the same split (touch) */
       pu.cv = el("canvas", { title: t("kitPlay"), onclick: () => {
+        if (miniSuppressClick) { miniSuppressClick = false; return; }   /* (2.8.16) the click after a marker drag: the drag already previewed, do not play again */
+        if (kitDraft.justPicked) { kitDraft.justPicked = false; return; }   /* (2.8.16, #C) the release click of the long-press that picked it up: not a drop (as on the Drum Pads tab) */
         if (kitDraft.picked) { kitPickDrop(l); return; }
         kitDraft.sel = kitDraft.pads[l] ? l : -1;
         renderKits();
         kitTogglePlay(l);
       } });
       pu.fn = el("div", { class: "fn" });
-      pu.empty = el("div", { class: "empty", onclick: () => { if (kitDraft.picked) { kitPickDrop(l); return; } u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
+      pu.empty = el("div", { class: "empty", onclick: () => { if (kitDraft.justPicked) { kitDraft.justPicked = false; return; }   /* (2.8.16, #C) the release click of a long-press pick-up: not a drop */ if (kitDraft.picked) { kitPickDrop(l); return; } u.want = l; u.file.click(); } }, ...t("kitEmptyPad").split("\n").flatMap((x, i) => (i ? [el("br"), x] : [x])));
       const knob = (lab, min, max, step, key, fmt) => {
         const inp = el("input", { type: "range", min, max, step });
         const val = el("span", { class: "val" });
@@ -9075,18 +9099,69 @@ function renderKits() {
       const clearCvLp = armLp(pu.cv, "sample"), clearPhLp = armLp(pu.ph.querySelector("b"), "box");
       const dragStart = (kind) => (e) => {
         clearCvLp(); clearPhLp();
-        if (kind !== "box" && !kitDraft.pads[l]) { e.preventDefault(); return; }   /* (2.8.10) an empty box's label is still a drag source: a box move is map-only */
+        kitDraft.justPicked = false;   /* (2.8.16, #C) a drag is not the release click: no click to swallow after it */
+        if (kitDraft.picked) kind = kitDraft.picked.kind;   /* (2.8.16, #C) a drag after a pick-up is the picked kind, whichever element started it */
+        const fromLane = kitDraft.picked ? kitDraft.picked.lane : l;
+        if (kind !== "box" && !kitDraft.pads[fromLane]) { e.preventDefault(); return; }   /* (2.8.10) an empty box's label is still a drag source: a box move is map-only */
         kitDraft.dragging = true;
-        e.dataTransfer.setData("text/plain", JSON.stringify({ from: kind === "box" ? "kitbox" : "kitpad", lane: l }));
+        e.dataTransfer.setData("text/plain", JSON.stringify({ from: kind === "box" ? "kitbox" : "kitpad", lane: fromLane }));
         e.dataTransfer.effectAllowed = "move";
+      };
+      const dragEnd = () => {
+        kitDraft.dragging = false;
+        if (kitDraft.picked) { kitDraft.picked = null; renderKits(); }   /* (2.8.16, #C) a cancelled drag leaves no stale pick-up behind: the next click must not drop a sample the user put down */
       };
       pu.cv.draggable = true;
       pu.cv.addEventListener("dragstart", dragStart("sample"));
-      pu.cv.addEventListener("dragend", () => { kitDraft.dragging = false; });
+      pu.cv.addEventListener("dragend", dragEnd);
       const phB = pu.ph.querySelector("b");
       phB.draggable = true;
       phB.addEventListener("dragstart", dragStart("box"));
-      phB.addEventListener("dragend", () => { kitDraft.dragging = false; });
+      phB.addEventListener("dragend", dragEnd);
+      /* (2.8.16) drag a chop marker on the pad miniature: the same commit-then-preview as the Chop
+         panel, on the 48 px waveform. Registered after armLp, so this pointerdown runs after the
+         long-press armer and clearCvLp() cancels the just-armed 450 ms timer. */
+      pu.cv.addEventListener("pointerdown", (e) => {
+        if (e.button) return;
+        const p = kitDraft.pads[l];
+        if (!p) return;
+        const r = pu.cv.getBoundingClientRect();
+        const which = kitMiniHit(l, e.clientX - r.left, r.width);
+        if (!which) return;   /* not a marker: click, long-press and the HTML5 sample drag proceed as before */
+        clearCvLp();   /* (no pick-up mid-drag: the timer is not cleared by pointer movement) */
+        pu.cv.draggable = false;   /* (preventDefault alone does not stop an HTML5 drag) */
+        kitDraft.sel = l;   /* the Chop panel below shows the pad being edited */
+        kitMiniDrag = { lane: l, which, x0: e.clientX, toSample: (px) => Math.round(px / r.width * kitLen(p)), moved: false };
+        try { pu.cv.setPointerCapture(e.pointerId); } catch (err) { /* gone */ }
+        e.preventDefault();
+      });
+      pu.cv.addEventListener("pointermove", (e) => {
+        const p = kitDraft.pads[l];
+        if (kitMiniDrag && kitMiniDrag.lane === l && p) {   /* a marker drag: no audio while dragging, the panel follows live */
+          const r = pu.cv.getBoundingClientRect(), rng = kitSliceRange(p);
+          if (kitMiniDrag.which === "start") kitSliceSet(l, Math.min(kitMiniDrag.toSample(e.clientX - r.left), rng.end - kitMinChop(p)), rng.end);   /* (2.8.12) Start stops 120 ms short of End (#9) */
+          else kitSliceSet(l, rng.start, Math.max(kitMiniDrag.toSample(e.clientX - r.left), rng.start + kitMinChop(p)));   /* (2.8.12) End stops 120 ms past Start (#9) */
+          kitMiniDrag.moved = true;
+          kitDrawWave(pu.cv, p);   /* the miniature follows live too: kitSliceSet redraws the panel only */
+          return;
+        }
+        if (!kitMiniDrag && p) {   /* hover: the marker cursor, as in the Chop panel; elsewhere the click cursor */
+          const r = pu.cv.getBoundingClientRect();
+          pu.cv.style.cursor = kitMiniHit(l, e.clientX - r.left, r.width) ? "ew-resize" : "pointer";
+        }
+      });
+      const miniEnd = async () => {   /* release: the markers are written to the FM-1, and the slice is heard */
+        if (!kitMiniDrag || kitMiniDrag.lane !== l) return;
+        const d = kitMiniDrag; kitMiniDrag = null;
+        pu.cv.draggable = true;
+        if (d.moved) {
+          miniSuppressClick = true;
+          if ((await kitSliceCommit()) === "ok") kitStartLane(l);   /* (2.8.10) the audition waits for the commit, so it plays the new start; (2.8.14) when the commit is deferred, nothing plays — the old chop would be the wrong sound */
+          renderKits();
+        }
+      };
+      pu.cv.addEventListener("pointerup", miniEnd);
+      pu.cv.addEventListener("pointercancel", miniEnd);
       pu.box.addEventListener("dragover", (e) => { e.preventDefault(); pu.box.classList.add("over"); });
       pu.box.addEventListener("dragleave", () => pu.box.classList.remove("over"));
       pu.box.addEventListener("drop", (e) => {
@@ -9175,7 +9250,8 @@ function kitPadUpdate(l) {
   pu.empty.hidden = !!p;
   pu.cv.hidden = pu.fn.hidden = pu.ctrls.hidden = pu.lenInfo.hidden = pu.acts.hidden = !p;
   pu.box.classList.toggle("sel", kitDraft.sel === l);   /* (2.8.8) selected for slicing */
-  pu.box.classList.toggle("picked", !!(kitDraft.picked && kitDraft.picked.lane === l));   /* (2.8.8) picked up to move */
+  pu.box.classList.toggle("picked", !!(kitDraft.picked && kitDraft.picked.lane === l && kitDraft.picked.kind === "box"));   /* (2.8.16, #C) the outline follows the pick-up kind: a box pick-up outlines the box … */
+  pu.cv.classList.toggle("picked", !!(kitDraft.picked && kitDraft.picked.lane === l && kitDraft.picked.kind === "sample"));   /* … a sample pick-up outlines the waveform canvas only */
   /* (2.8.9) the note next to a sound belongs to its grid position (C1 bottom-left, name only) and is
      set by renderKits when it orders the grid — kitPadUpdate only keeps the play button in step */
   kitPlayUi(l);

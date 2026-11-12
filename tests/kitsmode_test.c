@@ -227,6 +227,30 @@ int main(void)
     }
     quiet();
 
+    {   /* (2.8.16) the display kit: the stored preset when kits mode is off, the slot when it is on.
+         * The stored P_E0 is never touched, so turning the mode off shows the preset again. */
+        kits_mode_set(0);
+        check(kits_disp_kit() == (uint32_t)drum_kit(), "display kit: kits off shows the stored preset");
+        check(kits_mode_set(1) == 1u, "... kits_mode_set reports a real change");
+        check(kits_disp_kit() == (uint32_t)DRUM_USR, "display kit: USR1 shows the slot (USR1)");
+        check(kits_mode_set(1) == 0u, "... re-sending the same mode reports no change");
+        check(kits_mode_set(6) == 0u, "... an out-of-range mode reports no change");
+        kits_mode_set(5);
+        check(kits_disp_kit() == (uint32_t)DRUM_PAIR, "display kit: mode 5 shows USR3+4");
+        kits_mode_set(0);
+        check(kits_disp_kit() == (uint32_t)drum_kit(), "display kit: mode off shows the preset again");
+    }
+    quiet();
+
+    {   /* (2.8.16) the sequencer stops on a stop request: the transport request the ED_KITS_MODE
+         * handler raises when a slot is selected (transport_req = 2) ends the song on the next block */
+        song.playing = 1;
+        transport_req = 2;
+        run_peak(1);
+        check(song.playing == 0u && transport_req == 0u, "sequencer stop: a stop request ends the song");
+    }
+    quiet();
+
     {   /* USR3+4 (mode 5): the lane's sound from USR3, else USR4; a lane in neither is silent */
         kits_mode_set(5);
         drum_input(2, LV_NORM, 0, 1);                    /* SNARE: USR3, zone 0 */

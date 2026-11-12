@@ -254,7 +254,7 @@ UI_SMALL static void studio_tracks_draw(void)
         uint32_t solo = (song.solo >> i) & 1u, bank = song.playing ? pos / 16u : 0u, h;
         uint16_t col = TE_COL[i], dim = TE_DIM[i];
         if (i == TRK_DRUM) {
-            str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
+            str_cpy(b, DRUM_KIT_NAMES[kits_disp_kit()], sizeof b);   /* (2.8.16) the kits-mode slot, not the preset */
             te_lower(e, "drums", sizeof e);
         } else {
             trk_short_name(i, b);
@@ -374,7 +374,7 @@ UI_SMALL static void pads_tick(void)                             /* once a frame
 UI_SMALL static void drum_screen_draw(void)
 {
     static uint32_t head, title_sig, body_sig, footer;
-    uint32_t i, j, len = (uint32_t)clamp(TDRUM->p[P_SLEN], 1, 64), kit = drum_kit(), sig, bank;
+    uint32_t i, j, len = (uint32_t)clamp(TDRUM->p[P_SLEN], 1, 64), kit = kits_disp_kit(), sig, bank;   /* (2.8.16) the display shows the kits-mode slot, not the stored preset */
     if (drum_cursor >= len) drum_cursor = (uint8_t)(len - 1u);
     bank = drum_cursor / 16u;
     {
@@ -774,10 +774,10 @@ static uint8_t rec_shown;
 /* the four tracks, compact, from y0: the one that records is framed in red */
 UI_SMALL static void rec_rows(uint32_t rt, uint32_t take, uint32_t y0, uint32_t *cache)
 {
-    uint32_t sig = rt * 3u + rec_wait + take * 5u + drum_kit() * 977u + y0, i, j;
+    uint32_t sig = rt * 3u + rec_wait + take * 5u + kits_disp_kit() * 977u + y0, i, j;   /* (2.8.16) the kits-mode slot, not the preset */
     for (i = 0; i < NTRK; i++) {
         char b[16];
-        if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
+        if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[kits_disp_kit()], sizeof b);
         else trk_short_name(i, b);
         sig = studio_hash(sig, b) + (uint32_t)trk[i].p[P_SLEN] * 31u;
         for (j = 0; j < NSTEP; j++) sig = sig * 3u + (uint32_t)trk_step_on(&trk[i], j);
@@ -793,7 +793,7 @@ UI_SMALL static void rec_rows(uint32_t rt, uint32_t take, uint32_t y0, uint32_t 
         char b[16];
         if (armed) cv_rect(0, y, 240, 18, TE_RED), cv_rect(1, y + 1, 238, 16, C_BLACK);
         cv_rect(4, y + 3, 12, 12, armed ? TE_COL[i] : TE_DIM[i]);
-        if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
+        if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[kits_disp_kit()], sizeof b);   /* (2.8.16) the kits-mode slot, not the preset */
         else trk_short_name(i, b);
         b[10] = 0;
         cv_text(22, y + 1, &FONT_S, b, armed ? C_WHITE : TE_G3);

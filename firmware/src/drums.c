@@ -488,6 +488,10 @@ static uint8_t kits_mode;                 /* 0 off, 1..4 the user slot, 5 the US
 static int8_t kit_voice[DRUM_LANES] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 static uint32_t kit_age[DRUM_LANES];
 static uint32_t kits_kit(void) { return kits_mode == 5u ? DRUM_PAIR : DRUM_USR + kits_mode - 1u; }
+/* (2.8.16) the kit to DISPLAY: the slot while kits mode is on, the stored preset otherwise.
+ * The stored P_E0 is never touched, so restore-on-off is automatic and saves, backups and the
+ * sequencer's preset are unaffected — the display just reads live state at draw time. */
+static uint32_t kits_disp_kit(void) { return kits_mode ? kits_kit() : drum_kit(); }
 /* stop one lane's kit voice (0..15) or all of them (0xFF; on the wire 127: a SysEx data byte is 7 bit,
  * as DP_LEARN's 127 sentinel). The voice is cut the way the hi-hat choke cuts one: its last output
  * joins the tail and it goes inactive, so there is no click. A lane whose voice ended or was stolen is
@@ -530,14 +534,17 @@ static void drum_kit_stop(uint32_t lane)   /* the editor's KITS_STOP (main loop)
     kit_stop_locked(lane);
     fm1_irq_on();
 }
-static void kits_mode_set(uint32_t mode)   /* the editor's KITS_MODE (main loop): 0 off, 1..4 a slot, 5 the pair */
+static uint32_t kits_mode_set(uint32_t mode)   /* the editor's KITS_MODE (main loop): 0 off, 1..4 a slot, 5 the pair.
+ * Returns 1 when the mode actually changed, 0 for a duplicate or an out-of-range mode — so the
+ * ED_KITS_MODE handler can force a redraw (and stop the sequencer) only on a real change. */
 {
     if (mode > 5u || mode == kits_mode)
-        return;                                     /* (the same mode again: a playing preview is not cut) */
+        return 0;                                   /* (the same mode again: a playing preview is not cut) */
     fm1_irq_off();
     kits_mode = (uint8_t)mode;
     kit_stop_locked(0xFFu);                         /* a voice from the old slot must not outlive the mode */
     fm1_irq_on();
+    return 1;
 }
 
 /* adds the drums into the dry mix and the reverb and delay sends; mono != 0: into mono instead, before

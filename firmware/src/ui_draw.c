@@ -846,7 +846,7 @@ UI_SMALL static void draw_foot(void)
     int32_t x;
     pn[0] = 0;
     if (is_drum(t))
-        str_cpy(pn, DRUM_KIT_NAMES[drum_kit()], sizeof pn);
+        str_cpy(pn, DRUM_KIT_NAMES[kits_disp_kit()], sizeof pn);   /* (2.8.16) the kits-mode slot, not the preset */
     else if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), pn);                       /* a user preset */
     else if (e->npresets)
